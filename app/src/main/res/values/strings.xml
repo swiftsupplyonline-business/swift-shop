@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Swift Shop</string>
+    <string name="tab_home">Home</string>
+    <string name="tab_profile">Profile</string>
+    <string name="btn_sign_in">Sign In</string>
+    <string name="btn_register">Register</string>
+    <string name="btn_buy_now">Buy Now</string>
+    <string name="btn_make_payment">Make Payment</string>
+    <string name="btn_set_appointment">Book Appointment</string>
+    <string name="btn_place_order">Place Order</string>
+    <string name="btn_register_event">Register</string>
+    <string name="btn_request_delivery">Request Delivery</string>
+    <string name="btn_take_me_there">Take Me There</string>
+    <string name="label_wallet">Wallet</string>
+    <string name="label_deposit">Deposit</string>
+    <string name="label_withdraw">Withdraw</string>
+    <string name="label_transfer">Transfer</string>
+    <string name="label_minimum_withdrawal">Minimum withdrawal: M200.00</string>
+    <string name="label_p2p_fee">1.5% ecosystem fee applies</string>
+    <string name="tier_basic">Basic</string>
+    <string name="tier_premium">Premium</string>
+    <string name="tier_elite">Elite</string>
+    <string name="error_generic">Something went wrong. Please try again.</string>
+    <string name="error_offline">You\'re offline. Showing cached content.</string>
+    <string name="error_not_signed_in">Please sign in to continue.</string>
+    <string name="empty_feed">Nothing here yet</string>
+    <string name="empty_cart">Your cart is empty</string>
+    <string name="empty_orders">No orders yet</string>
+    <string name="empty_messages">No messages yet</string>
+    <string name="search_placeholder">Search Swift Shop…</string>
+</resources>
