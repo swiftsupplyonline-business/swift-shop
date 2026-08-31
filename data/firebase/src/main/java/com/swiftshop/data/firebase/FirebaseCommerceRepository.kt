@@ -50,7 +50,7 @@ class FirebaseCommerceRepository @Inject constructor(
     }
 
     override suspend fun updateShop(shop: Shop): Result<Unit> = runCatching {
-        firestore.collection("shops").document(shop.id).set(shop.toFirestore()).await()
+        firestore.collection("shops").document(shop.id).update(shop.toUpdateMap()).await()
     }
 
     // ─── Listings ─────────────────────────────────────────────────────────────
@@ -245,7 +245,7 @@ data class FirestoreShop(
     val reviewCount: Int = 0,
     val followerCount: Int = 0,
     val listingCount: Int = 0,
-    val createdAt: Date = Date(0)
+    val createdAt: Any? = null
 ) {
     fun toDomain() = Shop(id, ownerId, name, description, logoUrl, coverUrl, category, GeoPoint(locationLat, locationLng), locationAddress, isVerified, isActive, rating, reviewCount, followerCount, listingCount, tsToLong(createdAt))
 }
@@ -256,7 +256,19 @@ fun Shop.toFirestore() = mapOf(
     "locationLat" to location.lat, "locationLng" to location.lng, "locationAddress" to locationAddress,
     "isVerified" to isVerified, "isActive" to isActive, "rating" to rating,
     "reviewCount" to reviewCount, "followerCount" to followerCount, "listingCount" to listingCount,
-    "createdAt" to createdAt
+    "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+)
+
+fun Shop.toUpdateMap() = mapOf(
+    "name" to name,
+    "description" to description,
+    "logoUrl" to logoUrl,
+    "coverUrl" to coverUrl,
+    "category" to category,
+    "locationLat" to location.lat,
+    "locationLng" to location.lng,
+    "locationAddress" to locationAddress,
+    "isActive" to isActive
 )
 
 data class FirestoreListing(
@@ -324,7 +336,7 @@ data class FirestoreOrder(
     val status: String = "PENDING",
     val deliveryAddress: FirestoreDeliveryAddress? = null,
     val paymentId: String = "",
-    val createdAt: Date = Date(0)
+    val createdAt: Any? = null
 ) {
     fun toDomain() = Order(id, buyerId, sellerId, shopId, items.map { it.toDomain() }, MoneyAmount(currency, subtotalMinorUnits), MoneyAmount(currency, deliveryFeeMinorUnits), MoneyAmount(currency, platformFeeMinorUnits), MoneyAmount(currency, totalMinorUnits), runCatching { OrderStatus.valueOf(status) }.getOrDefault(OrderStatus.PENDING), deliveryAddress?.toDomain() ?: DeliveryAddress(), paymentId, "", tsToLong(createdAt), 0L)
 }

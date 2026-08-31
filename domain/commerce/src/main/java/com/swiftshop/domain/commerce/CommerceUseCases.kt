@@ -176,3 +176,11 @@ class CanCreateShopUseCase {
         return entitlement.maxShops == -1 || existingShopCount < entitlement.maxShops
     }
 }
+
+class CreateShopUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(shop: Shop): Result<String> = repository.createShop(shop)
+}
+
+class UpdateShopUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(shop: Shop): Result<Unit> = repository.updateShop(shop)
+}

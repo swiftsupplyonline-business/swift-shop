@@ -35,6 +35,8 @@ import com.swiftshop.feature.settings.SettingsScreen
 import com.swiftshop.feature.shop.CreateListingScreen
 import com.swiftshop.feature.shop.ListingDetailScreen
 import com.swiftshop.feature.shop.ShopDetailScreen
+import com.swiftshop.feature.shop.CreateShopScreen
+import com.swiftshop.feature.shop.ManageShopScreen
 import com.swiftshop.feature.wallet.WalletScreen
 import com.swiftshop.feature.advertising.CreateAdScreen
 import kotlinx.coroutines.flow.first
@@ -178,9 +180,17 @@ fun SwiftShopNavHost(
         }
 
         composable(Screen.CreateShop.route) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Create Shop coming soon")
-            }
+            CreateShopScreen(
+                onBack = { navController.popBackStack() },
+                onCreated = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.ManageShop.route,
+            arguments = listOf(navArgument("shopId") { type = NavType.StringType })
+        ) {
+            ManageShopScreen(navController = navController)
         }
 
         composable(
