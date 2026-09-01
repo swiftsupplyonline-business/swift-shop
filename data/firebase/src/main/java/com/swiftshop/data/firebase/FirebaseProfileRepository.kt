@@ -41,7 +41,7 @@ class FirebaseProfileRepository @Inject constructor(
 
     override suspend fun updateProfile(profile: UserProfile): Result<Unit> = runCatching {
         firestore.collection("profiles").document(profile.uid)
-            .set(profile.toFirestore())
+            .update(profile.toFirestoreUpdateMap())
             .await()
         Unit
     }
@@ -176,6 +176,14 @@ fun UserProfile.toFirestore() = mapOf(
     "reputationScore" to reputationScore,
     "tier" to tier.name,
     "totalDeliveries" to totalDeliveries
+)
+
+fun UserProfile.toFirestoreUpdateMap() = mapOf(
+    "displayName" to displayName,
+    "bio" to bio,
+    "location" to location,
+    "avatarUrl" to avatarUrl,
+    "coverUrl" to coverUrl
 )
 
 data class FirestoreAchievement(

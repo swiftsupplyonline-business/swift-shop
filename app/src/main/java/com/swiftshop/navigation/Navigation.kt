@@ -29,6 +29,7 @@ import com.swiftshop.feature.orders.OrdersScreen
 import com.swiftshop.feature.posts.CreatePostScreen
 import com.swiftshop.feature.posts.PostDetailScreen
 import com.swiftshop.feature.profile.ProfileScreen
+import com.swiftshop.feature.profile.EditProfileScreen
 import com.swiftshop.feature.reels.CreateReelScreen
 import com.swiftshop.feature.search.SearchScreen
 import com.swiftshop.feature.settings.SettingsScreen
@@ -174,9 +175,7 @@ fun SwiftShopNavHost(
         }
 
         composable(Screen.EditProfile.route) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Edit Profile coming soon")
-            }
+            EditProfileScreen(navController = navController)
         }
 
         composable(Screen.CreateShop.route) {
