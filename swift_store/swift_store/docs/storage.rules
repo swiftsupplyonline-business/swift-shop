@@ -1,0 +1,17 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /media/{userId}/{assetId} {
+      // Marketplace listing media is publicly readable
+      allow read: if true;
+
+      // Only the authenticated owner can upload to their directory
+      allow write: if request.auth != null
+                   && request.auth.uid == userId
+                   && request.resource.size < 50 * 1024 * 1024 // 50MB limit
+                   && (request.resource.contentType.matches('image/.*')
+                       || request.resource.contentType.matches('video/.*'));
+    }
+  }
+}

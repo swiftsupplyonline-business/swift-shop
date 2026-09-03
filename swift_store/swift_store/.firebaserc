@@ -1,0 +1,7 @@
+﻿{
+  "projects": {
+    "dev": "swift-dev-3d3ae",
+    "staging": "swift-staging-3bed1",
+    "production": "swift-d1baa"
+  }
+}
