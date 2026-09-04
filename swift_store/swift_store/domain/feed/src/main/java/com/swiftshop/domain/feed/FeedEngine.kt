@@ -85,7 +85,16 @@ interface FeedRepository {
     fun getBookmarkedContent(uid: String): Flow<List<FeedItem>>
 }
 
-// â”€â”€â”€ Use Cases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Comment Repository ────────────────────────────────────────────────────────
+
+interface CommentRepository {
+    fun getRootComments(postId: String): Flow<List<com.swiftshop.core.model.Comment>>
+    fun getReplies(postId: String, parentCommentId: String): Flow<List<com.swiftshop.core.model.Comment>>
+    suspend fun addComment(comment: com.swiftshop.core.model.Comment): Result<String>
+    suspend fun deleteComment(commentId: String, postId: String, parentId: String?): Result<Unit>
+}
+
+// ─── Use Cases ─────────────────────────────────────────────────────────────────
 
 class GetShopFeedUseCase(private val repository: FeedRepository) {
     operator fun invoke(page: Int, pageSize: Int = 20) =
@@ -228,6 +237,23 @@ class ObserveBookmarkedIdsUseCase(private val repository: FeedRepository) {
 class GetBookmarksUseCase(private val repository: FeedRepository) {
     operator fun invoke(uid: String): Flow<List<FeedItem>> =
         repository.getBookmarkedContent(uid)
+}
+
+class GetCommentsUseCase(private val repository: CommentRepository) {
+    operator fun invoke(postId: String) = repository.getRootComments(postId)
+}
+
+class GetRepliesUseCase(private val repository: CommentRepository) {
+    operator fun invoke(postId: String, parentId: String) = repository.getReplies(postId, parentId)
+}
+
+class AddCommentUseCase(private val repository: CommentRepository) {
+    suspend operator fun invoke(comment: com.swiftshop.core.model.Comment) = repository.addComment(comment)
+}
+
+class DeleteCommentUseCase(private val repository: CommentRepository) {
+    suspend operator fun invoke(commentId: String, postId: String, parentId: String?) = 
+        repository.deleteComment(commentId, postId, parentId)
 }
 
 

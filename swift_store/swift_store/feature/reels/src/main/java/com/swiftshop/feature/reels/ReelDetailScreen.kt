@@ -29,14 +29,30 @@ class ReelDetailViewModel @Inject constructor(
     private val getPost: GetPostUseCase,
     private val likePost: LikePostUseCase,
     private val toggleBookmark: com.swiftshop.domain.feed.ToggleBookmarkUseCase,
-    private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase
+    private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase,
+    private val getComments: com.swiftshop.domain.feed.GetCommentsUseCase,
+    private val getReplies: com.swiftshop.domain.feed.GetRepliesUseCase,
+    private val addComment: com.swiftshop.domain.feed.AddCommentUseCase,
+    private val deleteComment: com.swiftshop.domain.feed.DeleteCommentUseCase
 ) : ViewModel() {
     private val reelId: String = checkNotNull(savedStateHandle["reelId"])
 
     private val _uiState = MutableStateFlow<UiState<FeedPost>>(UiState.Loading)
     val uiState = _uiState.asStateFlow()
 
-    init { load() }
+    private val _comments = MutableStateFlow<List<Comment>>(emptyList())
+    val comments = _comments.asStateFlow()
+
+    private val _replies = MutableStateFlow<Map<String, List<Comment>>>(emptyMap())
+    val replies = _replies.asStateFlow()
+
+    private val _currentUserId = MutableStateFlow<String?>(null)
+    val currentUserId = _currentUserId.asStateFlow()
+
+    init { 
+        load() 
+        loadComments()
+    }
 
     fun load() {
         viewModelScope.launch {
@@ -44,18 +60,58 @@ class ReelDetailViewModel @Inject constructor(
             combine(
                 flow { emit(getPost(reelId)) },
                 observeCurrentUser()
-            ) { postResult, _ ->
-                postResult.fold(
-                    onSuccess = { post ->
-                        if (post.type != PostType.REEL) {
-                            UiState.Error("Invalid content type")
-                        } else {
-                            UiState.Success(post)
-                        }
-                    },
-                    onFailure = { error -> UiState.Error(error.message ?: "Failed to load reel") }
-                )
+            ) { postResult, user ->
+                _currentUserId.value = user?.uid
+                if (postResult.isSuccess) {
+                    val post = postResult.getOrThrow()
+                    if (post.type != PostType.REEL) {
+                        UiState.Error("Invalid content type")
+                    } else {
+                        UiState.Success(post)
+                    }
+                } else {
+                    UiState.Error(postResult.exceptionOrNull()?.message ?: "Failed to load reel")
+                }
             }.collect { _uiState.value = it }
+        }
+    }
+
+    private fun loadComments() {
+        viewModelScope.launch {
+            getComments(reelId).collect { rootComments ->
+                _comments.value = rootComments
+                rootComments.forEach { root ->
+                    observeReplies(root.id)
+                }
+            }
+        }
+    }
+
+    private fun observeReplies(parentId: String) {
+        viewModelScope.launch {
+            getReplies(reelId, parentId).collect { replyList ->
+                _replies.value = _replies.value + (parentId to replyList)
+            }
+        }
+    }
+
+    fun postComment(text: String, parentId: String? = null) {
+        val uid = _currentUserId.value ?: return
+        viewModelScope.launch {
+            val comment = Comment(
+                postId = reelId,
+                authorId = uid,
+                text = text,
+                parentCommentId = parentId ?: "",
+                createdAt = System.currentTimeMillis()
+            )
+            addComment(comment)
+        }
+    }
+
+    fun removeComment(comment: Comment) {
+        viewModelScope.launch {
+            deleteComment(comment.id, reelId, comment.parentCommentId.ifBlank { null })
         }
     }
 
@@ -98,12 +154,29 @@ fun ReelDetailScreen(
             is UiState.Error -> ErrorState(state.message, onRetry = viewModel::load)
             is UiState.Success -> {
                 val reel = state.data
+                var showComments by remember { mutableStateOf(false) }
                 // Use the existing ReelItem component
                 ReelItem(
                     reel = reel, 
                     isActive = true,
-                    onBookmarkClick = viewModel::toggleLike // Wait, use correct toggle
+                    onBookmarkClick = viewModel::toggleBookmark,
+                    onCommentClick = { showComments = true }
                 )
+                
+                if (showComments) {
+                    val comments by viewModel.comments.collectAsState()
+                    val replies by viewModel.replies.collectAsState()
+                    val currentUserId by viewModel.currentUserId.collectAsState()
+                    CommentBottomSheet(
+                        postId = reel.id,
+                        onDismissRequest = { showComments = false },
+                        comments = comments,
+                        replies = replies,
+                        onSendComment = viewModel::postComment,
+                        onDeleteComment = viewModel::removeComment,
+                        currentUserId = currentUserId
+                    )
+                }
                 
                 // Override/Add Detail-specific controls if needed
                 IconButton(

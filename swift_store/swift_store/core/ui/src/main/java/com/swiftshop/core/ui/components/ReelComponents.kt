@@ -53,7 +53,8 @@ fun VerticalReelsPager(
 fun ReelItem(
     reel: FeedPost, 
     isActive: Boolean,
-    onBookmarkClick: () -> Unit = {}
+    onBookmarkClick: () -> Unit = {},
+    onCommentClick: () -> Unit = {}
 ) {
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         // Thumbnail as background / loading state
@@ -104,7 +105,11 @@ fun ReelItem(
                 tint = if (reel.isLikedByMe) Color.Red else Color.White
             )
             Spacer(Modifier.height(20.dp))
-            ReelAction(Icons.Default.ChatBubble, reel.commentCount.toString())
+            ReelAction(
+                Icons.Default.ChatBubble, 
+                reel.commentCount.toString(),
+                onClick = onCommentClick
+            )
             Spacer(Modifier.height(20.dp))
             ReelAction(Icons.Default.Share, "Share")
             Spacer(Modifier.height(20.dp))

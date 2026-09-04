@@ -268,6 +268,23 @@ object SocialModule {
 
     @Provides
     fun provideGetBookmarksUseCase(repo: FeedRepository) = GetBookmarksUseCase(repo)
+
+    @Provides
+    @Singleton
+    fun provideCommentRepository(firestore: com.google.firebase.firestore.FirebaseFirestore): CommentRepository =
+        com.swiftshop.data.firebase.FirebaseCommentRepository(firestore)
+
+    @Provides
+    fun provideGetCommentsUseCase(repo: CommentRepository) = GetCommentsUseCase(repo)
+
+    @Provides
+    fun provideGetRepliesUseCase(repo: CommentRepository) = GetRepliesUseCase(repo)
+
+    @Provides
+    fun provideAddCommentUseCase(repo: CommentRepository) = AddCommentUseCase(repo)
+
+    @Provides
+    fun provideDeleteCommentUseCase(repo: CommentRepository) = DeleteCommentUseCase(repo)
 }
 
 @Module

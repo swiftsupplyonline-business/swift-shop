@@ -306,14 +306,30 @@ class PostDetailViewModel @Inject constructor(
     private val likePost: LikePostUseCase,
     private val toggleBookmark: com.swiftshop.domain.feed.ToggleBookmarkUseCase,
     private val observeBookmarkedIds: com.swiftshop.domain.feed.ObserveBookmarkedIdsUseCase,
-    private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase
+    private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase,
+    private val getComments: com.swiftshop.domain.feed.GetCommentsUseCase,
+    private val getReplies: com.swiftshop.domain.feed.GetRepliesUseCase,
+    private val addComment: com.swiftshop.domain.feed.AddCommentUseCase,
+    private val deleteComment: com.swiftshop.domain.feed.DeleteCommentUseCase
 ) : ViewModel() {
     private val postId: String = checkNotNull(savedStateHandle["postId"])
 
     private val _uiState = MutableStateFlow<UiState<FeedPost>>(UiState.Loading)
     val uiState = _uiState.asStateFlow()
 
-    init { load() }
+    private val _comments = MutableStateFlow<List<Comment>>(emptyList())
+    val comments = _comments.asStateFlow()
+
+    private val _replies = MutableStateFlow<Map<String, List<Comment>>>(emptyMap())
+    val replies = _replies.asStateFlow()
+
+    private val _currentUserId = MutableStateFlow<String?>(null)
+    val currentUserId = _currentUserId.asStateFlow()
+
+    init { 
+        load() 
+        loadComments()
+    }
 
     fun load() {
         viewModelScope.launch {
@@ -321,6 +337,7 @@ class PostDetailViewModel @Inject constructor(
             
             // Combine post data with bookmark state
             observeCurrentUser().flatMapLatest { user ->
+                _currentUserId.value = user?.uid
                 if (user == null) {
                     flowOf<UiState<FeedPost>>(UiState.Error("User not signed in"))
                 } else {
@@ -328,21 +345,58 @@ class PostDetailViewModel @Inject constructor(
                         flow { emit(getPost(postId)) },
                         observeBookmarkedIds(user.uid)
                     ) { postResult, bookmarked ->
-                        postResult.fold(
-                            onSuccess = { post ->
-                                if (post.type == PostType.REEL) {
-                                    UiState.Error("Invalid content type")
-                                } else {
-                                    UiState.Success(post.copy(isBookmarkedByMe = post.id in bookmarked))
-                                }
-                            },
-                            onFailure = { error ->
-                                UiState.Error(error.message ?: "Failed to load post")
+                        if (postResult.isSuccess) {
+                            val post = postResult.getOrThrow()
+                            if (post.type == PostType.REEL) {
+                                UiState.Error("Invalid content type")
+                            } else {
+                                UiState.Success(post.copy(isBookmarkedByMe = post.id in bookmarked))
                             }
-                        )
+                        } else {
+                            UiState.Error(postResult.exceptionOrNull()?.message ?: "Failed to load post")
+                        }
                     }
                 }
             }.collect { _uiState.value = it }
+        }
+    }
+
+    private fun loadComments() {
+        viewModelScope.launch {
+            getComments(postId).collect { rootComments ->
+                _comments.value = rootComments
+                rootComments.forEach { root ->
+                    observeReplies(root.id)
+                }
+            }
+        }
+    }
+
+    private fun observeReplies(parentId: String) {
+        viewModelScope.launch {
+            getReplies(postId, parentId).collect { replyList ->
+                _replies.value = _replies.value + (parentId to replyList)
+            }
+        }
+    }
+
+    fun postComment(text: String, parentId: String? = null) {
+        val uid = _currentUserId.value ?: return
+        viewModelScope.launch {
+            val comment = Comment(
+                postId = postId,
+                authorId = uid,
+                text = text,
+                parentCommentId = parentId ?: "",
+                createdAt = System.currentTimeMillis()
+            )
+            addComment(comment)
+        }
+    }
+
+    fun removeComment(comment: Comment) {
+        viewModelScope.launch {
+            deleteComment(comment.id, postId, comment.parentCommentId.ifBlank { null })
         }
     }
 
@@ -350,9 +404,6 @@ class PostDetailViewModel @Inject constructor(
         val post = (_uiState.value as? UiState.Success)?.data ?: return
         viewModelScope.launch {
             likePost(post.id, !post.isLikedByMe).onSuccess {
-                // Reactive update from Firestore if possible, or optimistic copy
-                // Since load() observesCurrentUser/bookmarks, we just need to ensure getPost result is updated.
-                // For simple DEV purposes, manual copy in Success state is fine.
                 _uiState.value = UiState.Success(post.copy(
                     isLikedByMe = !post.isLikedByMe,
                     likeCount = if (post.isLikedByMe) post.likeCount - 1 else post.likeCount + 1
@@ -378,6 +429,7 @@ fun PostDetailScreen(
     viewModel: PostDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var showComments by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -435,8 +487,23 @@ fun PostDetailScreen(
                                     tint = if (post.isLikedByMe) androidx.compose.ui.graphics.Color.Red else LocalContentColor.current
                                 )
                             }
-                            IconButton(onClick = { /* Phase 14D: Comments */ }) {
+                            var showComments by remember { mutableStateOf(false) }
+                            IconButton(onClick = { showComments = true }) {
                                 Icon(Icons.Default.ChatBubbleOutline, "Comment")
+                            }
+                            if (showComments) {
+                                val comments by viewModel.comments.collectAsState()
+                                val replies by viewModel.replies.collectAsState()
+                                val currentUserId by viewModel.currentUserId.collectAsState()
+                                CommentBottomSheet(
+                                    postId = post.id,
+                                    onDismissRequest = { showComments = false },
+                                    comments = comments,
+                                    replies = replies,
+                                    onSendComment = viewModel::postComment,
+                                    onDeleteComment = viewModel::removeComment,
+                                    currentUserId = currentUserId
+                                )
                             }
                             IconButton(onClick = { /* Phase 14D: Share */ }) {
                                 Icon(Icons.Default.Share, "Share")
@@ -468,14 +535,38 @@ fun PostDetailScreen(
                             }
                             
                             Spacer(Modifier.height(24.dp))
-                            // Placeholder for comments section
-                            Text("Comments", style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                "Social interactions coming soon in Phase 14D.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(vertical = 16.dp)
-                            )
+                            // Comments Preview / List
+                            val comments by viewModel.comments.collectAsState()
+                            val replies by viewModel.replies.collectAsState()
+                            val currentUserId by viewModel.currentUserId.collectAsState()
+                            
+                            Text("Comments (${post.commentCount})", style = MaterialTheme.typography.titleSmall)
+                            
+                            if (comments.isEmpty()) {
+                                Text(
+                                    "No comments yet. Be the first to share your thoughts!",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 16.dp)
+                                )
+                            } else {
+                                Column {
+                                    comments.take(5).forEach { comment ->
+                                        CommentItem(
+                                            comment = comment,
+                                            replies = replies[comment.id] ?: emptyList(),
+                                            onReplyClick = { showComments = true },
+                                            onDeleteClick = viewModel::removeComment,
+                                            isOwner = comment.authorId == currentUserId
+                                        )
+                                    }
+                                    if (comments.size > 5) {
+                                        TextButton(onClick = { showComments = true }) {
+                                            Text("View all ${comments.size} comments")
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
