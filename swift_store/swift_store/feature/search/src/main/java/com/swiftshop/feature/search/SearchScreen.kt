@@ -19,6 +19,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.swiftshop.core.model.*
 import com.swiftshop.core.ui.components.*
+import com.swiftshop.core.ui.navigation.Screen
 import com.swiftshop.core.ui.theme.swiftColors
 
 @Composable
@@ -77,7 +78,7 @@ fun SearchScreen(
                             SearchSectionHeader("People")
                         }
                         items(state.users, key = { it.uid }) { user ->
-                            UserSearchItem(user = user, onClick = { onNavigate("user/${user.uid}") })
+                            UserSearchItem(user = user, onClick = { onNavigate(Screen.UserProfile.createRoute(user.uid)) })
                         }
                     }
 
@@ -86,7 +87,7 @@ fun SearchScreen(
                         items(state.listings, key = { it.id }) { listing ->
                             ListingSearchItem(
                                 listing = listing,
-                                onClick = { onNavigate("listing/${listing.id}") }
+                                onClick = { onNavigate(Screen.ListingDetail.createRoute(listing.id)) }
                             )
                         }
                     }
@@ -96,7 +97,7 @@ fun SearchScreen(
                         items(state.shops, key = { it.id }) { shop ->
                             ShopSearchItem(
                                 shop = shop,
-                                onClick = { onNavigate("shop/${shop.id}") }
+                                onClick = { onNavigate(Screen.ShopDetail.createRoute(shop.id)) }
                             )
                         }
                     }
@@ -106,7 +107,7 @@ fun SearchScreen(
                         items(state.posts, key = { it.id }) { post ->
                             PostSearchItem(
                                 post = post,
-                                onClick = { onNavigate("post/${post.id}") }
+                                onClick = { onNavigate(Screen.PostDetail.createRoute(post.id)) }
                             )
                         }
                     }

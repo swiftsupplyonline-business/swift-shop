@@ -199,7 +199,10 @@ fun SwiftShopNavHost(
 
         composable(
             route = Screen.DeliveryTracking.route,
-            arguments = listOf(navArgument("routeId") { type = NavType.StringType })
+            arguments = listOf(
+                navArgument("routeId") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("orderId") { type = NavType.StringType; nullable = true; defaultValue = null }
+            )
         ) { DeliveryTrackingScreen(navController = navController) }
 
         composable(Screen.Settings.route) {

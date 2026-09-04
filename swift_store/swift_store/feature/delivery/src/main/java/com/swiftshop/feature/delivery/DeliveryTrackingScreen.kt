@@ -21,6 +21,7 @@ import com.swiftshop.core.model.DeliveryRoute
 import com.swiftshop.core.model.DeliveryStatus
 import com.swiftshop.core.model.GeoPoint
 import com.swiftshop.core.ui.components.*
+import com.swiftshop.core.ui.navigation.Screen
 import com.swiftshop.core.ui.theme.SwiftShopColors
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -83,7 +84,7 @@ fun DeliveryTrackingScreen(
                     // Status panel
                     DeliveryStatusPanel(
                         route = state.route,
-                        onMessage = { navController.navigate("conversation/${state.route.conversationId}") }
+                        onMessage = { navController.navigate(Screen.Conversation.createRoute(state.route.conversationId)) }
                     )
                 }
             }

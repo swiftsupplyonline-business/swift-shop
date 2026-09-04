@@ -27,6 +27,16 @@ class FirebaseDeliveryRepository @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
+    override fun observeDeliveryRoutesByOrder(orderId: String): Flow<List<DeliveryRoute>> = callbackFlow {
+        val subscription = firestore.collection("deliveryRoutes")
+            .whereEqualTo("orderId", orderId)
+            .addSnapshotListener { snapshot, _ ->
+                val list = snapshot?.documents?.mapNotNull { it.toObject(FirestoreDeliveryRoute::class.java)?.toDomain(it.id) } ?: emptyList()
+                trySend(list)
+            }
+        awaitClose { subscription.remove() }
+    }
+
     override suspend fun requestDelivery(orderId: String, pickup: GeoPoint, dropoff: GeoPoint): Result<String> = runCatching {
         val data = mapOf(
             "orderId" to orderId,

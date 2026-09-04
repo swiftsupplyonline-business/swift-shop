@@ -292,7 +292,7 @@ fun OrderDetailScreen(
                             SwiftPrimaryButton(
                                 text = "Track Delivery",
                                 onClick = {
-                                    navController.navigate(Screen.DeliveryTracking.createRoute(order.id))
+                                    navController.navigate(Screen.DeliveryTracking.createRoute(orderId = order.id))
                                 },
                                 leadingIcon = {
                                     SwiftEntityIcon(

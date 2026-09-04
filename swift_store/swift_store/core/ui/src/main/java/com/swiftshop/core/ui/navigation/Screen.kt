@@ -38,8 +38,14 @@ sealed class Screen(val route: String) {
     data object Conversation : Screen("conversation/{conversationId}") {
         fun createRoute(id: String) = "conversation/$id"
     }
-    data object DeliveryTracking : Screen("delivery/{routeId}") {
-        fun createRoute(id: String) = "delivery/$id"
+    data object DeliveryTracking : Screen("delivery?routeId={routeId}&orderId={orderId}") {
+        fun createRoute(routeId: String? = null, orderId: String? = null): String {
+            return when {
+                routeId != null -> "delivery?routeId=$routeId"
+                orderId != null -> "delivery?orderId=$orderId"
+                else -> "delivery"
+            }
+        }
     }
     data object Settings : Screen("settings")
     data object EditProfile : Screen("edit_profile")
