@@ -30,6 +30,16 @@ class FirebaseCommerceRepository @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
+    override fun getAllShops(): Flow<List<Shop>> = callbackFlow {
+        val subscription = firestore.collection("shops")
+            .whereEqualTo("isActive", true)
+            .addSnapshotListener { snapshot, _ ->
+                val list = snapshot?.toObjects(FirestoreShop::class.java)?.map { it.toDomain() } ?: emptyList()
+                trySend(list)
+            }
+        awaitClose { subscription.remove() }
+    }
+
     override suspend fun getShop(shopId: String): Result<Shop> = runCatching {
         firestore.collection("shops").document(shopId).get().await()
             .toObject(FirestoreShop::class.java)?.toDomain() ?: throw NoSuchElementException("Shop not found")

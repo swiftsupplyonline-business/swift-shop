@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.swiftshop.core.model.UserTier
+import com.swiftshop.core.model.SwiftEntity
 import com.swiftshop.core.ui.theme.SwiftShopColors
 import com.swiftshop.core.ui.theme.swiftColors
 import com.swiftshop.core.ui.theme.LocalSwiftShopColors
@@ -117,17 +118,13 @@ fun SwiftUploadProgressBar(
 
 // ─── Semantic Entities ────────────────────────────────────────────────────────
 
-enum class SwiftEntity {
-    SHOP, PRODUCT, SERVICE, FORM, DELIVERY, PIN, SELLER, BUYER, PROVIDER
-}
-
 /**
  * Centralized component for rendering Swift entities using canonical icons.
  * Follows the visual identity established in the master blueprint.
  */
 @Composable
 fun SwiftEntityIcon(
-    entity: SwiftEntity,
+    entity: com.swiftshop.core.model.SwiftEntity,
     modifier: Modifier = Modifier,
     tint: Color = LocalContentColor.current,
     contentDescription: String? = null

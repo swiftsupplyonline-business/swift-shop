@@ -20,14 +20,12 @@ import androidx.navigation.NavController
 import com.swiftshop.core.model.DeliveryRoute
 import com.swiftshop.core.model.DeliveryStatus
 import com.swiftshop.core.model.GeoPoint
+import com.swiftshop.core.model.MapMarker
+import com.swiftshop.core.model.MapPolyline
+import com.swiftshop.core.model.SwiftEntity
 import com.swiftshop.core.ui.components.*
 import com.swiftshop.core.ui.navigation.Screen
 import com.swiftshop.core.ui.theme.SwiftShopColors
-import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.GeoPoint as OsmGeoPoint
-import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Marker
 
 @Composable
 fun DeliveryTrackingScreen(
@@ -52,11 +50,45 @@ fun DeliveryTrackingScreen(
             is DeliveryUiState.Loading -> LoadingState()
             is DeliveryUiState.Error -> ErrorState(state.message, onRetry = { viewModel.load() })
             is DeliveryUiState.Tracking -> {
+                val route = state.route
+                val markers = remember(route) {
+                    val list = mutableListOf<MapMarker>()
+                    if (route.pickupLocation.lat != 0.0) {
+                        list.add(MapMarker("pickup", route.pickupLocation, "Pickup", entityType = SwiftEntity.SHOP))
+                    }
+                    if (route.dropoffLocation.lat != 0.0) {
+                        list.add(MapMarker("destination", route.dropoffLocation, "Destination", entityType = SwiftEntity.BUYER))
+                    }
+                    route.driverCurrentLocation?.let {
+                        list.add(MapMarker("driver", it, "Driver", entityType = SwiftEntity.PROVIDER))
+                    }
+                    list
+                }
+                
+                val polylines = remember(route) {
+                    val points = mutableListOf<GeoPoint>()
+                    if (route.pickupLocation.lat != 0.0) points.add(route.pickupLocation)
+                    route.driverCurrentLocation?.let { points.add(it) }
+                    if (route.dropoffLocation.lat != 0.0) points.add(route.dropoffLocation)
+                    
+                    if (points.size >= 2) {
+                        listOf(MapPolyline("route", points))
+                    } else emptyList()
+                }
+
+                val mapState = rememberMapState(
+                    initialCenter = route.driverCurrentLocation 
+                        ?: route.pickupLocation.takeIf { it.lat != 0.0 } 
+                        ?: GeoPoint(-29.3167, 27.4833)
+                )
+
                 Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-                    // OSM Map
+                    // consolidated Map
                     Box(modifier = Modifier.weight(1f)) {
-                        OsmMapView(
-                            route = state.route,
+                        SwiftMapView(
+                            state = mapState,
+                            markers = markers,
+                            polylines = polylines,
                             modifier = Modifier.fillMaxSize()
                         )
 
@@ -90,66 +122,6 @@ fun DeliveryTrackingScreen(
             }
         }
     }
-}
-
-// ─── OSM Map View ─────────────────────────────────────────────────────────────
-
-@Composable
-fun OsmMapView(route: DeliveryRoute, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-
-    AndroidView(
-        factory = { ctx ->
-            Configuration.getInstance().userAgentValue = ctx.packageName
-            MapView(ctx).apply {
-                setTileSource(TileSourceFactory.MAPNIK)
-                setMultiTouchControls(true)
-                controller.setZoom(14.0)
-
-                // Set initial center to Maseru, Lesotho if no route
-                val center = route.pickupLocation.takeIf { it.lat != 0.0 }
-                    ?: GeoPoint(-29.3167, 27.4833) // Maseru default
-                controller.setCenter(OsmGeoPoint(center.lat, center.lng))
-
-                // Add pickup marker
-                if (route.pickupLocation.lat != 0.0) {
-                    val pickupMarker = Marker(this).apply {
-                        position = OsmGeoPoint(route.pickupLocation.lat, route.pickupLocation.lng)
-                        title = "Pickup"
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    }
-                    overlays.add(pickupMarker)
-                }
-
-                // Add dropoff marker
-                if (route.dropoffLocation.lat != 0.0) {
-                    val dropoffMarker = Marker(this).apply {
-                        position = OsmGeoPoint(route.dropoffLocation.lat, route.dropoffLocation.lng)
-                        title = "Destination"
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    }
-                    overlays.add(dropoffMarker)
-                }
-
-                // Add driver marker if tracking
-                route.driverCurrentLocation?.let { driverLoc ->
-                    val driverMarker = Marker(this).apply {
-                        position = OsmGeoPoint(driverLoc.lat, driverLoc.lng)
-                        title = "Driver"
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    }
-                    overlays.add(driverMarker)
-                }
-            }
-        },
-        update = { mapView ->
-            // Update driver location marker when position changes
-            route.driverCurrentLocation?.let { loc ->
-                mapView.controller.animateTo(OsmGeoPoint(loc.lat, loc.lng))
-            }
-        },
-        modifier = modifier
-    )
 }
 
 // ─── Status Panel ─────────────────────────────────────────────────────────────

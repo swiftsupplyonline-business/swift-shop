@@ -27,6 +27,7 @@ import coil.compose.AsyncImage
 import com.swiftshop.core.model.Listing
 import com.swiftshop.core.model.ListingType
 import com.swiftshop.core.model.Shop
+import com.swiftshop.core.model.SwiftEntity
 import com.swiftshop.core.ui.components.*
 import com.swiftshop.core.ui.navigation.Screen
 import com.swiftshop.core.ui.theme.swiftColors

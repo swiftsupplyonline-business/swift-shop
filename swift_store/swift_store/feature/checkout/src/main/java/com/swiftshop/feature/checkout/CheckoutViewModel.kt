@@ -43,6 +43,7 @@ class CheckoutViewModel @Inject constructor(
     private val removeFromCartUseCase: RemoveFromCartUseCase,
     private val clearCartUseCase: ClearCartUseCase,
     private val getDeliveryListings: GetDeliveryListingsUseCase,
+    private val discoverShops: DiscoverShopsUseCase,
     private val getOrder: GetOrderUseCase
 ) : ViewModel() {
 
@@ -59,6 +60,19 @@ class CheckoutViewModel @Inject constructor(
     // server-side from the listing — never trusted from the client.
     private val _selectedDeliveryListing = MutableStateFlow<DeliveryListing?>(null)
     val selectedDeliveryListing: StateFlow<DeliveryListing?> = _selectedDeliveryListing.asStateFlow()
+
+    private val _nearbyShops = MutableStateFlow<List<Shop>>(emptyList())
+    val shopMarkers: StateFlow<List<MapMarker>> = _nearbyShops.map { shops ->
+        shops.map { shop ->
+            MapMarker(
+                id = shop.id,
+                position = shop.location,
+                title = shop.name,
+                snippet = shop.category,
+                entityType = SwiftEntity.SHOP
+            )
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private var currentCartItems: List<CartItem> = emptyList()
 
@@ -79,6 +93,7 @@ class CheckoutViewModel @Inject constructor(
             rehydrateOrder(injectedOrderId)
         } else {
             observeProductCart()
+            observeNearbyShops()
         }
 
         // Recalculate fees whenever the selected delivery listing changes.
@@ -134,6 +149,14 @@ class CheckoutViewModel @Inject constructor(
                     _uiState.value = CheckoutUiState.Error(it.message ?: "Failed to load order")
                 }
             )
+        }
+    }
+
+    private fun observeNearbyShops() {
+        viewModelScope.launch {
+            discoverShops().collect { shops ->
+                _nearbyShops.value = shops.filter { it.location.isValid() }
+            }
         }
     }
     fun loadDeliveryListings() {

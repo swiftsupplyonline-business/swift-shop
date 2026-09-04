@@ -494,6 +494,31 @@ data class GeoPoint(
     fun isValid(): Boolean = lat in -90.0..90.0 && lng in -180.0..180.0 && lat.isFinite() && lng.isFinite()
 }
 
+@Serializable
+@Parcelize
+enum class SwiftEntity : Parcelable {
+    SHOP, PRODUCT, SERVICE, FORM, DELIVERY, PIN, SELLER, BUYER, PROVIDER
+}
+
+@Serializable
+@Parcelize
+data class MapMarker(
+    val id: String,
+    val position: GeoPoint,
+    val title: String = "",
+    val snippet: String = "",
+    val entityType: SwiftEntity? = null
+) : Parcelable
+
+@Serializable
+@Parcelize
+data class MapPolyline(
+    val id: String,
+    val points: List<GeoPoint>,
+    val color: String = "#3D5AFE", // Swift Brand Blue default
+    val width: Float = 5f
+) : Parcelable
+
 /**
  * An immutable snapshot of a physical location associated with a transaction.
  * Captures the exact coordinates and address context at order creation.

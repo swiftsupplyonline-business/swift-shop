@@ -16,16 +16,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import android.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.swiftshop.core.model.GeoPoint
+import com.swiftshop.core.model.MapMarker
+import com.swiftshop.core.model.MapPolyline
+import com.swiftshop.core.model.SwiftEntity
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint as OsmGeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polyline
 
 /**
  * State for [SwiftMapView]. Preserves camera position across recompositions.
@@ -69,7 +76,11 @@ fun rememberMapState(
 fun SwiftMapView(
     state: MapState,
     modifier: Modifier = Modifier,
-    onMapMoved: (GeoPoint) -> Unit = {}
+    markers: List<MapMarker> = emptyList(),
+    polylines: List<MapPolyline> = emptyList(),
+    showCenterPin: Boolean = false,
+    onMapMoved: (GeoPoint) -> Unit = {},
+    onMarkerClick: (MapMarker) -> Unit = {}
 ) {
     val context = LocalContext.current
     val mapView = remember { MapView(context) }
@@ -94,7 +105,7 @@ fun SwiftMapView(
                     controller.setZoom(state.zoom)
                     controller.setCenter(OsmGeoPoint(state.center.lat, state.center.lng))
 
-                    // Center detection via MapEventsOverlay (simplified center track)
+                    // Center detection via MapEventsOverlay
                     val overlay = MapEventsOverlay(object : MapEventsReceiver {
                         override fun singleTapConfirmedHelper(p: OsmGeoPoint?): Boolean = false
                         override fun longPressHelper(p: OsmGeoPoint?): Boolean = false
@@ -119,27 +130,102 @@ fun SwiftMapView(
                 }
             },
             update = { view ->
+                // Update camera
                 val currentCenter = view.mapCenter
-                if (currentCenter.latitude != state.center.lat || currentCenter.longitude != state.center.lng) {
+                if (Math.abs(currentCenter.latitude - state.center.lat) > 0.00001 || 
+                    Math.abs(currentCenter.longitude - state.center.lng) > 0.00001) {
                     view.controller.animateTo(OsmGeoPoint(state.center.lat, state.center.lng))
                 }
                 if (view.zoomLevelDouble != state.zoom) {
                     view.controller.setZoom(state.zoom)
                 }
+
+                // Update markers and polylines
+                // Simplified sync: clear all but the first (MapEventsOverlay)
+                while (view.overlays.size > 1) {
+                    view.overlays.removeAt(1)
+                }
+
+                markers.forEach { m ->
+                    val marker = Marker(view).apply {
+                        position = OsmGeoPoint(m.position.lat, m.position.lng)
+                        title = m.title
+                        snippet = m.snippet
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                        setOnMarkerClickListener { _, _ ->
+                            onMarkerClick(m)
+                            true
+                        }
+                        // Default icon logic
+                        m.entityType?.let { type ->
+                            icon = context.getDrawable(when(type) {
+                                SwiftEntity.SHOP -> android.R.drawable.ic_menu_myplaces
+                                SwiftEntity.PROVIDER -> android.R.drawable.ic_menu_directions
+                                SwiftEntity.BUYER -> android.R.drawable.ic_menu_view
+                                else -> android.R.drawable.ic_dialog_map
+                            })
+                        }
+                    }
+                    view.overlays.add(marker)
+                }
+
+                polylines.forEach { p ->
+                    val poly = Polyline(view).apply {
+                        setPoints(p.points.map { OsmGeoPoint(it.lat, it.lng) })
+                        outlinePaint.color = Color.parseColor(p.color)
+                        outlinePaint.strokeWidth = p.width
+                    }
+                    view.overlays.add(poly)
+                }
+                
+                view.invalidate()
             },
             modifier = Modifier.fillMaxSize()
         )
 
-        // Fixed Center Pin (visual only, map moves underneath)
-        SwiftEntityIcon(
-            entity = SwiftEntity.PIN,
+        // Map controls overlay
+        Column(
             modifier = Modifier
-                .align(Alignment.Center)
-                .padding(bottom = 24.dp) // Offset to make pin tip point to center
-                .size(40.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
+                .align(Alignment.TopEnd)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FloatingActionButton(
+                onClick = { state.center = GeoPoint(-29.3167, 27.4833) },
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(40.dp),
+                shape = CircleShape
+            ) {
+                Icon(Icons.Default.Place, "Center on Maseru")
+            }
+        }
+
+        // Fixed Center Pin (visual only, map moves underneath)
+        if (showCenterPin) {
+            SwiftEntityIcon(
+                entity = SwiftEntity.PIN,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(bottom = 24.dp) // Offset to make pin tip point to center
+                    .size(40.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
     }
+}
+
+private const val DEFAULT_PLACE_SNAP_RADIUS_METERS = 50.0
+
+private fun calculateDistanceMeters(p1: GeoPoint, p2: GeoPoint): Double {
+    val r = 6371000.0 // Earth radius in meters
+    val dLat = Math.toRadians(p2.lat - p1.lat)
+    val dLng = Math.toRadians(p2.lng - p1.lng)
+    val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(Math.toRadians(p1.lat)) * Math.cos(Math.toRadians(p2.lat)) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2)
+    val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return r * c
 }
 
 @Composable
@@ -164,10 +250,20 @@ private fun rememberMapLifecycleObserver(mapView: MapView): LifecycleEventObserv
 fun DropYourPinComponent(
     modifier: Modifier = Modifier,
     initialLocation: GeoPoint? = null,
+    markers: List<MapMarker> = emptyList(),
     onLocationConfirmed: (GeoPoint) -> Unit
 ) {
     val mapState = rememberMapState(initialCenter = initialLocation ?: GeoPoint(-29.3167, 27.4833))
     var currentSelection by remember { mutableStateOf(mapState.center) }
+    var snappedMarker by remember { mutableStateOf<MapMarker?>(null) }
+
+    LaunchedEffect(mapState.center) {
+        val near = markers.find { 
+            calculateDistanceMeters(it.position, mapState.center) <= DEFAULT_PLACE_SNAP_RADIUS_METERS 
+        }
+        snappedMarker = near
+        currentSelection = near?.position ?: mapState.center
+    }
 
     Column(modifier = modifier) {
         Box(modifier = Modifier
@@ -177,6 +273,8 @@ fun DropYourPinComponent(
         ) {
             SwiftMapView(
                 state = mapState,
+                markers = markers,
+                showCenterPin = true,
                 modifier = Modifier.fillMaxSize(),
                 onMapMoved = { currentSelection = it }
             )
@@ -204,12 +302,18 @@ fun DropYourPinComponent(
         SwiftCard(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    SwiftEntityIcon(SwiftEntity.PIN, tint = MaterialTheme.colorScheme.primary)
+                    SwiftEntityIcon(
+                        entity = snappedMarker?.entityType ?: SwiftEntity.PIN, 
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                     Spacer(Modifier.width(8.dp))
-                    Text("Selected Location", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        text = snappedMarker?.title ?: "Selected Location", 
+                        style = MaterialTheme.typography.titleSmall
+                    )
                 }
                 Text(
-                    text = "Lat: ${"%.5f".format(currentSelection.lat)}, Lng: ${"%.5f".format(currentSelection.lng)}",
+                    text = snappedMarker?.snippet ?: "Lat: ${"%.5f".format(currentSelection.lat)}, Lng: ${"%.5f".format(currentSelection.lng)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

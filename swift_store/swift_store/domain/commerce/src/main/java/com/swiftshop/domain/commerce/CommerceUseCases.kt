@@ -59,6 +59,7 @@ object TierEntitlements {
 interface CommerceRepository {
     // Shops
     fun getUserShops(userId: String): Flow<List<Shop>>
+    fun getAllShops(): Flow<List<Shop>>
     suspend fun getShop(shopId: String): Result<Shop>
     suspend fun createShop(shop: Shop): Result<String>
     suspend fun updateShop(shop: Shop): Result<Unit>

@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import coil.compose.AsyncImage
 import com.swiftshop.core.model.FeedPost
 import com.swiftshop.core.model.Listing
+import com.swiftshop.core.model.SwiftEntity
 
 @Composable
 fun ListingCard(

@@ -160,6 +160,9 @@ object CommerceModule {
     fun provideGetShopUseCase(repo: CommerceRepository) = GetShopUseCase(repo)
 
     @Provides
+    fun provideDiscoverShopsUseCase(repo: CommerceRepository) = DiscoverShopsUseCase(repo)
+
+    @Provides
     fun provideCreateShopUseCase(repo: CommerceRepository) = CreateShopUseCase(repo)
 
     @Provides

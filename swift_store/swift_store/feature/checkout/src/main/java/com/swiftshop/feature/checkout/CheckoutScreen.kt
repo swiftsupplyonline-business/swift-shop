@@ -39,6 +39,7 @@ fun CheckoutScreen(
     val uiState by viewModel.uiState.collectAsState()
     val deliveryListingsState by viewModel.deliveryListingsState.collectAsState()
     val selectedDeliveryListing by viewModel.selectedDeliveryListing.collectAsState()
+    val shopMarkers by viewModel.shopMarkers.collectAsState()
     var step by remember(uiState) {
         mutableStateOf(
             if (uiState is CheckoutUiState.AwaitingPayment) CheckoutStep.VERIFICATION
@@ -165,6 +166,7 @@ fun CheckoutScreen(
                 )
                 CheckoutStep.ADDRESS -> AddressStep(
                     address = viewModel.deliveryAddress,
+                    markers = shopMarkers,
                     onAddressUpdate = { viewModel.updateAddress(it) },
                     onLocationConfirmed = { viewModel.onLocationConfirmed(it) }
                 )
@@ -522,6 +524,7 @@ private fun OrderSummaryRow(label: String, value: String, isTotal: Boolean = fal
 @Composable
 private fun AddressStep(
     address: DeliveryAddress,
+    markers: List<MapMarker> = emptyList(),
     onAddressUpdate: (DeliveryAddress) -> Unit,
     onLocationConfirmed: (GeoPoint) -> Unit
 ) {
@@ -578,6 +581,7 @@ private fun AddressStep(
         DropYourPinComponent(
             modifier = Modifier.fillMaxWidth().height(300.dp),
             initialLocation = if (address.lat != 0.0) GeoPoint(address.lat, address.lng) else null,
+            markers = markers,
             onLocationConfirmed = onLocationConfirmed
         )
 

@@ -50,6 +50,10 @@ class OfflineFirstCommerceRepository @Inject constructor(
         .onEach { local.cacheShops(it) }
         .catch { emit(emptyList()) }
 
+    override fun getAllShops(): Flow<List<Shop>> = remote.getAllShops()
+        .onEach { local.cacheShops(it) }
+        .catch { emit(emptyList()) }
+
     override suspend fun getShop(shopId: String) = remote.getShop(shopId)
     override suspend fun createShop(shop: Shop) = remote.createShop(shop)
     override suspend fun updateShop(shop: Shop) = remote.updateShop(shop)
