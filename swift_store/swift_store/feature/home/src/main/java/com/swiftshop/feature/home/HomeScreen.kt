@@ -100,6 +100,7 @@ fun HomeScreen(
                     onLoadMore = { viewModel.loadMoreShop() },
                     onListingClick = { onNavigate(Screen.ListingDetail.createRoute(it)) },
                     onShopClick = { onNavigate(Screen.ShopDetail.createRoute(it)) },
+                    onBookmarkClick = { viewModel.onToggleBookmark(it, "LISTING") },
                     onCreateListing = { onNavigate(Screen.CreateListing.route) }
                 )
                 HomeTab.POSTS -> PostsTabContent(
@@ -108,13 +109,19 @@ fun HomeScreen(
                     onPostClick = { onNavigate(Screen.PostDetail.createRoute(it)) },
                     onUserClick = { onNavigate(Screen.UserProfile.createRoute(it)) },
                     onLikeClick = { postId, liked -> viewModel.toggleLike(postId, liked) },
+                    onBookmarkClick = { viewModel.onToggleBookmark(it, "POST") }, // Generic POST type for mapping
                     onCreatePost = { onNavigate(Screen.CreatePost.route) }
                 )
-                HomeTab.REELS -> ReelsTabContent(
-                    state = reelState,
-                    onLoadMore = { viewModel.loadMoreReels() },
-                    onCreateReel = { onNavigate(Screen.CreateReel.route) }
-                )
+                HomeTab.REELS -> {
+                    val uploadProgress by viewModel.reelUploadProgress.collectAsState(null)
+                    ReelsTabContent(
+                        state = reelState,
+                        onLoadMore = { viewModel.loadMoreReels() },
+                        onCreateReel = { onNavigate(Screen.CreateReel.route) },
+                        onBookmarkClick = { viewModel.onToggleBookmark(it, "REEL") },
+                        uploadProgress = uploadProgress
+                    )
+                }
             }
         }
     }
@@ -188,6 +195,7 @@ fun ShopTabContent(
     onLoadMore: () -> Unit,
     onListingClick: (String) -> Unit,
     onShopClick: (String) -> Unit,
+    onBookmarkClick: (String) -> Unit,
     onCreateListing: () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -215,7 +223,11 @@ fun ShopTabContent(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(items, key = { it.id }) { listing ->
-                        ListingCard(listing = listing, onClick = { onListingClick(listing.id) })
+                        ListingCard(
+                            listing = listing, 
+                            onClick = { onListingClick(listing.id) },
+                            onBookmarkClick = { onBookmarkClick(listing.id) }
+                        )
                     }
                     if (state is PagingState.LoadingMore) {
                         item(span = { GridItemSpan(2) }) {
@@ -253,6 +265,7 @@ fun PostsTabContent(
     onPostClick: (String) -> Unit,
     onUserClick: (String) -> Unit,
     onLikeClick: (String, Boolean) -> Unit,
+    onBookmarkClick: (String) -> Unit,
     onCreatePost: () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -275,7 +288,8 @@ fun PostsTabContent(
                             post = post,
                             onClick = { onPostClick(post.id) },
                             onUserClick = { onUserClick(post.authorId) },
-                            onLikeClick = { onLikeClick(post.id, !post.isLikedByMe) }
+                            onLikeClick = { onLikeClick(post.id, !post.isLikedByMe) },
+                            onBookmarkClick = { onBookmarkClick(post.id) }
                         )
                         Spacer(Modifier.height(8.dp))
                     }
@@ -301,7 +315,9 @@ fun PostsTabContent(
 fun ReelsTabContent(
     state: PagingState<FeedPost>,
     onLoadMore: () -> Unit,
-    onCreateReel: () -> Unit
+    onCreateReel: () -> Unit,
+    onBookmarkClick: (String) -> Unit,
+    uploadProgress: com.swiftshop.core.media.MediaUploadProgress? = null
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         when (state) {
@@ -309,7 +325,13 @@ fun ReelsTabContent(
             is PagingState.Empty -> EmptyState(
                 "No reels yet",
                 "Create a short video to showcase your products",
-                action = { SwiftPrimaryButton("Upload Reel", onClick = onCreateReel) }
+                action = { 
+                    SwiftGlassmorphicButton(onClick = onCreateReel) {
+                        Icon(Icons.Default.VideoCall, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Upload Reel")
+                    }
+                }
             )
             is PagingState.Error -> ErrorState(state.message, onRetry = onLoadMore)
             is PagingState.Success, is PagingState.LoadingMore -> {
@@ -319,97 +341,42 @@ fun ReelsTabContent(
                     else -> emptyList()
                 }
                 // Full-screen vertical pager for reels
-                VerticalReelsPager(reels = items, onLoadMore = onLoadMore)
+                VerticalReelsPager(
+                    reels = items, 
+                    onLoadMore = onLoadMore,
+                    onBookmarkClick = onBookmarkClick
+                )
             }
             else -> Unit
         }
 
-        FloatingActionButton(
-            onClick = onCreateReel,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-            containerColor = MaterialTheme.colorScheme.primary
-        ) {
-            Icon(Icons.Default.VideoCall, "Upload reel", tint = Color.White)
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun VerticalReelsPager(reels: List<FeedPost>, onLoadMore: () -> Unit) {
-    val pagerState = rememberPagerState(pageCount = { reels.size })
-
-    VerticalPager(
-        state = pagerState,
-        modifier = Modifier.fillMaxSize()
-    ) { index ->
-        if (index >= reels.size - 2) {
-            LaunchedEffect(Unit) { onLoadMore() }
-        }
-        ReelItem(reel = reels[index], isActive = index == pagerState.currentPage)
-    }
-}
-
-@Composable
-fun ReelItem(reel: FeedPost, isActive: Boolean) {
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        // Thumbnail as background / loading state
-        AsyncImage(
-            model = reel.thumbnailUrl,
-            contentDescription = "Reel thumbnail fallback",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
-        )
-
-        // Real video player
-        if (reel.videoUrl.isNotBlank()) {
-            SwiftVideoPlayer(
-                url = reel.videoUrl,
-                isActive = isActive,
-                modifier = Modifier.fillMaxSize()
+        // Upload Progress Overlay
+        uploadProgress?.let { progress ->
+            val p = when (progress) {
+                is com.swiftshop.core.media.MediaUploadProgress.InProgress -> progress.percent / 100f
+                else -> null
+            }
+            SwiftUploadProgressBar(
+                progress = p,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 16.dp)
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth()
             )
         }
 
-        // Overlay: author + actions
-        Column(
+        // Glassmorphic Uploader Button - Bottom Center
+        SwiftGlassmorphicButton(
+            onClick = onCreateReel,
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(16.dp)
-                .fillMaxWidth(0.75f)
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 32.dp)
+                .navigationBarsPadding()
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SwiftAvatar(url = reel.authorAvatarUrl, tier = reel.authorTier)
-                Spacer(Modifier.width(8.dp))
-                Text(reel.authorName, style = MaterialTheme.typography.titleSmall,
-                    color = Color.White)
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(reel.caption, style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.9f), maxLines = 3)
+            Icon(Icons.Default.VideoCall, null, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(12.dp))
+            Text("Upload Reel", style = MaterialTheme.typography.labelLarge)
         }
-
-        // Right-side action column
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            ReelAction(Icons.Default.Favorite, reel.likeCount.toString())
-            Spacer(Modifier.height(20.dp))
-            ReelAction(Icons.Default.ChatBubble, reel.commentCount.toString())
-            Spacer(Modifier.height(20.dp))
-            ReelAction(Icons.Default.Share, "Share")
-            Spacer(Modifier.height(20.dp))
-            ReelAction(Icons.Default.BookmarkBorder, "Save")
-        }
-    }
-}
-
-@Composable
-private fun ReelAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(icon, null, tint = Color.White, modifier = Modifier.size(28.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White)
     }
 }

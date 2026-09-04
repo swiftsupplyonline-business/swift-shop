@@ -59,7 +59,6 @@ fun ListingDetailScreen(
     val selectedSlot by viewModel.selectedSlot.collectAsState()
     val isAdding by viewModel.isAddingToCart.collectAsState()
     val actionState by viewModel.actionState.collectAsState()
-    val isBookmarked by viewModel.isBookmarked.collectAsState()
     val colors = MaterialTheme.swiftColors
     val snackbarHostState = remember { SnackbarHostState() }
     var activeSheet by remember { mutableStateOf<ListingType?>(null) }
@@ -133,12 +132,8 @@ fun ListingDetailScreen(
                             IconButton(onClick = { /* share */ }) {
                                 Icon(Icons.Default.Share, "Share")
                             }
-                            IconButton(onClick = viewModel::toggleBookmark) {
-                                Icon(
-                                    if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                    contentDescription = "Save",
-                                    tint = if (isBookmarked) MaterialTheme.colorScheme.primary else LocalContentColor.current
-                                )
+                            IconButton(onClick = { /* bookmark */ }) {
+                                Icon(Icons.Default.BookmarkBorder, "Save")
                             }
                         }
                     )
@@ -268,27 +263,19 @@ fun ListingDetailScreen(
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (state.shop?.logoUrl?.isNotBlank() == true) {
-                                SwiftAvatar(url = state.shop.logoUrl, size = 40.dp)
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    SwiftEntityIcon(
-                                        entity = SwiftEntity.SHOP,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Store, null, tint = Color.White, modifier = Modifier.size(20.dp))
                             }
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Sold by", style = MaterialTheme.typography.labelSmall)
-                                Text(state.shop?.name ?: "Official Shop", style = MaterialTheme.typography.titleSmall)
+                                Text("Official Shop", style = MaterialTheme.typography.titleSmall) // Replace with real name if available in DTO
                             }
                             Text("Visit Shop", 
                                 style = MaterialTheme.typography.labelLarge,
@@ -323,11 +310,9 @@ fun ListingDetailScreen(
                         if (listing.deliveryEstimateDays > 0) {
                             Spacer(Modifier.height(8.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                SwiftEntityIcon(
-                                    entity = SwiftEntity.DELIVERY,
+                                Icon(Icons.Default.LocalShipping, null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
+                                    modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text("Estimated delivery: ${listing.deliveryEstimateDays} days",
                                     style = MaterialTheme.typography.bodySmall,

@@ -27,10 +27,7 @@ import coil.compose.AsyncImage
 import com.swiftshop.core.model.Listing
 import com.swiftshop.core.model.ListingType
 import com.swiftshop.core.model.Shop
-import com.swiftshop.core.ui.components.EmptyState
-import com.swiftshop.core.ui.components.ErrorState
-import com.swiftshop.core.ui.components.ListingCard
-import com.swiftshop.core.ui.components.LoadingState
+import com.swiftshop.core.ui.components.*
 import com.swiftshop.core.ui.navigation.Screen
 import com.swiftshop.core.ui.theme.swiftColors
 
@@ -277,9 +274,11 @@ private fun ShopHeader(
                 } else {
                     Box(contentAlignment = Alignment.Center,
                         modifier = Modifier.background(MaterialTheme.colorScheme.primary)) {
-                        Icon(Icons.Default.Store, null,
+                        SwiftEntityIcon(
+                            entity = SwiftEntity.SHOP,
                             modifier = Modifier.size(38.dp),
-                            tint = Color.White)
+                            tint = Color.White
+                        )
                     }
                 }
             }

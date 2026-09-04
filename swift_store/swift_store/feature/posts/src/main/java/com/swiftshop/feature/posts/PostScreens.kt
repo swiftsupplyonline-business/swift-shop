@@ -24,17 +24,20 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
-import com.swiftshop.core.ui.components.SwiftPrimaryButton
+import com.swiftshop.core.model.*
+import com.swiftshop.core.ui.components.*
+import com.swiftshop.core.ui.navigation.Screen
+import com.swiftshop.domain.feed.GetPostUseCase
+import com.swiftshop.domain.feed.LikePostUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 
 sealed interface CreatePostState {
     data object Idle : CreatePostState
@@ -296,9 +299,86 @@ fun CreatePostScreen(
     }
 }
 
+@HiltViewModel
+class PostDetailViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
+    private val getPost: GetPostUseCase,
+    private val likePost: LikePostUseCase,
+    private val toggleBookmark: com.swiftshop.domain.feed.ToggleBookmarkUseCase,
+    private val observeBookmarkedIds: com.swiftshop.domain.feed.ObserveBookmarkedIdsUseCase,
+    private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase
+) : ViewModel() {
+    private val postId: String = checkNotNull(savedStateHandle["postId"])
+
+    private val _uiState = MutableStateFlow<UiState<FeedPost>>(UiState.Loading)
+    val uiState = _uiState.asStateFlow()
+
+    init { load() }
+
+    fun load() {
+        viewModelScope.launch {
+            _uiState.value = UiState.Loading
+            
+            // Combine post data with bookmark state
+            observeCurrentUser().flatMapLatest { user ->
+                if (user == null) {
+                    flowOf<UiState<FeedPost>>(UiState.Error("User not signed in"))
+                } else {
+                    combine(
+                        flow { emit(getPost(postId)) },
+                        observeBookmarkedIds(user.uid)
+                    ) { postResult, bookmarked ->
+                        postResult.fold(
+                            onSuccess = { post ->
+                                if (post.type == PostType.REEL) {
+                                    UiState.Error("Invalid content type")
+                                } else {
+                                    UiState.Success(post.copy(isBookmarkedByMe = post.id in bookmarked))
+                                }
+                            },
+                            onFailure = { error ->
+                                UiState.Error(error.message ?: "Failed to load post")
+                            }
+                        )
+                    }
+                }
+            }.collect { _uiState.value = it }
+        }
+    }
+
+    fun toggleLike() {
+        val post = (_uiState.value as? UiState.Success)?.data ?: return
+        viewModelScope.launch {
+            likePost(post.id, !post.isLikedByMe).onSuccess {
+                // Reactive update from Firestore if possible, or optimistic copy
+                // Since load() observesCurrentUser/bookmarks, we just need to ensure getPost result is updated.
+                // For simple DEV purposes, manual copy in Success state is fine.
+                _uiState.value = UiState.Success(post.copy(
+                    isLikedByMe = !post.isLikedByMe,
+                    likeCount = if (post.isLikedByMe) post.likeCount - 1 else post.likeCount + 1
+                ))
+            }
+        }
+    }
+
+    fun toggleBookmark() {
+        val post = (_uiState.value as? UiState.Success)?.data ?: return
+        viewModelScope.launch {
+            val user = observeCurrentUser().first() ?: return@launch
+            toggleBookmark(user.uid, post.id, post.type.name)
+            // State will update automatically via observeBookmarkedIds in load()
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PostDetailScreen(navController: androidx.navigation.NavController) {
+fun PostDetailScreen(
+    navController: androidx.navigation.NavController,
+    viewModel: PostDetailViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -312,7 +392,95 @@ fun PostDetailScreen(navController: androidx.navigation.NavController) {
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            Text("Post Detail", modifier = Modifier.padding(16.dp))
+            when (val state = uiState) {
+                is UiState.Loading -> LoadingState()
+                is UiState.Error -> ErrorState(state.message, onRetry = viewModel::load)
+                is UiState.Success -> {
+                    val post = state.data
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        // Author Header
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            SwiftAvatar(url = post.authorAvatarUrl, tier = post.authorTier)
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(post.authorName, style = MaterialTheme.typography.titleMedium)
+                                Text("Post", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        // Media
+                        if (post.mediaUrls.isNotEmpty()) {
+                            // Simplified: Just show the first image or a pager if multiple
+                            AsyncImage(
+                                model = post.mediaUrls.first(),
+                                contentDescription = null,
+                                contentScale = ContentScale.FillWidth,
+                                modifier = Modifier.fillMaxWidth().wrapContentHeight()
+                            )
+                        }
+
+                        // Actions
+                        Row(modifier = Modifier.padding(8.dp)) {
+                            IconButton(onClick = viewModel::toggleLike) {
+                                Icon(
+                                    if (post.isLikedByMe) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    contentDescription = "Like",
+                                    tint = if (post.isLikedByMe) androidx.compose.ui.graphics.Color.Red else LocalContentColor.current
+                                )
+                            }
+                            IconButton(onClick = { /* Phase 14D: Comments */ }) {
+                                Icon(Icons.Default.ChatBubbleOutline, "Comment")
+                            }
+                            IconButton(onClick = { /* Phase 14D: Share */ }) {
+                                Icon(Icons.Default.Share, "Share")
+                            }
+                            Spacer(Modifier.weight(1f))
+                            IconButton(onClick = viewModel::toggleBookmark) {
+                                Icon(
+                                    if (post.isBookmarkedByMe) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                    contentDescription = "Save",
+                                    tint = if (post.isBookmarkedByMe) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                                )
+                            }
+                        }
+
+                        // Content
+                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            Text("${post.likeCount} likes", style = MaterialTheme.typography.titleSmall)
+                            if (post.caption.isNotBlank()) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(post.caption, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            if (post.hashtags.isNotEmpty()) {
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    post.hashtags.joinToString(" ") { "#$it" },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            
+                            Spacer(Modifier.height(24.dp))
+                            // Placeholder for comments section
+                            Text("Comments", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "Social interactions coming soon in Phase 14D.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 16.dp)
+                            )
+                        }
+                    }
+                }
+                else -> Unit
+            }
         }
     }
 }

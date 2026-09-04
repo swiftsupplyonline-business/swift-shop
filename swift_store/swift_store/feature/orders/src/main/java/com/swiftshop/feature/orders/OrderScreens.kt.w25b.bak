@@ -229,8 +229,9 @@ fun OrderDetailScreen(
                                             .background(MaterialTheme.colorScheme.primaryContainer),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        SwiftEntityIcon(
-                                            entity = SwiftEntity.SERVICE,
+                                        Icon(
+                                            Icons.Default.CalendarToday,
+                                            contentDescription = null,
                                             tint = MaterialTheme.colorScheme.primary
                                         )
                                     }
@@ -294,12 +295,8 @@ fun OrderDetailScreen(
                                 onClick = {
                                     navController.navigate(Screen.DeliveryTracking.createRoute(order.id))
                                 },
-                                leadingIcon = {
-                                    SwiftEntityIcon(
-                                        entity = SwiftEntity.DELIVERY,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                },
+                                leadingIcon = { Icon(Icons.Default.LocalShipping, null,
+                                    modifier = Modifier.size(18.dp)) },
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }

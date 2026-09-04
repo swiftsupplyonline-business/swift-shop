@@ -188,8 +188,6 @@ data class Listing(
     val isSponsored: Boolean = false,
     val stockQuantity: Int = 1,
     val commitmentCount: Int = 0,
-    val bookmarkCount: Int = 0,
-    val isBookmarkedByMe: Boolean = false,
     val deliveryEstimateDays: Int = 0,
     val customFields: List<CustomField> = emptyList(),
     val createdAt: Long = 0L,
@@ -237,14 +235,6 @@ data class FeedPost(
     val isBookmarkedByMe: Boolean = false,
     val isSponsored: Boolean = false,
     val rankingScore: Double = 0.0,
-    val createdAt: Long = 0L
-) : Parcelable
-
-@Serializable
-@Parcelize
-data class Bookmark(
-    val contentId: String = "",
-    val contentType: String = "",
     val createdAt: Long = 0L
 ) : Parcelable
 
@@ -297,8 +287,6 @@ data class Order(
     val slotId: String? = null,
     val fulfillmentType: String? = null,
     val appointmentStartTime: Long? = null,
-    val originLocationSnapshot: LocationSnapshot? = null,
-    val destinationLocationSnapshot: LocationSnapshot? = null,
     val notes: String = "",
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
@@ -490,24 +478,7 @@ data class DeliveryRoute(
 data class GeoPoint(
     val lat: Double = 0.0,
     val lng: Double = 0.0
-) : Parcelable {
-    fun isValid(): Boolean = lat in -90.0..90.0 && lng in -180.0..180.0 && lat.isFinite() && lng.isFinite()
-}
-
-/**
- * An immutable snapshot of a physical location associated with a transaction.
- * Captures the exact coordinates and address context at order creation.
- */
-@Serializable
-@Parcelize
-data class LocationSnapshot(
-    val lat: Double,
-    val lng: Double,
-    val addressSnapshot: String = "",
-    val instructions: String = ""
-) : Parcelable {
-    fun toGeoPoint(): GeoPoint = GeoPoint(lat, lng)
-}
+) : Parcelable
 
 // â”€â”€â”€ Advertising â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

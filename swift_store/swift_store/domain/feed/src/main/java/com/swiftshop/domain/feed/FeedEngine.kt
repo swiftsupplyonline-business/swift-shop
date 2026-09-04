@@ -73,13 +73,16 @@ interface FeedRepository {
     fun getReelFeed(page: Int, pageSize: Int): Flow<PagingState<FeedPost>>
     fun getPersonalizedFeed(page: Int, pageSize: Int): Flow<PagingState<FeedItem>>
     fun getUserPosts(userId: String): Flow<List<FeedPost>>
+    fun getUserReels(userId: String): Flow<List<FeedPost>>
+    suspend fun getPost(postId: String): Result<FeedPost>
     suspend fun publishPost(post: FeedPost): Result<String>
     suspend fun recordImpression(contentId: String, contentType: String)
     suspend fun recordClick(contentId: String, contentType: String)
     suspend fun likePost(postId: String): Result<Unit>
     suspend fun unlikePost(postId: String): Result<Unit>
-    suspend fun bookmarkPost(postId: String): Result<Unit>
-    suspend fun unbookmarkPost(postId: String): Result<Unit>
+    suspend fun toggleBookmark(uid: String, contentId: String, type: String): Result<Unit>
+    fun observeBookmarkedIds(uid: String): Flow<Set<String>>
+    fun getBookmarkedContent(uid: String): Flow<List<FeedItem>>
 }
 
 // â”€â”€â”€ Use Cases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -94,6 +97,11 @@ class GetPostFeedUseCase(private val repository: FeedRepository) {
         repository.getPostFeed(page, pageSize)
 }
 
+class GetPostUseCase(private val repository: FeedRepository) {
+    suspend operator fun invoke(postId: String): Result<FeedPost> =
+        repository.getPost(postId)
+}
+
 class GetUserPostsUseCase(private val repository: FeedRepository) {
     operator fun invoke(userId: String) =
         repository.getUserPosts(userId)
@@ -101,7 +109,8 @@ class GetUserPostsUseCase(private val repository: FeedRepository) {
 
 class CreatePostUseCase(
     private val repository: FeedRepository,
-    private val mediaUploader: MediaUploader
+    private val mediaUploader: MediaUploader,
+    private val reelUploadManager: com.swiftshop.core.media.ReelUploadManager
 ) {
     suspend operator fun invoke(
         authorId: String,
@@ -115,58 +124,78 @@ class CreatePostUseCase(
         hashtags: List<String> = emptyList()
     ): Result<String> = coroutineScope {
         runCatching {
-            val post = if (type == PostType.REEL) {
-                val videoUri = mediaUris.firstOrNull() ?: throw IllegalArgumentException("Reel requires a video")
-                val progress = mediaUploader.uploadVideo(authorId, videoUri)
-                    .first { 
-                        it is MediaUploadProgress.Complete || 
-                        it is MediaUploadProgress.Failed 
+            val post = try {
+                if (type == PostType.REEL) {
+                    val videoUri = mediaUris.firstOrNull() ?: throw IllegalArgumentException("Reel requires a video")
+                    
+                    // Track progress via manager for background feed visibility
+                    var lastProgress: MediaUploadProgress? = null
+                    mediaUploader.uploadVideo(authorId, videoUri).collect { progress ->
+                        lastProgress = progress
+                        reelUploadManager.updateProgress(progress)
+                        if (progress is MediaUploadProgress.Complete || progress is MediaUploadProgress.Failed) {
+                            return@collect
+                        }
                     }
-                if (progress is MediaUploadProgress.Failed)
-                    throw IllegalStateException("Video upload failed: ${progress.message}")
-                
-                val asset = (progress as MediaUploadProgress.Complete).asset
-                FeedPost(
-                    authorId = authorId,
-                    authorName = authorName,
-                    authorAvatarUrl = authorAvatarUrl,
-                    authorTier = authorTier,
-                    shopId = shopId,
-                    type = type,
-                    caption = caption,
-                    videoUrl = asset.url,
-                    thumbnailUrl = asset.thumbnailUrl,
-                    hashtags = hashtags,
-                    createdAt = System.currentTimeMillis()
-                )
-            } else {
-                val mediaUrls = mediaUris.map { uri ->
-                    async {
-                        val progress = mediaUploader.uploadImage(authorId, uri)
-                            .first { 
-                                it is MediaUploadProgress.Complete || 
-                                it is MediaUploadProgress.Failed 
-                            }
-                        if (progress is MediaUploadProgress.Failed)
-                            throw IllegalStateException("Upload failed: ${progress.message}")
-                        (progress as MediaUploadProgress.Complete).asset.url
-                    }
-                }.awaitAll()
+                    
+                    if (lastProgress is MediaUploadProgress.Failed)
+                        throw IllegalStateException("Video upload failed: ${(lastProgress as MediaUploadProgress.Failed).message}")
+                    
+                    if (lastProgress !is MediaUploadProgress.Complete)
+                        throw IllegalStateException("Upload timed out or was cancelled")
 
-                FeedPost(
-                    authorId = authorId,
-                    authorName = authorName,
-                    authorAvatarUrl = authorAvatarUrl,
-                    authorTier = authorTier,
-                    shopId = shopId,
-                    type = type,
-                    caption = caption,
-                    mediaUrls = mediaUrls,
-                    hashtags = hashtags,
-                    createdAt = System.currentTimeMillis()
-                )
+                    val asset = (lastProgress as MediaUploadProgress.Complete).asset
+                    
+                    FeedPost(
+                        authorId = authorId,
+                        authorName = authorName,
+                        authorAvatarUrl = authorAvatarUrl,
+                        authorTier = authorTier,
+                        shopId = shopId,
+                        type = type,
+                        caption = caption,
+                        videoUrl = asset.url,
+                        thumbnailUrl = asset.thumbnailUrl,
+                        hashtags = hashtags,
+                        createdAt = System.currentTimeMillis()
+                    )
+                } else {
+                    val mediaUrls = mediaUris.map { uri ->
+                        async {
+                            val progress = mediaUploader.uploadImage(authorId, uri)
+                                .first { 
+                                    it is MediaUploadProgress.Complete || 
+                                    it is MediaUploadProgress.Failed 
+                                }
+                            if (progress is MediaUploadProgress.Failed)
+                                throw IllegalStateException("Upload failed: ${progress.message}")
+                            (progress as MediaUploadProgress.Complete).asset.url
+                        }
+                    }.awaitAll()
+
+                    FeedPost(
+                        authorId = authorId,
+                        authorName = authorName,
+                        authorAvatarUrl = authorAvatarUrl,
+                        authorTier = authorTier,
+                        shopId = shopId,
+                        type = type,
+                        caption = caption,
+                        mediaUrls = mediaUrls,
+                        hashtags = hashtags,
+                        createdAt = System.currentTimeMillis()
+                    )
+                }
+            } catch (e: Exception) {
+                // Ensure terminal failure clears progress
+                if (type == PostType.REEL) reelUploadManager.clear()
+                throw e
             }
-            repository.publishPost(post).getOrThrow()
+
+            repository.publishPost(post).getOrThrow().also {
+                // Success: clear progress state
+                if (type == PostType.REEL) reelUploadManager.clear()
+            }
         }
     }
 }
@@ -176,9 +205,29 @@ class GetReelFeedUseCase(private val repository: FeedRepository) {
         repository.getReelFeed(page, pageSize)
 }
 
+class GetUserReelsUseCase(private val repository: FeedRepository) {
+    operator fun invoke(userId: String) =
+        repository.getUserReels(userId)
+}
+
 class LikePostUseCase(private val repository: FeedRepository) {
     suspend operator fun invoke(postId: String, isLiked: Boolean): Result<Unit> =
         if (isLiked) repository.likePost(postId) else repository.unlikePost(postId)
+}
+
+class ToggleBookmarkUseCase(private val repository: FeedRepository) {
+    suspend operator fun invoke(uid: String, contentId: String, type: String): Result<Unit> =
+        repository.toggleBookmark(uid, contentId, type)
+}
+
+class ObserveBookmarkedIdsUseCase(private val repository: FeedRepository) {
+    operator fun invoke(uid: String): Flow<Set<String>> =
+        repository.observeBookmarkedIds(uid)
+}
+
+class GetBookmarksUseCase(private val repository: FeedRepository) {
+    operator fun invoke(uid: String): Flow<List<FeedItem>> =
+        repository.getBookmarkedContent(uid)
 }
 
 

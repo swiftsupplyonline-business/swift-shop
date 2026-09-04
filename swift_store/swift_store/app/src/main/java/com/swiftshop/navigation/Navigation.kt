@@ -31,6 +31,8 @@ import com.swiftshop.feature.posts.PostDetailScreen
 import com.swiftshop.feature.profile.ProfileScreen
 import com.swiftshop.feature.profile.EditProfileScreen
 import com.swiftshop.feature.reels.CreateReelScreen
+import com.swiftshop.feature.reels.ReelDetailScreen
+import com.swiftshop.feature.profile.BookmarksScreen
 import com.swiftshop.feature.search.SearchScreen
 import com.swiftshop.feature.settings.SettingsScreen
 import com.swiftshop.feature.shop.CreateListingScreen
@@ -105,6 +107,11 @@ fun SwiftShopNavHost(
             route = Screen.PostDetail.route,
             arguments = listOf(navArgument("postId") { type = NavType.StringType })
         ) { PostDetailScreen(navController = navController) }
+
+        composable(
+            route = Screen.ReelDetail.route,
+            arguments = listOf(navArgument("reelId") { type = NavType.StringType })
+        ) { ReelDetailScreen(onBack = { navController.popBackStack() }) }
 
         composable(
             route = Screen.ListingDetail.route,
@@ -201,6 +208,10 @@ fun SwiftShopNavHost(
 
         composable(Screen.EditProfile.route) {
             EditProfileScreen(navController = navController)
+        }
+
+        composable(Screen.Bookmarks.route) {
+            BookmarksScreen(navController = navController)
         }
 
         composable(Screen.CreateShop.route) {

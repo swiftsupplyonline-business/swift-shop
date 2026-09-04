@@ -36,6 +36,12 @@ service cloud.firestore {
         allow read: if isSignedIn() && isOwner(uid);
         allow write: if isSignedIn() && isOwner(uid) && isActive();
       }
+
+      // Bookmarks owned by user
+      match /bookmarks/{contentId} {
+        allow read: if isSignedIn() && isOwner(uid);
+        allow write: if isSignedIn() && isOwner(uid) && isActive();
+      }
     }
 
     // ── Profiles ───────────────────────────────────────────────────────────

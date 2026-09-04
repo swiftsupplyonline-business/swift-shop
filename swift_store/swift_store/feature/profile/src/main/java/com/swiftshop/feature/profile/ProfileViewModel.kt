@@ -20,6 +20,7 @@ sealed interface ProfileUiState {
         val shops: List<Shop>,
         val recentListings: List<Listing>,
         val recentPosts: List<FeedPost>,
+        val recentReels: List<FeedPost>,
         val isOwnProfile: Boolean
     ) : ProfileUiState
     data class Error(val message: String) : ProfileUiState
@@ -50,6 +51,9 @@ class ProfileViewModel @Inject constructor(
     private val commerceRepository: com.swiftshop.domain.commerce.CommerceRepository,
     private val getUserListings: com.swiftshop.domain.commerce.GetUserListingsUseCase,
     private val getUserPosts: com.swiftshop.domain.feed.GetUserPostsUseCase,
+    private val getUserReels: com.swiftshop.domain.feed.GetUserReelsUseCase,
+    private val toggleBookmark: com.swiftshop.domain.feed.ToggleBookmarkUseCase,
+    private val observeBookmarkedIds: com.swiftshop.domain.feed.ObserveBookmarkedIdsUseCase,
     private val initiateSubscription: com.swiftshop.domain.commerce.InitiateSubscriptionUseCase,
     private val signOut: SignOutUseCase
 ) : ViewModel() {
@@ -82,9 +86,15 @@ class ProfileViewModel @Inject constructor(
                         val uid = if (isOwnProfile) currentUser.uid else targetUid!!
 
                         observeProfile(uid).flatMapLatest { profile ->
-                            getUserPosts(uid).map { posts ->
+                            combine(
+                                getUserPosts(uid), 
+                                getUserReels(uid),
+                                observeBookmarkedIds(currentUser.uid)
+                            ) { posts, reels, bookmarked ->
                                 val shops = commerceRepository.getUserShops(uid).first()
                                 val listings = getUserListings(uid).getOrDefault(emptyList())
+                                    .map { it.copy(isBookmarkedByMe = it.id in bookmarked) }
+                                
                                 val wallet = if (isOwnProfile)
                                     runCatching { WalletUiState.Loaded(observeWallet(uid).first()) as WalletUiState }
                                         .getOrElse { WalletUiState.Error(it.message ?: "Wallet error") }
@@ -106,7 +116,8 @@ class ProfileViewModel @Inject constructor(
                                     profile = profile.copy(isFollowedByMe = isFollowing),
                                     shops = shops,
                                     recentListings = listings,
-                                    recentPosts = posts,
+                                    recentPosts = posts.map { it.copy(isBookmarkedByMe = it.id in bookmarked) },
+                                    recentReels = reels.map { it.copy(isBookmarkedByMe = it.id in bookmarked) },
                                     isOwnProfile = isOwnProfile
                                 ) as ProfileUiState
                             }
@@ -141,6 +152,13 @@ class ProfileViewModel @Inject constructor(
     }
 
     fun clearActionState() { _actionState.value = ActionState.Idle }
+
+    fun onToggleBookmark(contentId: String, type: String) {
+        viewModelScope.launch {
+            val user = observeCurrentUser().first() ?: return@launch
+            toggleBookmark(user.uid, contentId, type)
+        }
+    }
 
     fun signOut() { viewModelScope.launch { signOut.invoke() } }
 }

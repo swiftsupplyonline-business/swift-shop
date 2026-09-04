@@ -318,34 +318,11 @@ data class FirestoreListing(
     @get:PropertyName("isSponsored") @set:PropertyName("isSponsored") var isSponsored: Boolean = false,
     val stockQuantity: Int = 1,
     val commitmentCount: Int = 0,
-    val bookmarkCount: Int = 0,
     val deliveryEstimateDays: Int = 0,
     val createdAt: Any? = null,
     val updatedAt: Any? = null
 ) {
-    fun toDomain() = Listing(
-        id = id,
-        shopId = shopId,
-        sellerId = sellerId,
-        title = title,
-        description = description,
-        price = MoneyAmount(priceCurrency, priceMinorUnits),
-        imageUrls = imageUrls,
-        videoUrl = videoUrl,
-        category = category,
-        tags = tags,
-        listingType = runCatching { ListingType.valueOf(listingType) }.getOrDefault(ListingType.BUY),
-        isAvailable = isAvailable,
-        isSponsored = isSponsored,
-        stockQuantity = stockQuantity,
-        commitmentCount = commitmentCount,
-        bookmarkCount = bookmarkCount,
-        isBookmarkedByMe = false, // derived at read-time if needed
-        deliveryEstimateDays = deliveryEstimateDays,
-        customFields = emptyList(),
-        createdAt = tsToLong(createdAt),
-        updatedAt = tsToLong(updatedAt)
-    )
+    fun toDomain() = Listing(id, shopId, sellerId, title, description, MoneyAmount(priceCurrency, priceMinorUnits), imageUrls, videoUrl, category, tags, runCatching { ListingType.valueOf(listingType) }.getOrDefault(ListingType.BUY), isAvailable, isSponsored, stockQuantity, commitmentCount, deliveryEstimateDays, emptyList(), tsToLong(createdAt), tsToLong(updatedAt))
 }
 
 fun Listing.toFirestore() = mapOf(
@@ -354,9 +331,7 @@ fun Listing.toFirestore() = mapOf(
     "imageUrls" to imageUrls, "videoUrl" to videoUrl, "category" to category, "tags" to tags,
     "listingType" to listingType.name, "isAvailable" to isAvailable, "isSponsored" to isSponsored,
     "stockQuantity" to stockQuantity,
-    "commitmentCount" to commitmentCount,
-    "bookmarkCount" to bookmarkCount,
-    "deliveryEstimateDays" to deliveryEstimateDays,
+    "commitmentCount" to commitmentCount, "deliveryEstimateDays" to deliveryEstimateDays,
     "createdAt" to createdAt, "updatedAt" to updatedAt
 )
 
@@ -435,8 +410,6 @@ data class FirestoreOrder(
     val slotId: String? = null,
     val fulfillmentType: String? = null,
     val appointmentStartTime: Long? = null,
-    val originLocationSnapshot: FirestoreLocationSnapshot? = null,
-    val destinationLocationSnapshot: FirestoreLocationSnapshot? = null,
     val createdAt: Any? = null
 ) {
     fun toDomain() = Order(
@@ -454,8 +427,6 @@ data class FirestoreOrder(
         slotId = slotId,
         fulfillmentType = fulfillmentType,
         appointmentStartTime = appointmentStartTime,
-        originLocationSnapshot = originLocationSnapshot?.toDomain(),
-        destinationLocationSnapshot = destinationLocationSnapshot?.toDomain(),
         notes = "",
         createdAt = tsToLong(createdAt),
         updatedAt = 0L
@@ -492,22 +463,6 @@ data class FirestoreOrderItem(
     fun toDomain() = OrderItem(listingId, title, quantity, MoneyAmount(unitPriceCurrency, unitPriceMinorUnits), emptyMap())
 }
 
-data class FirestoreLocationSnapshot(
-    val lat: Double = 0.0,
-    val lng: Double = 0.0,
-    val addressSnapshot: String = "",
-    val instructions: String = ""
-) {
-    fun toDomain() = LocationSnapshot(lat, lng, addressSnapshot, instructions)
-}
-
-fun LocationSnapshot.toFirestore() = mapOf(
-    "lat" to lat,
-    "lng" to lng,
-    "addressSnapshot" to addressSnapshot,
-    "instructions" to instructions
-)
-
 data class FirestoreDeliveryAddress(
     val label: String = "",
     val lat: Double = 0.0,
@@ -528,8 +483,6 @@ fun Order.toFirestore() = mapOf(
     "currency" to total.currency, "status" to status.name, "paymentId" to paymentId,
     "deliveryAddress" to deliveryAddress.toFirestore(),
     "selectedDeliveryListingId" to selectedDeliveryListingId,
-    "originLocationSnapshot" to originLocationSnapshot?.toFirestore(),
-    "destinationLocationSnapshot" to destinationLocationSnapshot?.toFirestore(),
     "createdAt" to createdAt
 )
 

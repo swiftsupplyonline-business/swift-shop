@@ -5,10 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.swiftshop.core.model.FeedPost
 import com.swiftshop.core.model.Listing
 import com.swiftshop.core.model.PagingState
-import com.swiftshop.domain.feed.GetPostFeedUseCase
-import com.swiftshop.domain.feed.GetReelFeedUseCase
-import com.swiftshop.domain.feed.GetShopFeedUseCase
-import com.swiftshop.domain.feed.LikePostUseCase
+import com.swiftshop.domain.auth.ObserveCurrentUserUseCase
+import com.swiftshop.domain.feed.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -20,31 +18,72 @@ class HomeViewModel @Inject constructor(
     private val getShopFeed: GetShopFeedUseCase,
     private val getPostFeed: GetPostFeedUseCase,
     private val getReelFeed: GetReelFeedUseCase,
-    private val likePost: LikePostUseCase
+    private val likePost: LikePostUseCase,
+    private val toggleBookmark: ToggleBookmarkUseCase,
+    private val observeBookmarkedIds: ObserveBookmarkedIdsUseCase,
+    private val observeCurrentUser: ObserveCurrentUserUseCase,
+    private val reelUploadManager: com.swiftshop.core.media.ReelUploadManager
 ) : ViewModel() {
+
+    // ── Upload Progress ──────────────────────────────────────────────────
+    val reelUploadProgress = reelUploadManager.uploadProgress
+
+    private val _bookmarkedIds = MutableStateFlow<Set<String>>(emptySet())
 
     // ── Shop feed ──────────────────────────────────────────────────────────
     private val _shopState = MutableStateFlow<PagingState<Listing>>(PagingState.Loading)
-    val shopState: StateFlow<PagingState<Listing>> = _shopState.asStateFlow()
+    val shopState: StateFlow<PagingState<Listing>> = combine(_shopState, _bookmarkedIds) { state, bookmarked ->
+        if (state is PagingState.Success) {
+            state.copy(items = state.items.map { it.copy(isBookmarkedByMe = it.id in bookmarked) })
+        } else if (state is PagingState.LoadingMore) {
+            state.copy(items = state.items.map { it.copy(isBookmarkedByMe = it.id in bookmarked) })
+        } else state
+    }.stateIn(viewModelScope, SharingStarted.Lazily, PagingState.Loading)
+
     private var shopPage = 0
     private var shopItems = listOf<Listing>()
 
     // ── Post feed ─────────────────────────────────────────────────────────
     private val _postState = MutableStateFlow<PagingState<FeedPost>>(PagingState.Loading)
-    val postState: StateFlow<PagingState<FeedPost>> = _postState.asStateFlow()
+    val postState: StateFlow<PagingState<FeedPost>> = combine(_postState, _bookmarkedIds) { state, bookmarked ->
+        if (state is PagingState.Success) {
+            state.copy(items = state.items.map { it.copy(isBookmarkedByMe = it.id in bookmarked) })
+        } else if (state is PagingState.LoadingMore) {
+            state.copy(items = state.items.map { it.copy(isBookmarkedByMe = it.id in bookmarked) })
+        } else state
+    }.stateIn(viewModelScope, SharingStarted.Lazily, PagingState.Loading)
+
     private var postPage = 0
     private var postItems = listOf<FeedPost>()
 
     // ── Reel feed ─────────────────────────────────────────────────────────
     private val _reelState = MutableStateFlow<PagingState<FeedPost>>(PagingState.Loading)
-    val reelState: StateFlow<PagingState<FeedPost>> = _reelState.asStateFlow()
+    val reelState: StateFlow<PagingState<FeedPost>> = combine(_reelState, _bookmarkedIds) { state, bookmarked ->
+        if (state is PagingState.Success) {
+            state.copy(items = state.items.map { it.copy(isBookmarkedByMe = it.id in bookmarked) })
+        } else if (state is PagingState.LoadingMore) {
+            state.copy(items = state.items.map { it.copy(isBookmarkedByMe = it.id in bookmarked) })
+        } else state
+    }.stateIn(viewModelScope, SharingStarted.Lazily, PagingState.Loading)
+
     private var reelPage = 0
     private var reelItems = listOf<FeedPost>()
 
     init {
+        observeBookmarks()
         loadShop()
         loadPosts()
         loadReels()
+    }
+
+    private fun observeBookmarks() {
+        viewModelScope.launch {
+            observeCurrentUser().collectLatest { user ->
+                if (user != null) {
+                    observeBookmarkedIds(user.uid).collect { _bookmarkedIds.value = it }
+                }
+            }
+        }
     }
 
     private fun loadShop() {
@@ -188,6 +227,13 @@ class HomeViewModel @Inject constructor(
                 _postState.value = PagingState.Success(postItems,
                     (_postState.value as? PagingState.Success)?.hasMore ?: false)
             }
+        }
+    }
+
+    fun onToggleBookmark(contentId: String, type: String) {
+        viewModelScope.launch {
+            val user = observeCurrentUser().first() ?: return@launch
+            toggleBookmark(user.uid, contentId, type)
         }
     }
 }

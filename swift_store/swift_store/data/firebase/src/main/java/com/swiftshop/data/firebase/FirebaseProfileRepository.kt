@@ -40,9 +40,34 @@ class FirebaseProfileRepository @Inject constructor(
     }
 
     override suspend fun updateProfile(profile: UserProfile): Result<Unit> = runCatching {
-        firestore.collection("profiles").document(profile.uid)
-            .update(profile.toFirestoreUpdateMap())
-            .await()
+        val uid = profile.uid
+        if (uid.isBlank()) throw IllegalArgumentException("UID cannot be blank")
+
+        // 1. Coordinated Firestore Update (Atomic Batch)
+        val batch = firestore.batch()
+        
+        val profileRef = firestore.collection("profiles").document(uid)
+        val userRef = firestore.collection("users").document(uid)
+        
+        batch.update(profileRef, profile.toFirestoreUpdateMap())
+        batch.update(userRef, mapOf(
+            "displayName" to profile.displayName,
+            "photoUrl" to profile.avatarUrl,
+            "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+        ))
+        
+        batch.commit().await()
+
+        // 2. Coordinated Firebase Auth Update (Best effort sync)
+        auth.currentUser?.let { fbUser ->
+            if (fbUser.uid == uid) {
+                val profileUpdates = com.google.firebase.auth.userProfileChangeRequest {
+                    displayName = profile.displayName
+                    photoUri = android.net.Uri.parse(profile.avatarUrl)
+                }
+                fbUser.updateProfile(profileUpdates).await()
+            }
+        }
         Unit
     }
 

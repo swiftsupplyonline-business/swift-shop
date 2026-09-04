@@ -8,6 +8,9 @@ sealed class Screen(val route: String) {
     data object PostDetail : Screen("post/{postId}") {
         fun createRoute(postId: String) = "post/$postId"
     }
+    data object ReelDetail : Screen("reel/{reelId}") {
+        fun createRoute(reelId: String) = "reel/$reelId"
+    }
     data object ListingDetail : Screen("listing/{listingId}") {
         fun createRoute(id: String) = "listing/$id"
     }
@@ -40,6 +43,7 @@ sealed class Screen(val route: String) {
     }
     data object Settings : Screen("settings")
     data object EditProfile : Screen("edit_profile")
+    data object Bookmarks : Screen("bookmarks")
     data object ManageShop : Screen("manage_shop/{shopId}") {
         fun createRoute(id: String) = "manage_shop/$id"
     }

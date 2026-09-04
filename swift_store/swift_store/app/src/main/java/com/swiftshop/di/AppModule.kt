@@ -239,17 +239,35 @@ object SocialModule {
     fun provideGetPostFeedUseCase(repo: FeedRepository) = GetPostFeedUseCase(repo)
 
     @Provides
+    fun provideGetPostUseCase(repo: FeedRepository) = GetPostUseCase(repo)
+
+    @Provides
     fun provideGetReelFeedUseCase(repo: FeedRepository) = GetReelFeedUseCase(repo)
 
     @Provides
     fun provideGetUserPostsUseCase(repo: FeedRepository) = GetUserPostsUseCase(repo)
 
     @Provides
-    fun provideCreatePostUseCase(repo: FeedRepository, media: com.swiftshop.core.media.MediaUploader) = 
-        CreatePostUseCase(repo, media)
+    fun provideGetUserReelsUseCase(repo: FeedRepository) = GetUserReelsUseCase(repo)
+
+    @Provides
+    fun provideCreatePostUseCase(
+        repo: FeedRepository, 
+        media: com.swiftshop.core.media.MediaUploader,
+        reelUploadManager: com.swiftshop.core.media.ReelUploadManager
+    ) = CreatePostUseCase(repo, media, reelUploadManager)
 
     @Provides
     fun provideLikePostUseCase(repo: FeedRepository) = LikePostUseCase(repo)
+
+    @Provides
+    fun provideToggleBookmarkUseCase(repo: FeedRepository) = ToggleBookmarkUseCase(repo)
+
+    @Provides
+    fun provideObserveBookmarkedIdsUseCase(repo: FeedRepository) = ObserveBookmarkedIdsUseCase(repo)
+
+    @Provides
+    fun provideGetBookmarksUseCase(repo: FeedRepository) = GetBookmarksUseCase(repo)
 }
 
 @Module

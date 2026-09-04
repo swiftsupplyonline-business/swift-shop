@@ -61,6 +61,7 @@ fun ProfileScreen(
                 shops = state.shops,
                 listings = state.recentListings,
                 posts = state.recentPosts,
+                reels = state.recentReels,
                 wallet = walletState,
                 isOwnProfile = state.isOwnProfile,
                 onBack = { navController.popBackStack() },
@@ -70,8 +71,11 @@ fun ProfileScreen(
                 onShopClick = { navController.navigate(Screen.ShopDetail.createRoute(it)) },
                 onListingClick = { navController.navigate(Screen.ListingDetail.createRoute(it)) },
                 onPostClick = { navController.navigate(Screen.PostDetail.createRoute(it)) },
+                onReelClick = { navController.navigate(Screen.ReelDetail.createRoute(it)) },
+                onBookmarksClick = { navController.navigate(Screen.Bookmarks.route) },
                 onSettings = { navController.navigate(Screen.Settings.route) },
                 onEditProfile = { navController.navigate(Screen.EditProfile.route) },
+                onToggleBookmark = { id, type -> viewModel.onToggleBookmark(id, type) },
                 onCreatePost = { navController.navigate(Screen.CreatePost.route) },
                 onCreateListing = { navController.navigate(Screen.CreateListing.route) },
                 onCreateShop = { navController.navigate(Screen.CreateShop.route) },
@@ -98,6 +102,7 @@ private fun ProfileContent(
     shops: List<Shop>,
     listings: List<Listing>,
     posts: List<FeedPost>,
+    reels: List<FeedPost>,
     wallet: WalletUiState,
     isOwnProfile: Boolean,
     onBack: () -> Unit,
@@ -107,8 +112,11 @@ private fun ProfileContent(
     onShopClick: (String) -> Unit,
     onListingClick: (String) -> Unit,
     onPostClick: (String) -> Unit,
+    onReelClick: (String) -> Unit,
+    onBookmarksClick: () -> Unit,
     onSettings: () -> Unit,
     onEditProfile: () -> Unit,
+    onToggleBookmark: (String, String) -> Unit,
     onCreatePost: () -> Unit,
     onCreateListing: () -> Unit,
     onCreateShop: () -> Unit,
@@ -118,7 +126,7 @@ private fun ProfileContent(
 ) {
     val colors = MaterialTheme.swiftColors
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Listings", "Posts", "Shops")
+    val tabs = listOf("Listings", "Posts", "Reels", "Shops")
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -165,13 +173,24 @@ private fun ProfileContent(
                         Icon(Icons.Default.ArrowBack, "Back", tint = Color.White)
                     }
                     if (isOwnProfile) {
-                        IconButton(
-                            onClick = onSettings,
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.3f))
-                        ) {
-                            Icon(Icons.Default.Settings, "Settings", tint = Color.White)
+                        Row {
+                            IconButton(
+                                onClick = onBookmarksClick,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.3f))
+                            ) {
+                                Icon(Icons.Default.BookmarkBorder, "Saved", tint = Color.White)
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            IconButton(
+                                onClick = onSettings,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.3f))
+                            ) {
+                                Icon(Icons.Default.Settings, "Settings", tint = Color.White)
+                            }
                         }
                     }
                 }
@@ -389,18 +408,60 @@ private fun ProfileContent(
                 if (posts.isEmpty()) {
                     item { EmptyState("No posts", modifier = Modifier.height(200.dp)) }
                 } else {
-                    items(posts, key = { it.id }) { post ->
-                        com.swiftshop.core.ui.components.PostCard(
-                            post = post,
-                            onClick = { onPostClick(post.id) },
-                            onUserClick = {},
-                            onLikeClick = {}
-                        )
-                        Spacer(Modifier.height(8.dp))
+                        items(posts, key = { it.id }) { post ->
+                            com.swiftshop.core.ui.components.PostCard(
+                                post = post,
+                                onClick = { onPostClick(post.id) },
+                                onUserClick = {},
+                                onLikeClick = {},
+                                onBookmarkClick = { onToggleBookmark(post.id, post.type.name) }
+                            )
+                            Spacer(Modifier.height(8.dp))
+                        }
+                }
+            }
+            2 -> { // Reels
+                if (reels.isEmpty()) {
+                    item { EmptyState("No reels", modifier = Modifier.height(200.dp)) }
+                } else {
+                    item {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(3),
+                            contentPadding = PaddingValues(1.dp),
+                            horizontalArrangement = Arrangement.spacedBy(1.dp),
+                            verticalArrangement = Arrangement.spacedBy(1.dp),
+                            modifier = Modifier.height(
+                                ((reels.size / 3 + if (reels.size % 3 > 0) 1 else 0) * 160).dp
+                            )
+                        ) {
+                            items(reels, key = { it.id }) { reel ->
+                                Box(modifier = Modifier
+                                    .aspectRatio(0.75f)
+                                    .clickable { onReelClick(reel.id) }
+                                ) {
+                                    AsyncImage(
+                                        model = reel.thumbnailUrl,
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    // Play icon overlay
+                                    Icon(
+                                        Icons.Default.PlayArrow,
+                                        null,
+                                        tint = Color.White,
+                                        modifier = Modifier
+                                            .size(20.dp)
+                                            .align(Alignment.BottomStart)
+                                            .padding(4.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
-            2 -> { // Shops
+            3 -> { // Shops
                 if (shops.isEmpty()) {
                     item { EmptyState("No shops", modifier = Modifier.height(200.dp)) }
                 } else {

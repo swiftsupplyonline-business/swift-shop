@@ -30,6 +30,7 @@ dependencies {
     implementation(project(":domain:messaging"))
     implementation(project(":domain:advertising"))
     implementation(project(":domain:delivery"))
+    implementation(project(":core:media"))
     
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

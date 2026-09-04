@@ -162,11 +162,6 @@ class CheckoutViewModel @Inject constructor(
         _deliveryAddress.value = address
     }
 
-    fun onLocationConfirmed(geoPoint: GeoPoint) {
-        val current = _deliveryAddress.value
-        updateAddress(current.copy(lat = geoPoint.lat, lng = geoPoint.lng))
-    }
-
     private fun updateFees() {
         val delivery = _selectedDeliveryListing.value ?: return
         if (currentCartItems.isEmpty()) {

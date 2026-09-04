@@ -24,4 +24,7 @@ dependencies {
     // Video Playback
     implementation(libs.exoplayer.core)
     implementation(libs.exoplayer.ui)
+
+    // Maps
+    implementation(libs.osmdroid.android)
 }

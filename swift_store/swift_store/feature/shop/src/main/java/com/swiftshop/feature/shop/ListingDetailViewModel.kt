@@ -24,7 +24,7 @@ sealed interface ActionState {
 
 sealed interface ListingDetailState {
     data object Loading : ListingDetailState
-    data class Loaded(val listing: Listing) : ListingDetailState
+    data class Loaded(val listing: Listing, val shop: Shop? = null) : ListingDetailState
     data class Error(val message: String) : ListingDetailState
 }
 
@@ -32,16 +32,22 @@ sealed interface ListingDetailState {
 class ListingDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val getListing: GetListingUseCase,
+    private val getShop: GetShopUseCase,
     private val observeCurrentUser: ObserveCurrentUserUseCase,
     private val addToCartUseCase: com.swiftshop.domain.commerce.AddToCartUseCase,
     private val observeAvailableSlots: ObserveAvailableSlotsUseCase,
-    private val initiateBooking: InitiateBookingUseCase
+    private val initiateBooking: InitiateBookingUseCase,
+    private val toggleBookmark: com.swiftshop.domain.feed.ToggleBookmarkUseCase,
+    private val observeBookmarkedIds: com.swiftshop.domain.feed.ObserveBookmarkedIdsUseCase
 ) : ViewModel() {
 
     private val listingId: String = checkNotNull(savedStateHandle["listingId"])
 
     private val _uiState = MutableStateFlow<ListingDetailState>(ListingDetailState.Loading)
     val uiState: StateFlow<ListingDetailState> = _uiState.asStateFlow()
+
+    private val _isBookmarked = MutableStateFlow(false)
+    val isBookmarked = _isBookmarked.asStateFlow()
 
     private val _quantity = MutableStateFlow(1)
     val quantity = _quantity.asStateFlow()
@@ -65,6 +71,26 @@ class ListingDetailViewModel @Inject constructor(
 
     init {
         load()
+        observeBookmarkStatus()
+    }
+
+    private fun observeBookmarkStatus() {
+        viewModelScope.launch {
+            observeCurrentUser().collectLatest { user ->
+                if (user != null) {
+                    observeBookmarkedIds(user.uid).collect { ids ->
+                        _isBookmarked.value = listingId in ids
+                    }
+                }
+            }
+        }
+    }
+
+    fun toggleBookmark() {
+        viewModelScope.launch {
+            val user = observeCurrentUser().first() ?: return@launch
+            toggleBookmark(user.uid, listingId, "LISTING")
+        }
     }
 
     fun load() {
@@ -72,7 +98,8 @@ class ListingDetailViewModel @Inject constructor(
             _uiState.value = ListingDetailState.Loading
             getListing(listingId).fold(
                 onSuccess = { listing ->
-                    _uiState.value = ListingDetailState.Loaded(listing)
+                    val shop = getShop(listing.shopId).getOrNull()
+                    _uiState.value = ListingDetailState.Loaded(listing, shop)
                     if (listing.listingType == ListingType.SET_APPOINTMENT) {
                         observeSlots(listing.shopId)
                     }
