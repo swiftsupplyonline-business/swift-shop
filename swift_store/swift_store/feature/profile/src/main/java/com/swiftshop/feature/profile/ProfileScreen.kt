@@ -665,12 +665,28 @@ private fun ShopListItem(shop: Shop, onClick: () -> Unit) {
             .clickable(onClick = onClick)
     ) {
         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(
-                model = shop.logoUrl,
-                contentDescription = shop.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(56.dp).clip(MaterialTheme.shapes.large)
-            )
+            if (shop.logoUrl.isNotBlank()) {
+                AsyncImage(
+                    model = shop.logoUrl,
+                    contentDescription = shop.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(56.dp).clip(MaterialTheme.shapes.large)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(MaterialTheme.shapes.large)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    SwiftEntityIcon(
+                        entity = SwiftEntity.SHOP,
+                        modifier = Modifier.size(28.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(shop.name, style = MaterialTheme.typography.titleSmall)

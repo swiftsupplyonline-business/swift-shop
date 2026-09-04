@@ -3,13 +3,23 @@ package com.swiftshop.feature.shop
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import coil.compose.AsyncImage
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.swiftshop.core.ui.components.SwiftPrimaryButton
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -26,6 +36,16 @@ fun CreateShopScreen(
     val description by viewModel.description.collectAsState()
     val category by viewModel.category.collectAsState()
     val locationAddress by viewModel.locationAddress.collectAsState()
+    val logoUrl by viewModel.logoUrl.collectAsState()
+    val coverUrl by viewModel.coverUrl.collectAsState()
+    val uploadProgress by viewModel.uploadProgress.collectAsState()
+
+    val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { viewModel.onLogoSelected(it) }
+    }
+    val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { viewModel.onCoverSelected(it) }
+    }
 
     LaunchedEffect(uiState) {
         if (uiState is CreateShopUiState.Success) onCreated()
@@ -56,6 +76,67 @@ fun CreateShopScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            // Brand Section
+            Text("Shop Branding", style = MaterialTheme.typography.titleMedium)
+            
+            // Cover Photo Picker
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable { coverPicker.launch("image/*") },
+                contentAlignment = Alignment.Center
+            ) {
+                if (coverUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = coverUrl,
+                        contentDescription = "Cover",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.AddPhotoAlternate, null)
+                        Text("Add Cover Photo", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                if (uploadProgress != null) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter))
+                }
+            }
+
+            // Logo Picker
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .clickable { logoPicker.launch("image/*") },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (logoUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = logoUrl,
+                            contentDescription = "Logo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(Icons.Default.Store, null)
+                    }
+                }
+                Spacer(Modifier.width(16.dp))
+                Column {
+                    Text("Shop Logo", style = MaterialTheme.typography.titleSmall)
+                    Text("Recommended: Square 1:1", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+
+            HorizontalDivider()
 
             OutlinedTextField(
                 value = name,

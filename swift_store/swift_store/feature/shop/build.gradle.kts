@@ -20,6 +20,7 @@ android {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:ui"))
+    implementation(project(":core:media"))
     implementation(project(":domain:auth"))
     implementation(project(":domain:commerce"))
     implementation(project(":domain:wallet"))
@@ -42,4 +43,6 @@ dependencies {
     kapt(libs.hilt.android.compiler)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.timber)
+
+    implementation(libs.firebase.firestore)
 }

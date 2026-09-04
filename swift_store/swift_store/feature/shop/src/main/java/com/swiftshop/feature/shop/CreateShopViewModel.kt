@@ -7,6 +7,9 @@ import com.swiftshop.domain.auth.ObserveCurrentUserUseCase
 import com.swiftshop.domain.commerce.CommerceRepository
 import com.swiftshop.domain.commerce.CreateShopUseCase
 import com.swiftshop.domain.commerce.CanCreateShopUseCase
+import com.swiftshop.core.media.MediaUploader
+import com.swiftshop.core.media.MediaUploadProgress
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -25,11 +28,24 @@ class CreateShopViewModel @Inject constructor(
     private val observeProfile: com.swiftshop.domain.profile.ObserveProfileUseCase,
     private val createShop: CreateShopUseCase,
     private val canCreateShop: CanCreateShopUseCase,
-    private val repository: CommerceRepository
+    private val repository: com.swiftshop.domain.commerce.CommerceRepository,
+    private val mediaUploader: MediaUploader,
+    private val firestore: FirebaseFirestore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<CreateShopUiState>(CreateShopUiState.Idle)
     val uiState = _uiState.asStateFlow()
+
+    private val _shopId = firestore.collection("shops").document().id
+
+    private val _logoUrl = MutableStateFlow("")
+    val logoUrl = _logoUrl.asStateFlow()
+
+    private val _coverUrl = MutableStateFlow("")
+    val coverUrl = _coverUrl.asStateFlow()
+
+    private val _uploadProgress = MutableStateFlow<Int?>(null)
+    val uploadProgress = _uploadProgress.asStateFlow()
 
     private val _canCreate = MutableStateFlow(true)
     val canCreate = _canCreate.asStateFlow()
@@ -71,6 +87,39 @@ class CreateShopViewModel @Inject constructor(
     fun onCategoryChange(v: String) { _category.value = v }
     fun onLocationAddressChange(v: String) { _locationAddress.value = v }
 
+    fun onLogoSelected(uri: android.net.Uri) {
+        uploadMedia(uri, isLogo = true)
+    }
+
+    fun onCoverSelected(uri: android.net.Uri) {
+        uploadMedia(uri, isLogo = false)
+    }
+
+    private fun uploadMedia(uri: android.net.Uri, isLogo: Boolean) {
+        viewModelScope.launch {
+            val user = observeCurrentUser().first() ?: return@launch
+            val fileName = if (isLogo) "logo.jpg" else "cover.jpg"
+            val customPath = "media/${user.uid}/shops/$_shopId/$fileName"
+            
+            mediaUploader.uploadImage(user.uid, uri, customPath).collect { progress: MediaUploadProgress ->
+                when (progress) {
+                    is MediaUploadProgress.InProgress -> {
+                        _uploadProgress.value = progress.percent
+                    }
+                    is MediaUploadProgress.Complete -> {
+                        if (isLogo) _logoUrl.value = progress.asset.url
+                        else _coverUrl.value = progress.asset.url
+                        _uploadProgress.value = null
+                    }
+                    is MediaUploadProgress.Failed -> {
+                        _uiState.value = CreateShopUiState.Error("Upload failed: ${progress.message}")
+                        _uploadProgress.value = null
+                    }
+                }
+            }
+        }
+    }
+
     fun submit() {
         viewModelScope.launch {
             if (_name.value.isBlank()) {
@@ -86,11 +135,14 @@ class CreateShopViewModel @Inject constructor(
             }
 
             val newShop = Shop(
+                id = _shopId,
                 ownerId = user.uid,
                 name = _name.value.trim(),
                 description = _description.value.trim(),
                 category = _category.value,
                 locationAddress = _locationAddress.value.trim(),
+                logoUrl = _logoUrl.value,
+                coverUrl = _coverUrl.value,
                 isActive = true,
                 createdAt = System.currentTimeMillis()
             )

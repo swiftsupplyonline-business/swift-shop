@@ -32,8 +32,8 @@ import javax.inject.Singleton
  * the original asset and the backend gap register item is what's still open.
  */
 interface MediaUploader {
-    fun uploadImage(ownerId: String, localUri: Uri): Flow<MediaUploadProgress>
-    fun uploadVideo(ownerId: String, localUri: Uri): Flow<MediaUploadProgress>
+    fun uploadImage(ownerId: String, localUri: Uri, customPath: String? = null): Flow<MediaUploadProgress>
+    fun uploadVideo(ownerId: String, localUri: Uri, customPath: String? = null): Flow<MediaUploadProgress>
 }
 
 @Singleton
@@ -42,16 +42,16 @@ class FirebaseMediaUploader @Inject constructor(
     private val storage: FirebaseStorage
 ) : MediaUploader {
 
-    override fun uploadImage(ownerId: String, localUri: Uri): Flow<MediaUploadProgress> =
-        upload(ownerId, localUri, MediaType.IMAGE)
+    override fun uploadImage(ownerId: String, localUri: Uri, customPath: String?): Flow<MediaUploadProgress> =
+        upload(ownerId, localUri, MediaType.IMAGE, customPath)
 
-    override fun uploadVideo(ownerId: String, localUri: Uri): Flow<MediaUploadProgress> =
-        upload(ownerId, localUri, MediaType.VIDEO)
+    override fun uploadVideo(ownerId: String, localUri: Uri, customPath: String?): Flow<MediaUploadProgress> =
+        upload(ownerId, localUri, MediaType.VIDEO, customPath)
 
-    private fun upload(ownerId: String, localUri: Uri, type: MediaType): Flow<MediaUploadProgress> = callbackFlow {
+    private fun upload(ownerId: String, localUri: Uri, type: MediaType, customPath: String? = null): Flow<MediaUploadProgress> = callbackFlow {
         val assetId = UUID.randomUUID().toString()
         val extension = if (type == MediaType.VIDEO) "mp4" else "jpg"
-        val path = "media/$ownerId/$assetId.$extension"
+        val path = customPath ?: "media/$ownerId/$assetId.$extension"
         val ref: StorageReference = storage.reference.child(path)
 
         val thumbnailUrl = if (type == MediaType.VIDEO) {

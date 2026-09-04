@@ -84,7 +84,7 @@ fun ShopDetailScreen(
                         // Owner: manage shop
                         if (isOwner) {
                             IconButton(onClick = {
-                                navController.navigate("manage_shop/${shop.id}")
+                                navController.navigate(Screen.ManageShop.createRoute(shop.id))
                             }) {
                                 Icon(Icons.Default.Settings, "Manage Shop")
                             }
