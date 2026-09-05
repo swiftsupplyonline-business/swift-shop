@@ -60,9 +60,6 @@ to regenerate everything that was removed.
 - Nothing has been deployed. Everything below still needs `firebase deploy`.
 - `createListing` — Android's "Create Listing" flow writes directly to Firestore
   instead of calling the Cloud Function (server-authority gap) — not touched yet.
-- Create Post / Create Reel screens — still stubs.
-- Delivery map UI, profile page buttons — still non-functional (this pass only
-  built the missing backend functions they'll eventually call).
 - RUNTIME-002 — still unverified at the code level.
 - Search Title results — still broken.
 

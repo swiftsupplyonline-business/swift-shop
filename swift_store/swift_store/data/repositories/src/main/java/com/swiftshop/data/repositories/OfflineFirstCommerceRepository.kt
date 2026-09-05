@@ -46,6 +46,8 @@ class OfflineFirstCommerceRepository @Inject constructor(
 
     // ─── Shops (pass-through — no local cache needed, low read volume) ────
 
+    override fun generateShopId(): String = remote.generateShopId()
+
     override fun getUserShops(userId: String) = remote.getUserShops(userId)
         .onEach { local.cacheShops(it) }
         .catch { emit(emptyList()) }
@@ -57,6 +59,7 @@ class OfflineFirstCommerceRepository @Inject constructor(
     override suspend fun getShop(shopId: String) = remote.getShop(shopId)
     override suspend fun createShop(shop: Shop) = remote.createShop(shop)
     override suspend fun updateShop(shop: Shop) = remote.updateShop(shop)
+    override suspend fun deleteShop(shopId: String) = remote.deleteShop(shopId)
 
     // ─── Listings — the actual offline-first path ─────────────────────────
 

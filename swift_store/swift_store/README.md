@@ -159,7 +159,7 @@ See `ARCHITECTURE.md` for full diagram.
 | Mopay adapter | Mock only | Wire `MopayAdapter` in `NetworkModule` when Mopay credentials available |
 | E2E Encryption | NOT implemented | Messaging uses Firestore (TLS in transit, not E2EE). Do not claim E2EE. |
 | Phone auth | Partially wired | Requires Activity context for `PhoneAuthProvider` |
-| Media pipeline | Stub | `CreatePostScreen` / `CreateReelScreen` show wiring points; full CameraX + compression needed |
+| Media pipeline | Implemented | `CreatePostScreen` / `CreateReelScreen` are functional; wire additional compression if needed |
 | Search ranking | Mock delay | `SearchViewModel` returns empty after 500ms; wire Firestore full-text (Algolia/Typesense) |
 | Mapbox | Not wired | OSM (osmdroid) is wired; Mapbox requires license token |
 | Push notifications | FCM wired | Token sync WorkManager job needs implementing |

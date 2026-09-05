@@ -16,6 +16,11 @@ import kotlinx.coroutines.Job
 import java.util.UUID
 import javax.inject.Inject
 
+// CART → DELIVERY → ADDRESS → PAYMENT → VERIFICATION → CONFIRMATION
+// Delivery is now a first-class step: the buyer selects an available
+// delivery listing before proceeding to address entry and payment.
+enum class CheckoutStep { CART, DELIVERY, ADDRESS, PAYMENT, VERIFICATION, CONFIRMATION }
+
 sealed interface CheckoutUiState {
     data object Loading : CheckoutUiState
     data class CartLoaded(val items: List<CartItem>, val summary: OrderSummary) : CheckoutUiState
@@ -49,6 +54,9 @@ class CheckoutViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<CheckoutUiState>(CheckoutUiState.Loading)
     val uiState: StateFlow<CheckoutUiState> = _uiState.asStateFlow()
+
+    private val _currentStep = MutableStateFlow(CheckoutStep.CART)
+    val currentStep: StateFlow<CheckoutStep> = _currentStep.asStateFlow()
 
     // ── Delivery listing state ────────────────────────────────────────────────
     // Loaded when the buyer reaches the delivery selection step.
@@ -139,8 +147,10 @@ class CheckoutViewModel @Inject constructor(
                             paymentUrl = order.paymentUrl!!,
                             sessionId = order.mopaySessionId!!
                         )
+                        _currentStep.value = CheckoutStep.VERIFICATION
                     } else if (order.status != OrderStatus.PENDING) {
                         _uiState.value = CheckoutUiState.OrderPlaced(order.id)
+                        _currentStep.value = CheckoutStep.CONFIRMATION
                     } else {
                         _uiState.value = CheckoutUiState.Error("Order not ready for payment")
                     }
@@ -178,6 +188,10 @@ class CheckoutViewModel @Inject constructor(
 
     fun selectDeliveryListing(listing: DeliveryListing) {
         _selectedDeliveryListing.value = listing
+    }
+
+    fun setStep(step: CheckoutStep) {
+        _currentStep.value = step
     }
 
     fun updateAddress(address: DeliveryAddress) {
@@ -264,8 +278,10 @@ class CheckoutViewModel @Inject constructor(
                             initiation.paymentUrl!!,
                             initiation.mopaySessionId!!
                         )
+                        _currentStep.value = CheckoutStep.VERIFICATION
                     } else {
                         _uiState.value = CheckoutUiState.OrderPlaced(initiation.orderId)
+                        _currentStep.value = CheckoutStep.CONFIRMATION
                     }
                 },
                 onFailure = { _uiState.value = CheckoutUiState.Error(it.message ?: "Order failed") }
@@ -286,6 +302,7 @@ class CheckoutViewModel @Inject constructor(
             verifyMopayPayment(sessionId).fold(
                 onSuccess = {
                     _uiState.value = CheckoutUiState.OrderPlaced(orderId)
+                    _currentStep.value = CheckoutStep.CONFIRMATION
                 },
                 onFailure = {
                     _uiState.value = CheckoutUiState.Error(it.message ?: "Verification failed")

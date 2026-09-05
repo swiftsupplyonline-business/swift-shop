@@ -169,6 +169,12 @@ object CommerceModule {
     fun provideUpdateShopUseCase(repo: CommerceRepository) = UpdateShopUseCase(repo)
 
     @Provides
+    fun provideDeleteShopUseCase(repo: CommerceRepository) = DeleteShopUseCase(repo)
+
+    @Provides
+    fun provideDeleteListingUseCase(repo: CommerceRepository) = DeleteListingUseCase(repo)
+
+    @Provides
     fun provideGetShopListingsUseCase(repo: CommerceRepository) = GetShopListingsUseCase(repo)
 
     @Provides
@@ -271,6 +277,9 @@ object SocialModule {
 
     @Provides
     fun provideGetBookmarksUseCase(repo: FeedRepository) = GetBookmarksUseCase(repo)
+
+    @Provides
+    fun provideDeleteContentUseCase(repo: FeedRepository) = DeleteContentUseCase(repo)
 
     @Provides
     @Singleton

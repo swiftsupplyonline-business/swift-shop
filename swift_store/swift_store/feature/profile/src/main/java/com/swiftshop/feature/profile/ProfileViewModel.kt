@@ -161,4 +161,6 @@ class ProfileViewModel @Inject constructor(
     }
 
     fun signOut() { viewModelScope.launch { signOut.invoke() } }
+
+    fun observeCurrentUser(): Flow<User?> = observeCurrentUser.invoke()
 }

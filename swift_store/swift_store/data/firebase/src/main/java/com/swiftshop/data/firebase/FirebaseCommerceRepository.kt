@@ -20,6 +20,8 @@ class FirebaseCommerceRepository @Inject constructor(
     private val functions: FirebaseFunctions
 ) : CommerceRepository {
 
+    override fun generateShopId(): String = firestore.collection("shops").document().id
+
     override fun getUserShops(userId: String): Flow<List<Shop>> = callbackFlow {
         val subscription = firestore.collection("shops")
             .whereEqualTo("ownerId", userId)
@@ -53,6 +55,11 @@ class FirebaseCommerceRepository @Inject constructor(
 
     override suspend fun updateShop(shop: Shop): Result<Unit> = runCatching {
         firestore.collection("shops").document(shop.id).update(shop.toUpdateMap()).await()
+    }
+
+    override suspend fun deleteShop(shopId: String): Result<Unit> = runCatching {
+        val data = mapOf("shopId" to shopId)
+        functions.getHttpsCallable("deleteShop").call(data).await()
     }
 
     // --- Listings -----------------------------------------------------------

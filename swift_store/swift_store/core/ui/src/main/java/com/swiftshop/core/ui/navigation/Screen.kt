@@ -38,13 +38,13 @@ sealed class Screen(val route: String) {
     data object Conversation : Screen("conversation/{conversationId}") {
         fun createRoute(id: String) = "conversation/$id"
     }
-    data object DeliveryTracking : Screen("delivery?routeId={routeId}&orderId={orderId}") {
-        fun createRoute(routeId: String? = null, orderId: String? = null): String {
-            return when {
-                routeId != null -> "delivery?routeId=$routeId"
-                orderId != null -> "delivery?orderId=$orderId"
-                else -> "delivery"
-            }
+    data object DeliveryTracking : Screen("delivery?routeId={routeId}&orderId={orderId}&role={role}") {
+        fun createRoute(routeId: String? = null, orderId: String? = null, role: String? = null): String {
+            val params = mutableListOf<String>()
+            routeId?.let { params.add("routeId=$it") }
+            orderId?.let { params.add("orderId=$it") }
+            role?.let { params.add("role=$it") }
+            return if (params.isEmpty()) "delivery" else "delivery?${params.joinToString("&")}"
         }
     }
     data object Settings : Screen("settings")

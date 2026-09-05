@@ -5,6 +5,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.functions.FirebaseFunctions
 import com.swiftshop.core.model.*
 import com.swiftshop.domain.delivery.DeliveryRepository
+import com.swiftshop.domain.delivery.DeliveryRole
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -27,9 +28,15 @@ class FirebaseDeliveryRepository @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
-    override fun observeDeliveryRoutesByOrder(orderId: String): Flow<List<DeliveryRoute>> = callbackFlow {
+    override fun observeDeliveryRoutesByOrder(orderId: String, userId: String, role: DeliveryRole): Flow<List<DeliveryRoute>> = callbackFlow {
+        val field = when (role) {
+            DeliveryRole.BUYER -> "buyerId"
+            DeliveryRole.SELLER -> "sellerId"
+            DeliveryRole.DRIVER -> "driverId"
+        }
         val subscription = firestore.collection("deliveryRoutes")
             .whereEqualTo("orderId", orderId)
+            .whereEqualTo(field, userId)
             .addSnapshotListener { snapshot, _ ->
                 val list = snapshot?.documents?.mapNotNull { it.toObject(FirestoreDeliveryRoute::class.java)?.toDomain(it.id) } ?: emptyList()
                 trySend(list)
@@ -76,6 +83,8 @@ class FirebaseDeliveryRepository @Inject constructor(
 
 data class FirestoreDeliveryRoute(
     val orderId: String = "",
+    val buyerId: String = "",
+    val sellerId: String = "",
     val driverId: String = "",
     val pickupLat: Double = 0.0,
     val pickupLng: Double = 0.0,

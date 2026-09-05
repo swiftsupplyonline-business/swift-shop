@@ -25,10 +25,6 @@ import com.swiftshop.domain.commerce.CartItem
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalUriHandler
 
-// CART → DELIVERY → ADDRESS → PAYMENT → VERIFICATION → CONFIRMATION
-// Delivery is now a first-class step: the buyer selects an available
-// delivery listing before proceeding to address entry and payment.
-enum class CheckoutStep { CART, DELIVERY, ADDRESS, PAYMENT, VERIFICATION, CONFIRMATION }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,33 +33,23 @@ fun CheckoutScreen(
     viewModel: CheckoutViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val currentStep by viewModel.currentStep.collectAsState()
     val deliveryListingsState by viewModel.deliveryListingsState.collectAsState()
     val selectedDeliveryListing by viewModel.selectedDeliveryListing.collectAsState()
     val shopMarkers by viewModel.shopMarkers.collectAsState()
-    var step by remember(uiState) {
-        mutableStateOf(
-            if (uiState is CheckoutUiState.AwaitingPayment) CheckoutStep.VERIFICATION
-            else if (uiState is CheckoutUiState.OrderPlaced) CheckoutStep.CONFIRMATION
-            else CheckoutStep.CART
-        )
-    }
+    
     val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(uiState) {
-        when (uiState) {
-            is CheckoutUiState.OrderPlaced -> step = CheckoutStep.CONFIRMATION
-            is CheckoutUiState.AwaitingPayment -> {
-                val state = uiState as CheckoutUiState.AwaitingPayment
-                step = CheckoutStep.VERIFICATION
-                uriHandler.openUri(state.paymentUrl)
-            }
-            else -> {}
+        if (uiState is CheckoutUiState.AwaitingPayment) {
+            val state = uiState as CheckoutUiState.AwaitingPayment
+            uriHandler.openUri(state.paymentUrl)
         }
     }
 
     // Load delivery listings when buyer enters the delivery step.
-    LaunchedEffect(step) {
-        if (step == CheckoutStep.DELIVERY) {
+    LaunchedEffect(currentStep) {
+        if (currentStep == CheckoutStep.DELIVERY) {
             viewModel.loadDeliveryListings()
         }
     }
@@ -73,7 +59,7 @@ fun CheckoutScreen(
             TopAppBar(
                 title = {
                     Text(
-                        when (step) {
+                        when (currentStep) {
                             CheckoutStep.CART -> "My Cart"
                             CheckoutStep.DELIVERY -> "Choose Delivery"
                             CheckoutStep.ADDRESS -> "Delivery Address"
@@ -85,10 +71,10 @@ fun CheckoutScreen(
                     )
                 },
                 navigationIcon = {
-                    if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION) {
+                    if (currentStep != CheckoutStep.CONFIRMATION && currentStep != CheckoutStep.VERIFICATION) {
                         IconButton(onClick = {
-                            if (step == CheckoutStep.CART) navController.popBackStack()
-                            else step = CheckoutStep.values()[step.ordinal - 1]
+                            if (currentStep == CheckoutStep.CART) navController.popBackStack()
+                            else viewModel.setStep(CheckoutStep.values()[currentStep.ordinal - 1])
                         }) {
                             Icon(Icons.Default.ArrowBack, "Back")
                         }
@@ -97,7 +83,7 @@ fun CheckoutScreen(
             )
         },
         bottomBar = {
-            if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION) {
+            if (currentStep != CheckoutStep.CONFIRMATION && currentStep != CheckoutStep.VERIFICATION) {
                 Surface(tonalElevation = 8.dp) {
                     Column(modifier = Modifier.padding(16.dp).navigationBarsPadding()) {
                         if (uiState is CheckoutUiState.Error) {
@@ -109,7 +95,7 @@ fun CheckoutScreen(
                             )
                         }
 
-                        val buttonText = when (step) {
+                        val buttonText = when (currentStep) {
                             CheckoutStep.CART -> "Choose Delivery"
                             CheckoutStep.DELIVERY -> "Continue to Address"
                             CheckoutStep.ADDRESS -> "Continue to Payment"
@@ -118,23 +104,23 @@ fun CheckoutScreen(
                         }
 
                         // Delivery step: only enable Continue once a listing is selected.
-                        val deliveryStepReady = step != CheckoutStep.DELIVERY || selectedDeliveryListing != null
+                        val deliveryStepReady = currentStep != CheckoutStep.DELIVERY || selectedDeliveryListing != null
 
                         SwiftPrimaryButton(
                             text = buttonText,
                             onClick = {
-                                when (step) {
-                                    CheckoutStep.CART -> step = CheckoutStep.DELIVERY
-                                    CheckoutStep.DELIVERY -> if (selectedDeliveryListing != null) step = CheckoutStep.ADDRESS
-                                    CheckoutStep.ADDRESS -> step = CheckoutStep.PAYMENT
+                                when (currentStep) {
+                                    CheckoutStep.CART -> viewModel.setStep(CheckoutStep.DELIVERY)
+                                    CheckoutStep.DELIVERY -> if (selectedDeliveryListing != null) viewModel.setStep(CheckoutStep.ADDRESS)
+                                    CheckoutStep.ADDRESS -> viewModel.setStep(CheckoutStep.PAYMENT)
                                     CheckoutStep.PAYMENT -> viewModel.placeOrder()
                                     else -> {}
                                 }
                             },
-                            isLoading = uiState is CheckoutUiState.PlacingOrder || (uiState is CheckoutUiState.Loading && step == CheckoutStep.PAYMENT),
+                            isLoading = uiState is CheckoutUiState.PlacingOrder || (uiState is CheckoutUiState.Loading && currentStep == CheckoutStep.PAYMENT),
                             enabled = deliveryStepReady && when (uiState) {
                                 is CheckoutUiState.CartLoaded -> true
-                                is CheckoutUiState.Loading -> step == CheckoutStep.CART || step == CheckoutStep.DELIVERY || step == CheckoutStep.ADDRESS
+                                is CheckoutUiState.Loading -> currentStep == CheckoutStep.CART || currentStep == CheckoutStep.DELIVERY || currentStep == CheckoutStep.ADDRESS
                                 else -> false
                             },
                             modifier = Modifier.fillMaxWidth()
@@ -150,11 +136,11 @@ fun CheckoutScreen(
                 .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION) {
-                CheckoutStepIndicator(currentStep = step)
+            if (currentStep != CheckoutStep.CONFIRMATION && currentStep != CheckoutStep.VERIFICATION) {
+                CheckoutStepIndicator(currentStep = currentStep)
             }
 
-            when (step) {
+            when (currentStep) {
                 CheckoutStep.CART -> CartStep(
                     state = uiState,
                     onRemoveItem = { viewModel.removeItem(it) }

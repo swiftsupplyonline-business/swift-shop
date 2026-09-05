@@ -201,7 +201,8 @@ fun SwiftShopNavHost(
             route = Screen.DeliveryTracking.route,
             arguments = listOf(
                 navArgument("routeId") { type = NavType.StringType; nullable = true; defaultValue = null },
-                navArgument("orderId") { type = NavType.StringType; nullable = true; defaultValue = null }
+                navArgument("orderId") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("role") { type = NavType.StringType; nullable = true; defaultValue = null }
             )
         ) { DeliveryTrackingScreen(navController = navController) }
 

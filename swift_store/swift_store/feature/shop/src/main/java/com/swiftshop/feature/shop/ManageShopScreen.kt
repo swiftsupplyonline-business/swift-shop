@@ -16,6 +16,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
@@ -74,6 +75,7 @@ fun ManageShopScreen(
                     uploadProgress = uploadProgress,
                     padding = padding,
                     onUpdate = { n, d, c, a -> viewModel.update(n, d, c, a) },
+                    onDelete = { viewModel.deleteShop { navController.popBackStack() } },
                     onLogoSelect = viewModel::onLogoSelected,
                     onCoverSelect = viewModel::onCoverSelected
                 )
@@ -91,6 +93,7 @@ private fun ManageShopContent(
     uploadProgress: Int?,
     padding: PaddingValues,
     onUpdate: (String, String, String, String) -> Unit,
+    onDelete: () -> Unit,
     onLogoSelect: (android.net.Uri) -> Unit,
     onCoverSelect: (android.net.Uri) -> Unit
 ) {
@@ -98,6 +101,27 @@ private fun ManageShopContent(
     var description by remember { mutableStateOf(shop.description) }
     var category by remember { mutableStateOf(shop.category) }
     var address by remember { mutableStateOf(shop.locationAddress) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Shop?") },
+            text = { Text("This will permanently delete this shop and all of its listings. This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        onDelete()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
 
     val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { onLogoSelect(it) }
@@ -232,5 +256,17 @@ private fun ManageShopContent(
             leadingIcon = { Icon(Icons.Default.Save, null) },
             modifier = Modifier.fillMaxWidth()
         )
+
+        OutlinedButton(
+            onClick = { showDeleteDialog = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+        ) {
+            Icon(Icons.Default.Delete, null)
+            Spacer(Modifier.width(8.dp))
+            Text("Delete Shop")
+        }
     }
 }

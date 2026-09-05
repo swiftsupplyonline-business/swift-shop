@@ -76,6 +76,7 @@ interface FeedRepository {
     fun getUserReels(userId: String): Flow<List<FeedPost>>
     suspend fun getPost(postId: String): Result<FeedPost>
     suspend fun publishPost(post: FeedPost): Result<String>
+    suspend fun deleteContent(post: FeedPost): Result<Unit>
     suspend fun recordImpression(contentId: String, contentType: String)
     suspend fun recordClick(contentId: String, contentType: String)
     suspend fun likePost(postId: String): Result<Unit>
@@ -109,6 +110,11 @@ class GetPostFeedUseCase(private val repository: FeedRepository) {
 class GetPostUseCase(private val repository: FeedRepository) {
     suspend operator fun invoke(postId: String): Result<FeedPost> =
         repository.getPost(postId)
+}
+
+class DeleteContentUseCase(private val repository: FeedRepository) {
+    suspend operator fun invoke(post: FeedPost): Result<Unit> =
+        repository.deleteContent(post)
 }
 
 class GetUserPostsUseCase(private val repository: FeedRepository) {

@@ -27,6 +27,7 @@ import javax.inject.Inject
 class ReelDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val getPost: GetPostUseCase,
+    private val deleteContent: com.swiftshop.domain.feed.DeleteContentUseCase,
     private val likePost: LikePostUseCase,
     private val toggleBookmark: com.swiftshop.domain.feed.ToggleBookmarkUseCase,
     private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase,
@@ -115,6 +116,18 @@ class ReelDetailViewModel @Inject constructor(
         }
     }
 
+    fun deleteReel(onDeleted: () -> Unit) {
+        val reel = (_uiState.value as? UiState.Success)?.data ?: return
+        viewModelScope.launch {
+            if (reel.authorId == _currentUserId.value) {
+                deleteContent(reel).fold(
+                    onSuccess = { onDeleted() },
+                    onFailure = { /* simple error handling omitted as per rules */ }
+                )
+            }
+        }
+    }
+
     fun toggleLike() {
         val reel = (_uiState.value as? UiState.Success)?.data ?: return
         viewModelScope.launch {
@@ -147,6 +160,28 @@ fun ReelDetailScreen(
     viewModel: ReelDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val currentUserId by viewModel.currentUserId.collectAsState()
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Reel?") },
+            text = { Text("This will permanently delete this reel and its video. This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        viewModel.deleteReel { onBack() }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         when (val state = uiState) {
@@ -187,6 +222,18 @@ fun ReelDetailScreen(
                         .align(Alignment.TopStart)
                 ) {
                     Icon(Icons.Default.ArrowBack, "Back", tint = Color.White)
+                }
+
+                if (reel.authorId == currentUserId) {
+                    IconButton(
+                        onClick = { showDeleteDialog = true },
+                        modifier = Modifier
+                            .statusBarsPadding()
+                            .padding(16.dp)
+                            .align(Alignment.TopEnd)
+                    ) {
+                        Icon(Icons.Default.Delete, "Delete", tint = Color.White)
+                    }
                 }
             }
             else -> Unit

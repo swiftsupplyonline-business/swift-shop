@@ -9,7 +9,6 @@ import com.swiftshop.domain.commerce.CreateShopUseCase
 import com.swiftshop.domain.commerce.CanCreateShopUseCase
 import com.swiftshop.core.media.MediaUploader
 import com.swiftshop.core.media.MediaUploadProgress
-import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -29,14 +28,13 @@ class CreateShopViewModel @Inject constructor(
     private val createShop: CreateShopUseCase,
     private val canCreateShop: CanCreateShopUseCase,
     private val repository: com.swiftshop.domain.commerce.CommerceRepository,
-    private val mediaUploader: MediaUploader,
-    private val firestore: FirebaseFirestore
+    private val mediaUploader: MediaUploader
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<CreateShopUiState>(CreateShopUiState.Idle)
     val uiState = _uiState.asStateFlow()
 
-    private val _shopId = firestore.collection("shops").document().id
+    private val _shopId = repository.generateShopId()
 
     private val _logoUrl = MutableStateFlow("")
     val logoUrl = _logoUrl.asStateFlow()

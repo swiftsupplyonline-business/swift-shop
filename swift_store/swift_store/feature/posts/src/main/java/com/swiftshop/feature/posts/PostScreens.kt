@@ -303,6 +303,7 @@ fun CreatePostScreen(
 class PostDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val getPost: GetPostUseCase,
+    private val deleteContent: com.swiftshop.domain.feed.DeleteContentUseCase,
     private val likePost: LikePostUseCase,
     private val toggleBookmark: com.swiftshop.domain.feed.ToggleBookmarkUseCase,
     private val observeBookmarkedIds: com.swiftshop.domain.feed.ObserveBookmarkedIdsUseCase,
@@ -400,6 +401,18 @@ class PostDetailViewModel @Inject constructor(
         }
     }
 
+    fun deletePost(onDeleted: () -> Unit) {
+        val post = (uiState.value as? UiState.Success)?.data ?: return
+        viewModelScope.launch {
+            if (post.authorId == _currentUserId.value) {
+                deleteContent(post).fold(
+                    onSuccess = { onDeleted() },
+                    onFailure = { /* handled via UI state if needed, keeping it simple as per rules */ }
+                )
+            }
+        }
+    }
+
     fun toggleLike() {
         val post = (_uiState.value as? UiState.Success)?.data ?: return
         viewModelScope.launch {
@@ -429,7 +442,29 @@ fun PostDetailScreen(
     viewModel: PostDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val currentUserId by viewModel.currentUserId.collectAsState()
     var showComments by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Post?") },
+            text = { Text("This will permanently delete this post and its media. This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        viewModel.deletePost { navController.popBackStack() }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -438,6 +473,14 @@ fun PostDetailScreen(
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Default.ArrowBack, "Back")
+                    }
+                },
+                actions = {
+                    val post = (uiState as? UiState.Success)?.data
+                    if (post != null && post.authorId == currentUserId) {
+                        IconButton(onClick = { showDeleteDialog = true }) {
+                            Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             )

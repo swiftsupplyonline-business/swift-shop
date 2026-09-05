@@ -33,6 +33,7 @@ class ListingDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val getListing: GetListingUseCase,
     private val getShop: GetShopUseCase,
+    private val deleteListing: DeleteListingUseCase,
     private val observeCurrentUser: ObserveCurrentUserUseCase,
     private val addToCartUseCase: com.swiftshop.domain.commerce.AddToCartUseCase,
     private val observeAvailableSlots: ObserveAvailableSlotsUseCase,
@@ -60,6 +61,8 @@ class ListingDetailViewModel @Inject constructor(
 
     private val _isAddingToCart = MutableStateFlow(false)
     val isAddingToCart = _isAddingToCart.asStateFlow()
+
+    val currentUser = observeCurrentUser().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     private val _actionState = MutableStateFlow<ActionState>(ActionState.Idle)
     val actionState = _actionState.asStateFlow()
@@ -188,6 +191,22 @@ class ListingDetailViewModel @Inject constructor(
                 _actionState.value = ActionState.Error("User not signed in")
             }
             _isAddingToCart.value = false
+        }
+    }
+
+    fun deleteListing(onDeleted: () -> Unit) {
+        val state = _uiState.value as? ListingDetailState.Loaded ?: return
+        viewModelScope.launch {
+            _actionState.value = ActionState.Loading
+            val user = observeCurrentUser().first()
+            if (user?.uid == state.listing.sellerId) {
+                deleteListing(listingId).fold(
+                    onSuccess = { onDeleted() },
+                    onFailure = { _actionState.value = ActionState.Error(it.message ?: "Failed to delete listing") }
+                )
+            } else {
+                _actionState.value = ActionState.Error("Unauthorized")
+            }
         }
     }
 

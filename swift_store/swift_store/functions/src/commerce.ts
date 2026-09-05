@@ -999,6 +999,83 @@ export const deleteListing = onCall(async (request) => {
 });
 
 /**
+ * Deletes a shop and cascades to all of its listings.
+ *
+ * NOTE ON ATOMICITY: Firestore transactions cap at 500 writes. A shop's
+ * listing count is unbounded over time, so this cannot safely be one
+ * runTransaction() the way deleteListing() is. Listing deletes are done in
+ * batches (each batch atomic; the overall cascade is not atomic across
+ * batches). The shop doc delete + profile counter update happen in a final
+ * transaction after all listing batches have committed.
+ *
+ * KNOWN GAP (not handled here): Storage media for the shop (logoUrl,
+ * coverUrl) and its listings (imageUrls, videoUrl) is not deleted. This is
+ * a deliberate scope decision, not an oversight -- flagged for a separate
+ * pass.
+ */
+export const deleteShop = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { shopId } = request.data;
+    if (!shopId) throw new HttpsError("invalid-argument", "shopId required");
+
+    const db = admin.firestore();
+    const shopRef = db.collection("shops").doc(shopId);
+
+    try {
+        const shopDoc = await shopRef.get();
+        if (!shopDoc.exists) throw new HttpsError("not-found", "Shop not found");
+        const shop = shopDoc.data()!;
+
+        if (shop.ownerId !== auth.uid && !auth.token.admin) {
+            throw new HttpsError("permission-denied", "Not authorized to delete this shop");
+        }
+
+        const listingsSnapshot = await db.collection("listings")
+            .where("shopId", "==", shopId)
+            .get();
+
+        let activeListingsDeleted = 0;
+        const listingDocs = listingsSnapshot.docs;
+        const BATCH_SIZE = 400;
+
+        for (let i = 0; i < listingDocs.length; i += BATCH_SIZE) {
+            const chunk = listingDocs.slice(i, i + BATCH_SIZE);
+            const batch = db.batch();
+            for (const doc of chunk) {
+                const listing = doc.data();
+                if (listing.isAvailable) activeListingsDeleted++;
+                batch.delete(doc.ref);
+            }
+            await batch.commit();
+        }
+
+        await db.runTransaction(async (transaction) => {
+            const profileRef = db.collection("profiles").doc(shop.ownerId);
+            const profileDoc = await transaction.get(profileRef);
+
+            transaction.delete(shopRef);
+
+            if (profileDoc.exists) {
+                const currentShopCount = profileDoc.data()!.shopCount || 0;
+                const currentActiveCount = profileDoc.data()!.activeListingCount || 0;
+                transaction.update(profileRef, {
+                    shopCount: Math.max(0, currentShopCount - 1),
+                    activeListingCount: Math.max(0, currentActiveCount - activeListingsDeleted),
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+            }
+        });
+
+        return { success: true, listingsDeleted: listingDocs.length };
+    } catch (error: any) {
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
  * Creates a shop with tier limit enforcement.
  */
 export const createShop = onCall(async (request) => {

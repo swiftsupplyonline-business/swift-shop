@@ -136,6 +136,19 @@ class FirebaseFeedRepository @Inject constructor(
         docRef.id
     }
 
+    override suspend fun deleteContent(post: FeedPost): Result<Unit> = runCatching {
+        val storage = com.google.firebase.storage.FirebaseStorage.getInstance()
+        val urls = post.mediaUrls + post.videoUrl + post.thumbnailUrl
+        
+        urls.filter { it.isNotBlank() }.forEach { url ->
+            runCatching {
+                storage.getReferenceFromUrl(url).delete().await()
+            }
+        }
+        
+        firestore.collection("posts").document(post.id).delete().await()
+    }
+
     override fun getPostFeed(page: Int, pageSize: Int): Flow<PagingState<FeedPost>> = callbackFlow<PagingState<FeedPost>> {
         val subscription = firestore.collection("posts")
             .whereIn("type", listOf("IMAGE", "CAROUSEL"))

@@ -140,6 +140,30 @@
         { "fieldPath": "driverId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "deliveryRoutes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "orderId", "order": "ASCENDING" },
+        { "fieldPath": "buyerId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "deliveryRoutes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "orderId", "order": "ASCENDING" },
+        { "fieldPath": "sellerId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "deliveryRoutes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "orderId", "order": "ASCENDING" },
+        { "fieldPath": "driverId", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

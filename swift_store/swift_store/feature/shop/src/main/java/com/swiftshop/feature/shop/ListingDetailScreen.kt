@@ -63,6 +63,7 @@ fun ListingDetailScreen(
     val colors = MaterialTheme.swiftColors
     val snackbarHostState = remember { SnackbarHostState() }
     var activeSheet by remember { mutableStateOf<ListingType?>(null) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(actionState) {
         when (val state = actionState) {
@@ -94,6 +95,28 @@ fun ListingDetailScreen(
         is ListingDetailState.Loaded -> {
             val listing = state.listing
             val cta = ctaForListingType(listing.listingType, colors.brandBlue)
+            val currentUser by viewModel.currentUser.collectAsState()
+            val isOwner = currentUser?.uid == listing.sellerId
+
+            if (showDeleteDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteDialog = false },
+                    title = { Text("Delete Listing?") },
+                    text = { Text("This will permanently delete this listing. This cannot be undone.") },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showDeleteDialog = false
+                                viewModel.deleteListing { navController.popBackStack() }
+                            },
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) { Text("Delete") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+                    }
+                )
+            }
 
             if (activeSheet == ListingType.SET_APPOINTMENT) {
                 ModalBottomSheet(onDismissRequest = { activeSheet = null }) {
@@ -130,6 +153,11 @@ fun ListingDetailScreen(
                             }
                         },
                         actions = {
+                            if (isOwner) {
+                                IconButton(onClick = { showDeleteDialog = true }) {
+                                    Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
                             IconButton(onClick = { /* share */ }) {
                                 Icon(Icons.Default.Share, "Share")
                             }

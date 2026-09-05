@@ -22,11 +22,13 @@ sealed interface DeliveryUiState {
 class DeliveryViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: DeliveryRepository,
-    private val observeDeliveryRoutesByOrder: ObserveDeliveryRoutesByOrderUseCase
+    private val observeDeliveryRoutesByOrder: ObserveDeliveryRoutesByOrderUseCase,
+    private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase
 ) : ViewModel() {
 
     private val routeId: String? = savedStateHandle["routeId"]
     private val orderId: String? = savedStateHandle["orderId"]
+    private val role: String? = savedStateHandle["role"]
 
     private val _uiState = MutableStateFlow<DeliveryUiState>(DeliveryUiState.Loading)
     val uiState: StateFlow<DeliveryUiState> = _uiState.asStateFlow()
@@ -54,8 +56,14 @@ class DeliveryViewModel @Inject constructor(
     }
 
     private fun lookupAndObserveRoutes(orderId: String) {
+        val deliveryRole = runCatching { 
+            com.swiftshop.domain.delivery.DeliveryRole.valueOf(role?.uppercase() ?: "BUYER")
+        }.getOrDefault(com.swiftshop.domain.delivery.DeliveryRole.BUYER)
+
         viewModelScope.launch {
-            observeDeliveryRoutesByOrder(orderId)
+            observeCurrentUser().filterNotNull().flatMapLatest { user ->
+                observeDeliveryRoutesByOrder(orderId, user.uid, deliveryRole)
+            }
                 .catch { _uiState.value = DeliveryUiState.Error(it.message ?: "Lookup error") }
                 .collect { routes ->
                     val active = selectActiveRoute(routes)

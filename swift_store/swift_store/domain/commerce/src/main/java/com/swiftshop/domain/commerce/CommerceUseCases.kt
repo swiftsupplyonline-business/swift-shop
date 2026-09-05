@@ -58,11 +58,13 @@ object TierEntitlements {
 
 interface CommerceRepository {
     // Shops
+    fun generateShopId(): String
     fun getUserShops(userId: String): Flow<List<Shop>>
     fun getAllShops(): Flow<List<Shop>>
     suspend fun getShop(shopId: String): Result<Shop>
     suspend fun createShop(shop: Shop): Result<String>
     suspend fun updateShop(shop: Shop): Result<Unit>
+    suspend fun deleteShop(shopId: String): Result<Unit>
 
     // Listings
     fun getShopListings(shopId: String, page: Int, pageSize: Int): Flow<List<Listing>>
@@ -221,5 +223,13 @@ class CreateShopUseCase(private val repository: CommerceRepository) {
 
 class UpdateShopUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(shop: Shop): Result<Unit> = repository.updateShop(shop)
+}
+
+class DeleteShopUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(shopId: String): Result<Unit> = repository.deleteShop(shopId)
+}
+
+class DeleteListingUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(listingId: String): Result<Unit> = repository.deleteListing(listingId)
 }
 

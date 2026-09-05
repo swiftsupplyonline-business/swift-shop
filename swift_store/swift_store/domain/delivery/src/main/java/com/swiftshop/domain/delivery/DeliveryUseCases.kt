@@ -9,7 +9,8 @@ class ObserveDeliveryRouteUseCase(private val repository: DeliveryRepository) {
 }
 
 class ObserveDeliveryRoutesByOrderUseCase(private val repository: DeliveryRepository) {
-    operator fun invoke(orderId: String): Flow<List<DeliveryRoute>> = repository.observeDeliveryRoutesByOrder(orderId)
+    operator fun invoke(orderId: String, userId: String, role: DeliveryRole): Flow<List<DeliveryRoute>> =
+        repository.observeDeliveryRoutesByOrder(orderId, userId, role)
 }
 
 class RequestDeliveryUseCase(private val repository: DeliveryRepository) {

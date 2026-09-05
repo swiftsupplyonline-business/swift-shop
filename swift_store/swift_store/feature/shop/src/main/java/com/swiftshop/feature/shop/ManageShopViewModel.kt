@@ -32,6 +32,7 @@ class ManageShopViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val getShop: GetShopUseCase,
     private val updateShop: UpdateShopUseCase,
+    private val deleteShop: com.swiftshop.domain.commerce.DeleteShopUseCase,
     private val mediaUploader: com.swiftshop.core.media.MediaUploader,
     private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase
 ) : ViewModel() {
@@ -122,6 +123,19 @@ class ManageShopViewModel @Inject constructor(
                     _uiState.value = ManageShopUiState.Success(updated)
                 },
                 onFailure = { _actionState.value = ManageActionState.Error(it.message ?: "Failed to update") }
+            )
+        }
+    }
+
+    fun deleteShop(onDeleted: () -> Unit) {
+        viewModelScope.launch {
+            _actionState.value = ManageActionState.Loading
+            deleteShop(shopId).fold(
+                onSuccess = {
+                    _actionState.value = ManageActionState.Success
+                    onDeleted()
+                },
+                onFailure = { _actionState.value = ManageActionState.Error(it.message ?: "Failed to delete shop") }
             )
         }
     }

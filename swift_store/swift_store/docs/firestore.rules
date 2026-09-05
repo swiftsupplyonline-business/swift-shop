@@ -164,6 +164,7 @@ service cloud.firestore {
     match /deliveryRoutes/{routeId} {
       allow read: if isSignedIn()
         && (resource.data.buyerId == request.auth.uid
+            || resource.data.sellerId == request.auth.uid
             || resource.data.driverId == request.auth.uid
             || isAdmin());
       allow create: if false;  // Cloud Function only
