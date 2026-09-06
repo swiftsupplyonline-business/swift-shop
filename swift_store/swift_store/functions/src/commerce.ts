@@ -148,15 +148,26 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
             const walletAvailableBefore = isWalletPayment ? (walletDoc!.data()!.availableBalanceMinorUnits || 0) : 0;
             const walletCurrency = isWalletPayment ? (walletDoc!.data()!.currency || "LSL") : "LSL";
 
-            // 2. Authoritative Price & Inventory Check
+            // 2. Authoritative Price & Inventory Check (READ ALL FIRST)
+            const listingSnaps = [];
             for (const item of items) {
                 const listingRef = db.collection("listings").doc(item.listingId);
                 const listingDoc = await transaction.get(listingRef);
-
                 if (!listingDoc.exists) throw new Error(`Listing ${item.listingId} not found`);
-                const listing = listingDoc.data()!;
+                listingSnaps.push({ ref: listingRef, doc: listingDoc, item });
+            }
 
+            // 3. VALIDATE ALL READS
+            for (const { doc, item } of listingSnaps) {
+                const listing = doc.data()!;
                 if (!listing.isAvailable) throw new Error(`Listing ${item.listingId} is not available`);
+
+                if (!shopId) {
+                    shopId = listing.shopId;
+                    sellerId = listing.sellerId;
+                } else if (listing.shopId !== shopId) {
+                    throw new Error("Multi-shop orders are not supported in this version.");
+                }
 
                 const requestedQty = item.quantity || 1;
                 const availableStock = listing.stockQuantity;
@@ -165,19 +176,6 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                     if (availableStock < requestedQty) {
                         throw new Error(`Insufficient stock for ${listing.title}. Requested: ${requestedQty}, Available: ${availableStock}`);
                     }
-
-                    // ATOMIC RESERVATION (Immediate decrement)
-                    transaction.update(listingRef, {
-                        stockQuantity: availableStock - requestedQty,
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                    });
-                }
-
-                if (!shopId) {
-                    shopId = listing.shopId;
-                    sellerId = listing.sellerId;
-                } else if (listing.shopId !== shopId) {
-                    throw new Error("Multi-shop orders are not supported in this version.");
                 }
 
                 const itemTotal = listing.priceMinorUnits * requestedQty;
@@ -190,6 +188,18 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                     unitPriceMinorUnits: listing.priceMinorUnits,
                     unitPriceCurrency: listing.priceCurrency || "LSL"
                 });
+            }
+
+            // 4. PERFORM ALL WRITES
+            for (const { ref, doc, item } of listingSnaps) {
+                const listing = doc.data()!;
+                const availableStock = listing.stockQuantity;
+                if (availableStock !== undefined && availableStock !== null) {
+                    transaction.update(ref, {
+                        stockQuantity: availableStock - (item.quantity || 1),
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    });
+                }
             }
 
             // Delivery fee is authoritative from the delivery listing validated above.
@@ -513,13 +523,20 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                         return;
                     }
 
+                    // 1. FETCH ALL LISTINGS (READ ALL BEFORE WRITE)
+                    const listingSnaps = [];
                     for (const item of freshOrder.items || []) {
                         const listingRef = db.collection("listings").doc(item.listingId);
                         const listingSnap = await transaction.get(listingRef);
-                        if (listingSnap.exists) {
-                            const listing = listingSnap.data()!;
+                        listingSnaps.push({ ref: listingRef, snap: listingSnap, item });
+                    }
+
+                    // 2. APPLY RESTORATION (ALL WRITES AFTER ALL READS)
+                    for (const { ref, snap, item } of listingSnaps) {
+                        if (snap.exists) {
+                            const listing = snap.data()!;
                             if (listing.stockQuantity !== undefined && listing.stockQuantity !== null) {
-                                transaction.update(listingRef, {
+                                transaction.update(ref, {
                                     stockQuantity: listing.stockQuantity + (item.quantity || 1),
                                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                                 });
@@ -645,15 +662,21 @@ export const cancelOrder = onCall(async (request) => {
                 }
             }
 
-            // INVENTORY RESTORATION: Restore stock for each item
+            // INVENTORY RESTORATION (READ ALL BEFORE WRITE)
+            const listingSnaps = [];
             for (const item of order.items) {
                 const listingRef = db.collection("listings").doc(item.listingId);
-                const listingDoc = await transaction.get(listingRef);
-                if (listingDoc.exists) {
-                    const listing = listingDoc.data()!;
+                const listingSnap = await transaction.get(listingRef);
+                listingSnaps.push({ ref: listingRef, snap: listingSnap, item });
+            }
+
+            // APPLY RESTORATION (ALL WRITES AFTER ALL READS)
+            for (const { ref, snap, item } of listingSnaps) {
+                if (snap.exists) {
+                    const listing = snap.data()!;
                     // Only restore if listing has finite stock
                     if (listing.stockQuantity !== undefined && listing.stockQuantity !== null) {
-                        transaction.update(listingRef, {
+                        transaction.update(ref, {
                             stockQuantity: listing.stockQuantity + item.quantity,
                             updatedAt: admin.firestore.FieldValue.serverTimestamp()
                         });
