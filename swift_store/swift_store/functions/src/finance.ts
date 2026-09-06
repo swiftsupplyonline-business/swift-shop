@@ -92,6 +92,11 @@ export const initiateDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (reque
         throw new HttpsError("invalid-argument", "Invalid amount or missing idempotencyKey.");
     }
 
+    // CONTRACT LOCK A: Swift Wallet deposits are formally locked to LSL.
+    if (amount.currency !== "LSL") {
+        throw new HttpsError("invalid-argument", `Currency ${amount.currency} is not supported. Swift Wallet deposits are LSL only.`);
+    }
+
     const activeGateway = gateway || "MOPAY";
     const db = admin.firestore();
 
@@ -121,7 +126,7 @@ export const initiateDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (reque
             transaction.set(db.collection("walletTransactions").doc(transactionId), {
                 transactionId, userId: uid, type: "DEPOSIT",
                 amountMinorUnits: amount.minorUnits, feeMinorUnits: 0,
-                currency: amount.currency || "LSL", status: "PENDING",
+                currency: "LSL", status: "PENDING",
                 description: `Deposit via ${activeGateway} (${provider}) from ${phoneNumber}`,
                 gateway: activeGateway, provider: provider || "UNKNOWN",
                 sourceAccount: phoneNumber, idempotencyKey,
@@ -138,6 +143,21 @@ export const initiateDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (reque
         });
 
         const transactionId = result.transactionId;
+
+        // Initiation Idempotency: If this transaction already has a MoPay session, return it.
+        if (result.existing) {
+            const existingTx = await db.collection("walletTransactions").doc(transactionId).get();
+            const data = existingTx.data();
+            if (data?.mopaySessionId) {
+                return {
+                    transactionId,
+                    paymentUrl: data.paymentUrl,
+                    sessionId: data.mopaySessionId
+                };
+            }
+            // If it exists but has no sessionId (e.g. previous crash), we fall through
+            // and attempt to initiate MoPay again.
+        }
 
         // Initiate MoPay session if not already done
         if (activeGateway === "MOPAY") {
@@ -319,10 +339,18 @@ export const verifyDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (request
         // 4. Atomic Transition (only if SUCCESS)
         if (mopaySession.transactionStatus === "SUCCESS") {
             await db.runTransaction(async (transaction) => {
-                const freshTxDoc = await transaction.get(txDoc.ref);
-                const freshTx = freshTxDoc.data()!;
+                const freshOrderDoc = await transaction.get(txDoc.ref);
+                const freshTx = freshOrderDoc.data()!;
 
+                // CONTRACT LOCK B: FAILED and CANCELLED are terminal.
+                // SUCCESS can only transition a PENDING transaction.
                 if (freshTx.status === "COMPLETED") return; // Idempotency
+                if (freshTx.status === "FAILED" || freshTx.status === "CANCELLED") {
+                    console.warn(`Late MoPay SUCCESS for terminal transaction ${txData.transactionId} (Status: ${freshTx.status})`);
+                    return;
+                }
+
+                if (freshTx.status !== "PENDING") return;
 
                 const walletRef = db.collection("wallets").doc(uid);
                 const walletDoc = await transaction.get(walletRef);
@@ -356,7 +384,7 @@ export const verifyDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (request
                     debitAccount: "system_mopay_clearing",
                     creditAccount: "system_deposit_clearing",
                     amountMinorUnits: txData.amountMinorUnits,
-                    currency: txData.currency || "LSL",
+                    currency: "LSL",
                     reference: `DEPOSIT_CONFIRM_${txData.transactionId}`,
                     timestamp
                 });
@@ -368,7 +396,7 @@ export const verifyDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (request
                     debitAccount: "system_deposit_clearing",
                     creditAccount: `user_${uid}`,
                     amountMinorUnits: txData.amountMinorUnits,
-                    currency: txData.currency || "LSL",
+                    currency: "LSL",
                     reference: `DEPOSIT_INIT_${txData.transactionId}`,
                     timestamp
                 });
