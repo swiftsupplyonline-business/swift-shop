@@ -153,32 +153,12 @@ export const initiateDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (reque
             const mopayResponse = await MopayClient.initiatePaymentSession(mopayRequest);
 
             if (mopayResponse.success && mopayResponse.sessionId) {
-                // Step 2: Atomic Balance & Ledger Mutation
-                await db.runTransaction(async (transaction) => {
-                    const txRef = db.collection("walletTransactions").doc(transactionId);
-                    const walletRef = db.collection("wallets").doc(uid);
-                    const ledgerEntryId = db.collection("ledgerEntries").doc().id;
-
-                    const walletDoc = await transaction.get(walletRef);
-                    const currentPending = walletDoc.data()?.pendingBalanceMinorUnits || 0;
-
-                    transaction.update(txRef, {
-                        mopaySessionId: mopayResponse.sessionId,
-                        paymentUrl: mopayResponse.paymentUrl,
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                    });
-
-                    transaction.update(walletRef, {
-                        pendingBalanceMinorUnits: currentPending + amount.minorUnits,
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                    });
-
-                    transaction.set(db.collection("ledgerEntries").doc(ledgerEntryId), {
-                        id: ledgerEntryId, transactionId, debitAccount: "system_deposit_clearing",
-                        creditAccount: `user_${uid}`, amountMinorUnits: amount.minorUnits,
-                        currency: amount.currency || "LSL", reference: `DEPOSIT_INIT_${transactionId}`,
-                        timestamp: admin.firestore.FieldValue.serverTimestamp()
-                    });
+                // OPERATIONAL ONLY: Record session metadata.
+                // No financial recognition (ledger/balance) occurs here.
+                await db.collection("walletTransactions").doc(transactionId).update({
+                    mopaySessionId: mopayResponse.sessionId,
+                    paymentUrl: mopayResponse.paymentUrl,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 });
 
                 return {
@@ -357,23 +337,40 @@ export const verifyDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (request
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 });
 
+                // Financial Recognition: Credit available balance.
+                // Note: pendingBalance is NOT modified as it was not incremented at initiation.
                 transaction.update(walletRef, {
                     availableBalanceMinorUnits: (walletData.availableBalanceMinorUnits || 0) + txData.amountMinorUnits,
-                    pendingBalanceMinorUnits: Math.max(0, (walletData.pendingBalanceMinorUnits || 0) - txData.amountMinorUnits),
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 });
 
-                // Reconciliation Ledger Entry
-                const ledgerId = db.collection("ledgerEntries").doc().id;
-                transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
-                    id: ledgerId,
+                // --- Atomic Ledger Commit ---
+                const confirmLedgerId = db.collection("ledgerEntries").doc().id;
+                const initLedgerId = db.collection("ledgerEntries").doc().id;
+                const timestamp = admin.firestore.FieldValue.serverTimestamp();
+
+                // 1. Funding the clearing account (External -> Clearing)
+                transaction.set(db.collection("ledgerEntries").doc(confirmLedgerId), {
+                    id: confirmLedgerId,
                     transactionId: txData.transactionId,
                     debitAccount: "system_mopay_clearing",
                     creditAccount: "system_deposit_clearing",
                     amountMinorUnits: txData.amountMinorUnits,
                     currency: txData.currency || "LSL",
                     reference: `DEPOSIT_CONFIRM_${txData.transactionId}`,
-                    timestamp: admin.firestore.FieldValue.serverTimestamp()
+                    timestamp
+                });
+
+                // 2. Allocating to user wallet (Clearing -> User)
+                transaction.set(db.collection("ledgerEntries").doc(initLedgerId), {
+                    id: initLedgerId,
+                    transactionId: txData.transactionId,
+                    debitAccount: "system_deposit_clearing",
+                    creditAccount: `user_${uid}`,
+                    amountMinorUnits: txData.amountMinorUnits,
+                    currency: txData.currency || "LSL",
+                    reference: `DEPOSIT_INIT_${txData.transactionId}`,
+                    timestamp
                 });
             });
 
