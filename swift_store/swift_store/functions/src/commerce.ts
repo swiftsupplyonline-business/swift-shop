@@ -501,11 +501,46 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
 
             return { status: "SUCCESS", orderId: order.id };
         } else {
-            // Update order with failure info if applicable
-            await orderDoc.ref.update({
-                paymentStatus: mopaySession.transactionStatus,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
+            // STEP 7: IDEMPOTENT INVENTORY RESTORATION (P0)
+            // If payment failed/cancelled, restore the stock exactly once.
+            if (mopaySession.transactionStatus === "CANCELLED" || mopaySession.transactionStatus === "FAILED") {
+                await db.runTransaction(async (transaction) => {
+                    const freshOrderDoc = await transaction.get(orderDoc.ref);
+                    const freshOrder = freshOrderDoc.data()!;
+
+                    // Only restore if not already released and still in a reservable state (PENDING)
+                    if (freshOrder.reservationReleased === true || freshOrder.status !== "PENDING") {
+                        return;
+                    }
+
+                    for (const item of freshOrder.items || []) {
+                        const listingRef = db.collection("listings").doc(item.listingId);
+                        const listingSnap = await transaction.get(listingRef);
+                        if (listingSnap.exists) {
+                            const listing = listingSnap.data()!;
+                            if (listing.stockQuantity !== undefined && listing.stockQuantity !== null) {
+                                transaction.update(listingRef, {
+                                    stockQuantity: listing.stockQuantity + (item.quantity || 1),
+                                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                                });
+                            }
+                        }
+                    }
+
+                    transaction.update(orderDoc.ref, {
+                        status: mopaySession.transactionStatus === "CANCELLED" ? "CANCELLED" : "FAILED",
+                        paymentStatus: mopaySession.transactionStatus,
+                        reservationReleased: true,
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    });
+                });
+            } else {
+                // Update order with failure info if applicable (e.g. PENDING or UNKNOWN)
+                await orderDoc.ref.update({
+                    paymentStatus: mopaySession.transactionStatus,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+            }
 
             return { status: mopaySession.transactionStatus, orderId: order.id };
         }

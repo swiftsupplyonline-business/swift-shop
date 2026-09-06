@@ -245,8 +245,14 @@ fun OrderDetailScreen(
                                         Text(dateStr, style = MaterialTheme.typography.titleSmall)
                                         Text(timeStr, style = MaterialTheme.typography.bodyMedium, 
                                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Text("Status: Scheduled", style = MaterialTheme.typography.labelLarge,
-                                            color = MaterialTheme.colorScheme.primary)
+                                        val statusLabel = when(order.status) {
+                                            OrderStatus.CONFIRMED -> "Scheduled"
+                                            OrderStatus.PENDING -> "Payment Pending"
+                                            OrderStatus.CANCELLED -> "Cancelled"
+                                            else -> order.status.name.lowercase().replaceFirstChar { it.uppercase() }
+                                        }
+                                        Text("Status: $statusLabel", style = MaterialTheme.typography.labelLarge,
+                                            color = if (order.status == OrderStatus.CONFIRMED) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary)
                                     }
                                 }
                             }

@@ -250,7 +250,12 @@ class FirebaseCommerceRepository @Inject constructor(
 
     override suspend fun verifyMopayPayment(sessionId: String): Result<Unit> = runCatching {
         val data = mapOf("sessionId" to sessionId)
-        functions.getHttpsCallable("verifyMopayPayment").call(data).await()
+        val result = functions.getHttpsCallable("verifyMopayPayment").call(data).await()
+        val resMap = result.data as? Map<String, Any>
+        val status = resMap?.get("status") as? String
+        if (status != "SUCCESS") {
+            throw Exception(status ?: "Verification failed")
+        }
     }
 
     override fun observeUserOrders(userId: String): Flow<List<Order>> = callbackFlow {
