@@ -170,9 +170,14 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 }
 
                 const requestedQty = item.quantity || 1;
-                // INVENTORY RESERVATION: Use totalQuantity and reservedQuantity
-                const total = listing.totalQuantity ?? listing.stockQuantity ?? 0;
-                const reserved = listing.reservedQuantity ?? 0;
+
+                // CANONICAL INVENTORY VALIDATION: Require totalQuantity and reservedQuantity
+                if (listing.totalQuantity === undefined || listing.reservedQuantity === undefined) {
+                    throw new HttpsError("failed-precondition", `Listing ${item.listingId} requires inventory reconciliation before participating in reservations.`);
+                }
+
+                const total = listing.totalQuantity;
+                const reserved = listing.reservedQuantity;
                 const available = total - reserved;
 
                 if (available < requestedQty) {
@@ -197,8 +202,8 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
 
             for (const { ref, doc, item } of listingSnaps) {
                 const listing = doc.data()!;
-                const currentReserved = listing.reservedQuantity ?? 0;
-                const currentTotal = listing.totalQuantity ?? listing.stockQuantity ?? 0;
+                const currentReserved = listing.reservedQuantity; // Guaranteed by validation above
+                const currentTotal = listing.totalQuantity;      // Guaranteed by validation above
                 const requestedQty = item.quantity || 1;
 
                 const reservationId = db.collection("reservations").doc().id;
@@ -357,12 +362,17 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                         const listingDoc = await transaction.get(listingRef);
                         if (listingDoc.exists) {
                             const listing = listingDoc.data()!;
-                            if (listing.stockQuantity !== undefined && listing.stockQuantity !== null) {
-                                transaction.update(listingRef, {
-                                    stockQuantity: listing.stockQuantity + item.quantity,
-                                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                                });
-                            }
+
+                            // Strictly use canonical fields for hold release
+                            const currentTotal = listing.totalQuantity || 0;
+                            const currentReserved = listing.reservedQuantity || 0;
+                            const newReserved = Math.max(0, currentReserved - item.quantity);
+
+                            transaction.update(listingRef, {
+                                reservedQuantity: newReserved,
+                                stockQuantity: currentTotal - newReserved,
+                                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                            });
                         }
                     }
                     transaction.update(db.collection("orders").doc(orderId), {
@@ -524,9 +534,13 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                                  // Release inventory
                                  const l = listingSnaps.find(ls => ls.ref.id === r.data.listingId)!;
                                  const lData = l.snap.data()!;
+                                 // Strictly use canonical fields (No fallback)
+                                 const currentReserved = lData.reservedQuantity || 0;
+                                 const total = lData.totalQuantity || 0;
+
                                  transaction.update(l.ref, {
-                                     reservedQuantity: Math.max(0, (lData.reservedQuantity || 0) - r.data.quantity),
-                                     stockQuantity: (lData.totalQuantity || lData.stockQuantity) - (Math.max(0, (lData.reservedQuantity || 0) - r.data.quantity)),
+                                     reservedQuantity: Math.max(0, currentReserved - r.data.quantity),
+                                     stockQuantity: total - (Math.max(0, currentReserved - r.data.quantity)),
                                      updatedAt: now
                                  });
                              }
@@ -540,8 +554,13 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                         transaction.update(res.ref, { status: "COMMITTED", committedAt: now, updatedAt: now });
                         const l = listingSnaps.find(ls => ls.ref.id === res.data.listingId)!;
                         const lData = l.snap.data()!;
-                        const newTotal = Math.max(0, (lData.totalQuantity || lData.stockQuantity) - res.data.quantity);
-                        const newReserved = Math.max(0, (lData.reservedQuantity || 0) - res.data.quantity);
+
+                        // Strictly use canonical fields
+                        const currentTotal = lData.totalQuantity || 0;
+                        const currentReserved = lData.reservedQuantity || 0;
+
+                        const newTotal = Math.max(0, currentTotal - res.data.quantity);
+                        const newReserved = Math.max(0, currentReserved - res.data.quantity);
                         transaction.update(l.ref, {
                             totalQuantity: newTotal,
                             reservedQuantity: newReserved,
@@ -606,10 +625,13 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                         transaction.update(res.ref, { status: "RELEASED", releasedAt: now, updatedAt: now });
                         const l = listingSnaps.find(ls => ls.ref.id === res.data.listingId)!;
                         const lData = l.snap.data()!;
-                        const newReserved = Math.max(0, (lData.reservedQuantity || 0) - res.data.quantity);
+                        const currentTotal = lData.totalQuantity || 0;
+                        const currentReserved = lData.reservedQuantity || 0;
+
+                        const newReserved = Math.max(0, currentReserved - res.data.quantity);
                         transaction.update(l.ref, {
                             reservedQuantity: newReserved,
-                            stockQuantity: (lData.totalQuantity || lData.stockQuantity) - newReserved,
+                            stockQuantity: currentTotal - newReserved,
                             updatedAt: now
                         });
                     }
@@ -750,10 +772,14 @@ export const cancelOrder = onCall(async (request) => {
                 transaction.update(ref, { status: "RELEASED", releasedAt: now, updatedAt: now });
                 const l = listingSnaps.find(ls => ls.ref.id === data.listingId)!;
                 const lData = l.snap.data()!;
-                const newReserved = Math.max(0, (lData.reservedQuantity || 0) - data.quantity);
+
+                const currentTotal = lData.totalQuantity || 0;
+                const currentReserved = lData.reservedQuantity || 0;
+
+                const newReserved = Math.max(0, currentReserved - data.quantity);
                 transaction.update(l.ref, {
                     reservedQuantity: newReserved,
-                    stockQuantity: (lData.totalQuantity || lData.stockQuantity) - newReserved,
+                    stockQuantity: currentTotal - newReserved,
                     updatedAt: now
                 });
             }

@@ -93,12 +93,15 @@ export const cleanupExpiredReservations = onSchedule("every 5 minutes", async (e
                 }
 
                 const lData = listingSnap.data()!;
-                const newReserved = Math.max(0, (lData.reservedQuantity || 0) - freshRes.quantity);
+                const currentTotal = lData.totalQuantity || 0;
+                const currentReserved = lData.reservedQuantity || 0;
+
+                const newReserved = Math.max(0, currentReserved - freshRes.quantity);
 
                 transaction.update(resDoc.ref, { status: "EXPIRED", updatedAt: now });
                 transaction.update(listingRef, {
                     reservedQuantity: newReserved,
-                    stockQuantity: (lData.totalQuantity || lData.stockQuantity) - newReserved,
+                    stockQuantity: currentTotal - newReserved,
                     updatedAt: now
                 });
 
