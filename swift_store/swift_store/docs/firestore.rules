@@ -74,8 +74,20 @@ service cloud.firestore {
       allow update: if isSignedIn()
         && resource.data.sellerId == request.auth.uid
         && !request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny(['sellerId', 'isSponsored', 'commitmentCount']);
+            .hasAny(['sellerId', 'isSponsored', 'commitmentCount',
+                     'reservedQuantity', 'availableQuantity', 'stockQuantity'])
+        && (request.resource.data.get('totalQuantity', 0) >= resource.data.get('reservedQuantity', 0));
       allow delete: if false;
+    }
+
+    // ── Reservations ───────────────────────────────────────────────────────
+    match /reservations/{resId} {
+      allow read: if isSignedIn() && (
+        resource.data.buyerId == request.auth.uid ||
+        resource.data.sellerId == request.auth.uid
+      );
+      // All writes via Cloud Functions only
+      allow write: if false;
     }
 
     // ── Posts ──────────────────────────────────────────────────────────────

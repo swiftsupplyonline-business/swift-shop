@@ -1,4 +1,5 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as admin from "firebase-admin";
 
 /**
@@ -55,5 +56,61 @@ export const syncProfileCounters = onCall(async (request) => {
     } catch (error: any) {
         console.error("Maintenance failed:", error);
         throw new HttpsError("internal", error.message);
+    }
+});
+
+/**
+ * SCHEDULED: Cleans up expired ACTIVE reservations and releases inventory.
+ * Runs every 5 minutes.
+ */
+export const cleanupExpiredReservations = onSchedule("every 5 minutes", async (event) => {
+    const db = admin.firestore();
+    const now = admin.firestore.Timestamp.now();
+
+    try {
+        const expiredQuery = await db.collection("reservations")
+            .where("status", "==", "ACTIVE")
+            .where("expiresAt", "<", now)
+            .limit(100) // Batch processing
+            .get();
+
+        if (expiredQuery.empty) return;
+
+        console.log(`Processing ${expiredQuery.size} expired reservations...`);
+
+        for (const resDoc of expiredQuery.docs) {
+            await db.runTransaction(async (transaction) => {
+                const freshResDoc = await transaction.get(resDoc.ref);
+                const freshRes = freshResDoc.data()!;
+
+                if (freshRes.status !== "ACTIVE") return; // Race winner (Payment Success)
+
+                const listingRef = db.collection("listings").doc(freshRes.listingId);
+                const listingSnap = await transaction.get(listingRef);
+                if (!listingSnap.exists) {
+                    transaction.update(resDoc.ref, { status: "EXPIRED", updatedAt: now });
+                    return;
+                }
+
+                const lData = listingSnap.data()!;
+                const newReserved = Math.max(0, (lData.reservedQuantity || 0) - freshRes.quantity);
+
+                transaction.update(resDoc.ref, { status: "EXPIRED", updatedAt: now });
+                transaction.update(listingRef, {
+                    reservedQuantity: newReserved,
+                    stockQuantity: (lData.totalQuantity || lData.stockQuantity) - newReserved,
+                    updatedAt: now
+                });
+
+                // Also update the order status if it's still RESERVED
+                const orderRef = db.collection("orders").doc(freshRes.orderId);
+                const orderSnap = await transaction.get(orderRef);
+                if (orderSnap.exists && (orderSnap.data()?.status === "RESERVED" || orderSnap.data()?.status === "PENDING")) {
+                    transaction.update(orderRef, { status: "CANCELLED", cancelReason: "TTL_EXPIRED", updatedAt: now });
+                }
+            });
+        }
+    } catch (error) {
+        console.error("Cleanup failed:", error);
     }
 });

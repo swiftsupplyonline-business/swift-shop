@@ -141,18 +141,23 @@ class CheckoutViewModel @Inject constructor(
             _uiState.value = CheckoutUiState.Loading
             getOrder(orderId).fold(
                 onSuccess = { order ->
-                    if (order.status == OrderStatus.PENDING && order.paymentUrl != null && order.mopaySessionId != null) {
+                    val isAwaitingPayment = (order.status == OrderStatus.PENDING || 
+                                            order.status == OrderStatus.RESERVED ||
+                                            order.status == OrderStatus.PAYMENT_PENDING) 
+                                            && order.paymentUrl != null && order.mopaySessionId != null
+                    
+                    if (isAwaitingPayment) {
                         _uiState.value = CheckoutUiState.AwaitingPayment(
                             orderId = order.id,
                             paymentUrl = order.paymentUrl!!,
                             sessionId = order.mopaySessionId!!
                         )
                         _currentStep.value = CheckoutStep.VERIFICATION
-                    } else if (order.status != OrderStatus.PENDING) {
+                    } else if (order.status == OrderStatus.CONFIRMED || order.status == OrderStatus.PROCESSING) {
                         _uiState.value = CheckoutUiState.OrderPlaced(order.id)
                         _currentStep.value = CheckoutStep.CONFIRMATION
                     } else {
-                        _uiState.value = CheckoutUiState.Error("Order not ready for payment")
+                        _uiState.value = CheckoutUiState.Error("Order is in state: ${order.status}")
                     }
                 },
                 onFailure = {

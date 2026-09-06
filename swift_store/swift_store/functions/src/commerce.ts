@@ -170,12 +170,13 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 }
 
                 const requestedQty = item.quantity || 1;
-                const availableStock = listing.stockQuantity;
+                // INVENTORY RESERVATION: Use totalQuantity and reservedQuantity
+                const total = listing.totalQuantity ?? listing.stockQuantity ?? 0;
+                const reserved = listing.reservedQuantity ?? 0;
+                const available = total - reserved;
 
-                if (availableStock !== undefined && availableStock !== null) {
-                    if (availableStock < requestedQty) {
-                        throw new Error(`Insufficient stock for ${listing.title}. Requested: ${requestedQty}, Available: ${availableStock}`);
-                    }
+                if (available < requestedQty) {
+                    throw new Error(`Insufficient stock for ${listing.title}. Requested: ${requestedQty}, Available: ${available}`);
                 }
 
                 const itemTotal = listing.priceMinorUnits * requestedQty;
@@ -190,29 +191,44 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 });
             }
 
-            // 4. PERFORM ALL WRITES
+            // 4. PERFORM ALL WRITES (Atomic Reservation)
+            const now = admin.firestore.Timestamp.now();
+            const expiresAt = admin.firestore.Timestamp.fromMillis(now.toMillis() + 15 * 60 * 1000); // 15 mins
+
             for (const { ref, doc, item } of listingSnaps) {
                 const listing = doc.data()!;
-                const availableStock = listing.stockQuantity;
-                if (availableStock !== undefined && availableStock !== null) {
-                    transaction.update(ref, {
-                        stockQuantity: availableStock - (item.quantity || 1),
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                    });
-                }
+                const currentReserved = listing.reservedQuantity ?? 0;
+                const currentTotal = listing.totalQuantity ?? listing.stockQuantity ?? 0;
+                const requestedQty = item.quantity || 1;
+
+                const reservationId = db.collection("reservations").doc().id;
+                transaction.set(db.collection("reservations").doc(reservationId), {
+                    id: reservationId,
+                    orderId: newOrderId,
+                    buyerId: auth.uid,
+                    sellerId: listing.sellerId,
+                    shopId: listing.shopId,
+                    listingId: item.listingId,
+                    quantity: requestedQty,
+                    status: "ACTIVE",
+                    createdAt: now,
+                    expiresAt: expiresAt
+                });
+
+                transaction.update(ref, {
+                    reservedQuantity: currentReserved + requestedQty,
+                    // Mirror update
+                    stockQuantity: currentTotal - (currentReserved + requestedQty),
+                    updatedAt: now
+                });
             }
 
             // Delivery fee is authoritative from the delivery listing validated above.
-            // deliveryFeeFromListing and deliveryListingSnapshot are captured in the
-            // outer closure before this transaction begins.
             const deliveryFee = deliveryFeeFromListing;
             const platformFee = Math.floor((subtotal * 15) / 1000);
             const total = subtotal + deliveryFee + platformFee;
 
             // 2b. Wallet Balance Gate & Atomic Debit (SWIFT_WALLET only).
-            // This must happen before any writes are committed: if the balance is
-            // insufficient we throw, which aborts the entire transaction (including
-            // the stock-reservation writes above), so nothing is left dangling.
             if (isWalletPayment) {
                 if (walletCurrency !== "LSL") {
                     throw new Error(`Wallet currency mismatch: expected LSL, wallet is ${walletCurrency}.`);
@@ -222,7 +238,7 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 }
             }
 
-            const orderStatus = isWalletPayment ? "CONFIRMED" : "PENDING";
+            const orderStatus = isWalletPayment ? "CONFIRMED" : "RESERVED";
 
             const orderDoc: Record<string, unknown> = {
                 id: newOrderId,
@@ -237,16 +253,14 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 currency: "LSL",
                 status: orderStatus,
                 deliveryAddress: deliveryAddress || {},
-                // Canonical delivery listing reference and immutable price snapshot.
-                // The snapshot preserves the exact commercial agreement at order time
-                // even if the delivery provider later changes their listing price.
                 selectedDeliveryListingId: deliveryListingId,
                 deliveryListingSnapshot: deliveryListingSnapshot,
                 paymentMethod: paymentMethod || "MOPAY",
                 provider: provider || null,
                 idempotencyKey: idempotencyKey,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                reservationExpiresAt: expiresAt,
+                createdAt: now,
+                updatedAt: now
             };
 
             if (isWalletPayment) {
@@ -424,17 +438,36 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
 
         // 5. Atomic Transition (only if SUCCESS)
         if (mopaySession.transactionStatus === "SUCCESS") {
-            await db.runTransaction(async (transaction) => {
+            const result = await db.runTransaction(async (transaction) => {
                 const freshOrderDoc = await transaction.get(orderDoc.ref);
                 const freshOrder = freshOrderDoc.data()!;
 
-                // Re-check status inside transaction
-                if (freshOrder.status !== "PENDING") return;
+                if (freshOrder.status === "CONFIRMED") return { status: "SUCCESS" };
+                if (freshOrder.status !== "PENDING" && freshOrder.status !== "RESERVED") {
+                    return { status: "ERROR", message: `Cannot confirm order in state ${freshOrder.status}` };
+                }
 
                 const isService = freshOrder.fulfillmentType === "SERVICE";
                 const now = admin.firestore.Timestamp.now();
                 const nowMs = now.toMillis();
 
+                // 1. READ ALL NECESSARY DOCUMENTS
+                const listingSnaps = [];
+                const reservationSnaps = [];
+
+                if (!isService) {
+                    // Physical items: Fetch reservations and listings
+                    const resQuery = await db.collection("reservations").where("orderId", "==", order.id).get();
+                    for (const resDoc of resQuery.docs) {
+                        const reservation = resDoc.data();
+                        const listingRef = db.collection("listings").doc(reservation.listingId);
+                        const listingSnap = await transaction.get(listingRef);
+                        reservationSnaps.push({ ref: resDoc.ref, data: reservation });
+                        listingSnaps.push({ ref: listingRef, snap: listingSnap });
+                    }
+                }
+
+                // 2. VALIDATION & STATE CHECKS
                 if (isService) {
                     const shopId = freshOrder.shopId;
                     const slotId = freshOrder.slotId;
@@ -446,31 +479,24 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                     if (!slotSnap.exists) throw new Error("Associated slot not found");
                     const slot = slotSnap.data()!;
 
-                    // STEP 6: Expiration Safety (P0)
                     const expiresAt = slot.expiresAt || 0;
                     if (expiresAt < nowMs) {
-                        console.error(`[UNRESOLVED FINANCIAL RECOVERY] Payment successful for expired reservation: Order ${freshOrder.id}, Slot ${slotId}`);
                         transaction.update(orderDoc.ref, {
                             status: "CANCELLED",
-                            paymentStatus: "SUCCESS", // Still mark payment as success but cancel order
+                            paymentStatus: "SUCCESS",
                             cancelReason: "Reservation expired before payment verification",
                             updatedAt: now
                         });
-                        return;
+                        return { status: "RECONCILIATION_REQUIRED", reason: "EXPIRED" };
                     }
 
-                    // Verify slot is still reserved for this order
                     if (slot.status !== "RESERVED" || slot.orderId !== freshOrder.id) {
                         throw new Error("Slot is no longer reserved for this order");
                     }
 
-                    // Transition slot RESERVED -> BOOKED
-                    transaction.update(slotRef, {
-                        status: "BOOKED",
-                        updatedAt: now
-                    });
+                    // WRITE: BOOK SLOT
+                    transaction.update(slotRef, { status: "BOOKED", updatedAt: now });
 
-                    // Idempotent Appointment Creation
                     const appointmentRef = db.collection("appointments").doc(freshOrder.id);
                     transaction.set(appointmentRef, {
                         id: freshOrder.id,
@@ -485,9 +511,47 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                         createdAt: now,
                         updatedAt: now
                     });
+                } else {
+                    // Physical: Check reservation expirations
+                    for (const res of reservationSnaps) {
+                        if (res.data.status !== "ACTIVE") {
+                            return { status: "RECONCILIATION_REQUIRED", reason: `RESERVATION_${res.data.status}` };
+                        }
+                        if (res.data.expiresAt.toMillis() < nowMs) {
+                             // Transition to EXPIRED and fail
+                             for (const r of reservationSnaps) {
+                                 transaction.update(r.ref, { status: "EXPIRED", updatedAt: now });
+                                 // Release inventory
+                                 const l = listingSnaps.find(ls => ls.ref.id === r.data.listingId)!;
+                                 const lData = l.snap.data()!;
+                                 transaction.update(l.ref, {
+                                     reservedQuantity: Math.max(0, (lData.reservedQuantity || 0) - r.data.quantity),
+                                     stockQuantity: (lData.totalQuantity || lData.stockQuantity) - (Math.max(0, (lData.reservedQuantity || 0) - r.data.quantity)),
+                                     updatedAt: now
+                                 });
+                             }
+                             transaction.update(orderDoc.ref, { status: "CANCELLED", paymentStatus: "SUCCESS", cancelReason: "TTL_EXPIRED", updatedAt: now });
+                             return { status: "RECONCILIATION_REQUIRED", reason: "TTL_EXPIRED" };
+                        }
+                    }
+
+                    // WRITE: COMMIT RESERVATIONS
+                    for (const res of reservationSnaps) {
+                        transaction.update(res.ref, { status: "COMMITTED", committedAt: now, updatedAt: now });
+                        const l = listingSnaps.find(ls => ls.ref.id === res.data.listingId)!;
+                        const lData = l.snap.data()!;
+                        const newTotal = Math.max(0, (lData.totalQuantity || lData.stockQuantity) - res.data.quantity);
+                        const newReserved = Math.max(0, (lData.reservedQuantity || 0) - res.data.quantity);
+                        transaction.update(l.ref, {
+                            totalQuantity: newTotal,
+                            reservedQuantity: newReserved,
+                            stockQuantity: newTotal - newReserved, // Mirror update
+                            updatedAt: now
+                        });
+                    }
                 }
 
-                // Create Ledger Entry
+                // 3. COMMON WRITES (Ledger + Order)
                 const ledgerId = db.collection("ledgerEntries").doc().id;
                 transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
                     id: ledgerId,
@@ -507,55 +571,59 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                     gatewayTransactionId: mopaySession.transactionId,
                     updatedAt: now
                 });
+
+                return { status: "SUCCESS" };
             });
 
+            if (result.status === "RECONCILIATION_REQUIRED") {
+                return { status: "RECONCILIATION_REQUIRED", orderId: order.id, reason: result.reason };
+            }
             return { status: "SUCCESS", orderId: order.id };
         } else {
-            // STEP 7: IDEMPOTENT INVENTORY RESTORATION (P0)
-            // If payment failed/cancelled, restore the stock exactly once.
+            // STEP 7: IDEMPOTENT INVENTORY RELEASE
             if (mopaySession.transactionStatus === "CANCELLED" || mopaySession.transactionStatus === "FAILED") {
                 await db.runTransaction(async (transaction) => {
                     const freshOrderDoc = await transaction.get(orderDoc.ref);
                     const freshOrder = freshOrderDoc.data()!;
 
-                    // Only restore if not already released and still in a reservable state (PENDING)
-                    if (freshOrder.reservationReleased === true || freshOrder.status !== "PENDING") {
-                        return;
-                    }
+                    if (freshOrder.status !== "PENDING" && freshOrder.status !== "RESERVED") return;
 
-                    // 1. FETCH ALL LISTINGS (READ ALL BEFORE WRITE)
+                    const resQuery = await db.collection("reservations").where("orderId", "==", order.id).get();
                     const listingSnaps = [];
-                    for (const item of freshOrder.items || []) {
-                        const listingRef = db.collection("listings").doc(item.listingId);
+                    const reservationSnaps = [];
+
+                    for (const resDoc of resQuery.docs) {
+                        const reservation = resDoc.data();
+                        if (reservation.status !== "ACTIVE") continue;
+                        const listingRef = db.collection("listings").doc(reservation.listingId);
                         const listingSnap = await transaction.get(listingRef);
-                        listingSnaps.push({ ref: listingRef, snap: listingSnap, item });
+                        reservationSnaps.push({ ref: resDoc.ref, data: reservation });
+                        listingSnaps.push({ ref: listingRef, snap: listingSnap });
                     }
 
-                    // 2. APPLY RESTORATION (ALL WRITES AFTER ALL READS)
-                    for (const { ref, snap, item } of listingSnaps) {
-                        if (snap.exists) {
-                            const listing = snap.data()!;
-                            if (listing.stockQuantity !== undefined && listing.stockQuantity !== null) {
-                                transaction.update(ref, {
-                                    stockQuantity: listing.stockQuantity + (item.quantity || 1),
-                                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                                });
-                            }
-                        }
+                    const now = admin.firestore.Timestamp.now();
+                    for (const res of reservationSnaps) {
+                        transaction.update(res.ref, { status: "RELEASED", releasedAt: now, updatedAt: now });
+                        const l = listingSnaps.find(ls => ls.ref.id === res.data.listingId)!;
+                        const lData = l.snap.data()!;
+                        const newReserved = Math.max(0, (lData.reservedQuantity || 0) - res.data.quantity);
+                        transaction.update(l.ref, {
+                            reservedQuantity: newReserved,
+                            stockQuantity: (lData.totalQuantity || lData.stockQuantity) - newReserved,
+                            updatedAt: now
+                        });
                     }
 
                     transaction.update(orderDoc.ref, {
                         status: mopaySession.transactionStatus === "CANCELLED" ? "CANCELLED" : "FAILED",
                         paymentStatus: mopaySession.transactionStatus,
-                        reservationReleased: true,
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                        updatedAt: now
                     });
                 });
             } else {
-                // Update order with failure info if applicable (e.g. PENDING or UNKNOWN)
                 await orderDoc.ref.update({
                     paymentStatus: mopaySession.transactionStatus,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    updatedAt: admin.firestore.Timestamp.now()
                 });
             }
 
@@ -663,31 +731,37 @@ export const cancelOrder = onCall(async (request) => {
             }
 
             // INVENTORY RESTORATION (READ ALL BEFORE WRITE)
+            const resQuery = await db.collection("reservations").where("orderId", "==", order.id).get();
             const listingSnaps = [];
-            for (const item of order.items) {
-                const listingRef = db.collection("listings").doc(item.listingId);
+            const reservationSnaps = [];
+
+            for (const resDoc of resQuery.docs) {
+                const reservation = resDoc.data();
+                if (reservation.status !== "ACTIVE") continue;
+                const listingRef = db.collection("listings").doc(reservation.listingId);
                 const listingSnap = await transaction.get(listingRef);
-                listingSnaps.push({ ref: listingRef, snap: listingSnap, item });
+                reservationSnaps.push({ ref: resDoc.ref, data: reservation });
+                listingSnaps.push({ ref: listingRef, snap: listingSnap });
             }
 
             // APPLY RESTORATION (ALL WRITES AFTER ALL READS)
-            for (const { ref, snap, item } of listingSnaps) {
-                if (snap.exists) {
-                    const listing = snap.data()!;
-                    // Only restore if listing has finite stock
-                    if (listing.stockQuantity !== undefined && listing.stockQuantity !== null) {
-                        transaction.update(ref, {
-                            stockQuantity: listing.stockQuantity + item.quantity,
-                            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                        });
-                    }
-                }
+            const now = admin.firestore.Timestamp.now();
+            for (const { ref, data } of reservationSnaps) {
+                transaction.update(ref, { status: "RELEASED", releasedAt: now, updatedAt: now });
+                const l = listingSnaps.find(ls => ls.ref.id === data.listingId)!;
+                const lData = l.snap.data()!;
+                const newReserved = Math.max(0, (lData.reservedQuantity || 0) - data.quantity);
+                transaction.update(l.ref, {
+                    reservedQuantity: newReserved,
+                    stockQuantity: (lData.totalQuantity || lData.stockQuantity) - newReserved,
+                    updatedAt: now
+                });
             }
 
             transaction.update(orderRef, {
                 status: "CANCELLED",
                 cancelReason: reason || "User requested",
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                updatedAt: now
             });
         });
         return { success: true };

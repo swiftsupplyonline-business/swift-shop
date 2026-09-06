@@ -186,7 +186,11 @@ data class Listing(
     val listingType: ListingType = ListingType.BUY,
     val isAvailable: Boolean = true,
     val isSponsored: Boolean = false,
+    @Deprecated("Use totalQuantity - reservedQuantity")
     val stockQuantity: Int = 1,
+    val totalQuantity: Int = 1,    // Authoritative physical stock
+    val reservedQuantity: Int = 0, // Active holds
+    val availableQuantity: Int = 1, // Derived/Calculated
     val commitmentCount: Int = 0,
     val bookmarkCount: Int = 0,
     val isBookmarkedByMe: Boolean = false,
@@ -268,7 +272,16 @@ data class Comment(
 // â”€â”€â”€ Order / Commerce â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 enum class OrderStatus {
-    PENDING, CONFIRMED, PROCESSING, READY, DISPATCHED, DELIVERED, CANCELLED, REFUNDED
+    PENDING, 
+    RESERVED,         // Inventory hold acquired
+    PAYMENT_PENDING,  // Gateway session active
+    CONFIRMED, 
+    PROCESSING, 
+    READY, 
+    DISPATCHED, 
+    DELIVERED, 
+    CANCELLED, 
+    REFUNDED
 }
 
 @Serializable

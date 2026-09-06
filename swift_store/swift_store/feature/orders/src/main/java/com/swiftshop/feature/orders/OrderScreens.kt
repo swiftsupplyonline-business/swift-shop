@@ -109,6 +109,8 @@ private fun OrderCard(order: Order, onClick: () -> Unit) {
 private fun OrderStatusBadge(status: OrderStatus) {
     val (label, color) = when (status) {
         OrderStatus.PENDING -> "Pending" to SwiftShopColors.Warning
+        OrderStatus.RESERVED -> "Reserved" to SwiftShopColors.ElectricBlue
+        OrderStatus.PAYMENT_PENDING -> "Awaiting Payment" to SwiftShopColors.Warning
         OrderStatus.CONFIRMED -> "Confirmed" to SwiftShopColors.BrandBlue
         OrderStatus.PROCESSING -> "Processing" to SwiftShopColors.BrandBlue
         OrderStatus.READY -> "Ready" to SwiftShopColors.ElectricBlue
