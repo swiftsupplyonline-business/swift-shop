@@ -93,8 +93,15 @@ export const cleanupExpiredReservations = onSchedule("every 5 minutes", async (e
                 }
 
                 const lData = listingSnap.data()!;
-                const currentTotal = lData.totalQuantity || 0;
-                const currentReserved = lData.reservedQuantity || 0;
+                const currentTotal = lData.totalQuantity;
+                const currentReserved = lData.reservedQuantity;
+
+                // REAPER SAFETY: If listing is legacy/malformed, skip mutation to prevent corruption.
+                if (currentTotal === undefined || currentReserved === undefined) {
+                    console.error(`[REAPER ABORT] Res ${freshRes.id} points to legacy listing ${freshRes.listingId}. Manual reconciliation required.`);
+                    transaction.update(resDoc.ref, { status: "EXPIRED", updatedAt: now });
+                    return;
+                }
 
                 const newReserved = Math.max(0, currentReserved - freshRes.quantity);
 
