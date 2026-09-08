@@ -12,13 +12,15 @@ export const requestDelivery = onCall(async (request) => {
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { orderId, pickup, dropoff } = request.data;
+    const { orderId, pickup } = request.data;
     if (
-        !orderId || !pickup || !dropoff ||
-        typeof pickup.lat !== "number" || typeof pickup.lng !== "number" ||
-        typeof dropoff.lat !== "number" || typeof dropoff.lng !== "number"
+        !orderId || !pickup ||
+        typeof pickup.lat !== "number" || typeof pickup.lng !== "number"
     ) {
-        throw new HttpsError("invalid-argument", "orderId, pickup, and dropoff ({lat, lng}) are required");
+        throw new HttpsError(
+            "invalid-argument",
+            "orderId and pickup ({lat, lng}) are required"
+        );
     }
 
     const db = admin.firestore();
@@ -35,15 +37,38 @@ export const requestDelivery = onCall(async (request) => {
                 throw new Error("Unauthorized");
             }
 
-            // A route only makes sense once payment is confirmed.
             if (order.status !== "CONFIRMED") {
-                throw new Error(`Order must be CONFIRMED before requesting delivery (current status: ${order.status})`);
+                throw new Error(
+                    `Order must be CONFIRMED before requesting delivery (current: ${order.status})`
+                );
             }
 
-            // Idempotent: one active route per order.
+            // ── Idempotent: one active route per order ──────────────────────
             if (order.deliveryRouteId) {
                 return order.deliveryRouteId as string;
             }
+
+            // ── Source dropoff from the order's buyer pin snapshot ──────────
+            // destinationLocationSnapshot is written by placeOrder/confirmOrder
+            // from the buyer's confirmed DeliveryAddress lat/lng.
+            const dest = order.destinationLocationSnapshot;
+            if (!dest || typeof dest.lat !== "number" || typeof dest.lng !== "number") {
+                throw new Error(
+                    "Order has no confirmed buyer location. " +
+                    "destinationLocationSnapshot is missing or malformed."
+                );
+            }
+
+            // ── Source pickup from the order's shop location snapshot ───────
+            // originLocationSnapshot is written at order creation from the
+            // shop document — never from the client.
+            const origin = order.originLocationSnapshot;
+            const resolvedPickupLat = (origin && typeof origin.lat === "number")
+                ? origin.lat
+                : pickup.lat;   // fallback to client only if shop has no geo
+            const resolvedPickupLng = (origin && typeof origin.lng === "number")
+                ? origin.lng
+                : pickup.lng;
 
             const routeId = db.collection("deliveryRoutes").doc().id;
             const newRoute = {
@@ -52,13 +77,17 @@ export const requestDelivery = onCall(async (request) => {
                 buyerId: order.buyerId,
                 sellerId: order.sellerId,
                 driverId: "",
-                pickupLat: pickup.lat,
-                pickupLng: pickup.lng,
-                dropoffLat: dropoff.lat,
-                dropoffLng: dropoff.lng,
+                // Pickup = shop / origin (server-sourced)
+                pickupLat: resolvedPickupLat,
+                pickupLng: resolvedPickupLng,
+                // Dropoff = buyer confirmed pin (server-sourced, immutable)
+                dropoffLat: dest.lat,
+                dropoffLng: dest.lng,
+                dropoffAddressSnapshot: dest.addressSnapshot || "",
+                dropoffInstructions: dest.instructions || "",
                 status: "REQUESTED",
                 distanceMeters: 0,
-                estimatedMinutes: 0,
+                estimatedMinutes: order.deliveryListingSnapshot?.estimatedMinutes || 0,
                 conversationId: "",
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             };
@@ -66,6 +95,7 @@ export const requestDelivery = onCall(async (request) => {
             transaction.set(db.collection("deliveryRoutes").doc(routeId), newRoute);
             transaction.update(orderRef, {
                 deliveryRouteId: routeId,
+                status: "PROCESSING",           // advance order status
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
 

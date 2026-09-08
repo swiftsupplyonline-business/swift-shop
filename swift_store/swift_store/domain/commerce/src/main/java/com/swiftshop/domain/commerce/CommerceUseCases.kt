@@ -71,6 +71,7 @@ interface CommerceRepository {
     suspend fun getListing(listingId: String): Result<Listing>
     suspend fun getUserListings(userId: String): Result<List<Listing>>
     suspend fun searchListings(query: String): Result<List<Listing>>
+    suspend fun searchShops(query: String): Result<List<Shop>>
     suspend fun createListing(listing: Listing): Result<String>
     suspend fun updateListing(listing: Listing): Result<Unit>
     suspend fun deleteListing(listingId: String): Result<Unit>
@@ -153,6 +154,10 @@ class GetUserListingsUseCase(private val repository: CommerceRepository) {
 
 class SearchListingsUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(query: String): Result<List<Listing>> = repository.searchListings(query)
+}
+
+class SearchShopsUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(query: String): Result<List<Shop>> = repository.searchShops(query)
 }
 
 class ObserveCartUseCase(private val repository: CommerceRepository) {

@@ -19,6 +19,10 @@ class UnfollowUserUseCase(private val repository: ProfileRepository) {
     suspend operator fun invoke(targetUid: String): Result<Unit> = repository.unfollowUser(targetUid)
 }
 
+class SearchProfilesUseCase(private val repository: ProfileRepository) {
+    suspend operator fun invoke(query: String) = repository.searchProfiles(query)
+}
+
 
 class IsFollowingUseCase(private val repository: ProfileRepository) {
     suspend operator fun invoke(targetUid: String): Boolean = repository.isFollowing(targetUid)

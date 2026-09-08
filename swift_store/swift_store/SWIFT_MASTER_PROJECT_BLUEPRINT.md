@@ -383,13 +383,13 @@ The subsystem requires a provider-independent architecture to prevent vendor loc
 | Functions | swift-dev-3d3ae | `WORKING` |
 
 ## 22. Firestore Contract Matrix
-Refer to: [SWIFT_FIRESTORE_CONTRACT_MATRIX.md](file:///C:/Users/Tech%20Semiconductors/AndroidStudioProjects/SwiftShop_Salvaged/SwiftShop/SWIFT_FIRESTORE_CONTRACT_MATRIX.md)
+Refer to: [SWIFT_FIRESTORE_CONTRACT_MATRIX.md](SWIFT_FIRESTORE_CONTRACT_MATRIX.md)
 
 ## 23. Cloud Function Contract Matrix
-Refer to: [SWIFT_CLOUD_FUNCTION_CONTRACT_MATRIX.md](file:///C:/Users/Tech%20Semiconductors/AndroidStudioProjects/SwiftShop_Salvaged/SwiftShop/SWIFT_CLOUD_FUNCTION_CONTRACT_MATRIX.md)
+Refer to: [SWIFT_CLOUD_FUNCTION_CONTRACT_MATRIX.md](SWIFT_CLOUD_FUNCTION_CONTRACT_MATRIX.md)
 
 ## 24. Repository / Domain Contract Matrix
-Refer to: [SWIFT_SHOP_CANONICAL_CONTRACT_MATRIX.md](file:///C:/Users/Tech%20Semiconductors/AndroidStudioProjects/SwiftShop_Salvaged/SwiftShop/SWIFT_SHOP_CANONICAL_CONTRACT_MATRIX.md)
+Refer to: [SWIFT_SHOP_CANONICAL_CONTRACT_MATRIX.md](SWIFT_SHOP_CANONICAL_CONTRACT_MATRIX.md)
 
 ## 25. Application Navigation Model
 *   `Screen` (Sealed Class) in `:core:ui`.

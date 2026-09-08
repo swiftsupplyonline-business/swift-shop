@@ -21,13 +21,25 @@ sealed interface CreateListingUiState {
     data class Error(val message: String) : CreateListingUiState
 }
 
+sealed interface UserShopsState {
+    data object Loading : UserShopsState
+    data class Success(val shops: List<Shop>) : UserShopsState
+    data object Empty : UserShopsState
+    data class Error(val message: String) : UserShopsState
+}
+
 @HiltViewModel
 class CreateListingViewModel @Inject constructor(
+    private val savedStateHandle: androidx.lifecycle.SavedStateHandle,
     private val observeCurrentUser: ObserveCurrentUserUseCase,
     private val observeProfile: com.swiftshop.domain.profile.ObserveProfileUseCase,
     private val createListing: CreateListingUseCase,
     private val repository: CommerceRepository
 ) : ViewModel() {
+
+    private val initialType: ListingType = savedStateHandle.get<String>("listingType")?.let {
+        runCatching { ListingType.valueOf(it) }.getOrNull()
+    } ?: ListingType.PRODUCT
 
     private val _uiState = MutableStateFlow<CreateListingUiState>(CreateListingUiState.Idle)
     val uiState = _uiState.asStateFlow()
@@ -38,11 +50,13 @@ class CreateListingViewModel @Inject constructor(
     private val _listingUsageText = MutableStateFlow("")
     val listingUsageText = _listingUsageText.asStateFlow()
 
-    private val _userShops = MutableStateFlow<List<Shop>>(emptyList())
-    val userShops = _userShops.asStateFlow()
+    private val _userShopsState = MutableStateFlow<UserShopsState>(UserShopsState.Loading)
+    val userShopsState = _userShopsState.asStateFlow()
 
     private val _selectedShop = MutableStateFlow<Shop?>(null)
     val selectedShop = _selectedShop.asStateFlow()
+
+    private val requestedShopId: String? = savedStateHandle["shopId"]
 
     private val _title = MutableStateFlow("")
     val title = _title.asStateFlow()
@@ -65,7 +79,7 @@ class CreateListingViewModel @Inject constructor(
     private val _isSeeding = MutableStateFlow(false)
     val isSeeding = _isSeeding.asStateFlow()
 
-    private val _listingType = MutableStateFlow(ListingType.BUY)
+    private val _listingType = MutableStateFlow(initialType)
     val listingType = _listingType.asStateFlow()
 
     private val _customFields = MutableStateFlow<List<CustomField>>(emptyList())
@@ -75,11 +89,11 @@ class CreateListingViewModel @Inject constructor(
     val deliveryEstimateDays = _deliveryEstimateDays.asStateFlow()
 
     val showCustomFieldBuilder: StateFlow<Boolean> = _listingType.map { type ->
-        type in listOf(ListingType.PLACE_ORDER, ListingType.REGISTER, ListingType.SET_APPOINTMENT)
+        type in listOf(ListingType.PLACE_ORDER, ListingType.REGISTER, ListingType.SET_APPOINTMENT, ListingType.SERVICE)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     val showDeliveryEstimate: StateFlow<Boolean> = _listingType.map { type ->
-        type in listOf(ListingType.BUY, ListingType.PLACE_ORDER, ListingType.DELIVER)
+        type in listOf(ListingType.PRODUCT, ListingType.BUY, ListingType.PLACE_ORDER, ListingType.DELIVER)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     init {
@@ -104,15 +118,31 @@ class CreateListingViewModel @Inject constructor(
                 .map { it!! }
                 .flatMapLatest { user ->
                     repository.getUserShops(user.uid)
+                        .map { shops ->
+                            if (shops.isEmpty()) UserShopsState.Empty
+                            else UserShopsState.Success(shops)
+                        }
                         .catch { e -> 
                             Timber.e(e, "Error observing shops in CreateListing")
-                            emit(emptyList())
+                            emit(UserShopsState.Error(e.message ?: "Failed to load shops"))
                         }
                 }
-                .collect { shops ->
-                    _userShops.value = shops
-                    if (_selectedShop.value == null && shops.isNotEmpty()) {
-                        onShopSelected(shops.first())
+                .collect { state ->
+                    _userShopsState.value = state
+                    if (state is UserShopsState.Success) {
+                        val shops = state.shops
+                        // Safely handle pre-selection from shopId arg
+                        val preselected = if (!requestedShopId.isNullOrBlank()) {
+                            shops.find { it.id == requestedShopId }
+                        } else null
+
+                        if (_selectedShop.value == null) {
+                            if (preselected != null) {
+                                onShopSelected(preselected)
+                            } else if (shops.isNotEmpty()) {
+                                onShopSelected(shops.first())
+                            }
+                        }
                     }
                 }
         }
@@ -120,7 +150,10 @@ class CreateListingViewModel @Inject constructor(
 
     fun onShopSelected(shop: Shop) {
         _selectedShop.value = shop
-        _category.value = shop.category
+        // Pre-populate category, but don't force it (User can change it)
+        if (_category.value == "General" || _category.value.isBlank()) {
+            _category.value = shop.category
+        }
     }
 
     fun onTitleChange(value: String) { _title.value = value }

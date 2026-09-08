@@ -179,7 +179,7 @@ fun CheckoutScreen(
                     state = uiState,
                     onTrackOrder = {
                         val orderId = (uiState as? CheckoutUiState.OrderPlaced)?.orderId ?: return@ConfirmationStep
-                        navController.navigate(Screen.OrderDetail.createRoute(orderId)) {
+                        navController.navigate(Screen.TrackOrder.createRoute(orderId)) {
                             popUpTo(Screen.Home.route)
                         }
                     },

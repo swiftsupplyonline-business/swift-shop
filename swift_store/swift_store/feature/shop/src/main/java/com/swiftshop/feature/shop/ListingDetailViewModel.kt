@@ -9,6 +9,7 @@ import com.swiftshop.domain.commerce.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 sealed interface ListingDetailNavigation {
@@ -167,6 +168,7 @@ class ListingDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _isAddingToCart.value = true
             _actionState.value = ActionState.Loading
+            Timber.d("Adding listing ${state.listing.id} to cart (quantity: ${_quantity.value})")
             val user = observeCurrentUser().first()
             val uid = user?.uid
             
@@ -175,19 +177,23 @@ class ListingDetailViewModel @Inject constructor(
                     listingId = state.listing.id,
                     shopId = state.listing.shopId,
                     title = state.listing.title,
+                    imageUrl = state.listing.imageUrls.firstOrNull() ?: "",
                     quantity = _quantity.value,
                     unitPrice = state.listing.price
                 )
                 addToCartUseCase(uid, item).fold(
                     onSuccess = {
+                        Timber.i("Successfully added to cart")
                         _actionState.value = ActionState.Success("Added to cart")
                         onComplete?.invoke()
                     },
                     onFailure = {
+                        Timber.e(it, "Failed to add to cart")
                         _actionState.value = ActionState.Error(it.message ?: "Failed to add to cart")
                     }
                 )
             } else {
+                Timber.w("User not signed in - cannot add to cart")
                 _actionState.value = ActionState.Error("User not signed in")
             }
             _isAddingToCart.value = false
@@ -215,8 +221,10 @@ class ListingDetailViewModel @Inject constructor(
     }
 
     fun buyNow() {
+        Timber.d("buyNow triggered")
         addToCart {
             viewModelScope.launch {
+                Timber.i("Navigating to checkout from buyNow")
                 _navigationEvents.emit(ListingDetailNavigation.GoToCheckout())
             }
         }

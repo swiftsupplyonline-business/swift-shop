@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.pager.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -15,8 +16,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.*
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.swiftshop.core.model.*
@@ -24,7 +26,6 @@ import com.swiftshop.core.ui.components.*
 import com.swiftshop.core.ui.theme.SwiftShopColors
 import com.swiftshop.core.ui.theme.swiftColors
 import com.swiftshop.core.ui.navigation.Screen
-import androidx.compose.foundation.shape.RoundedCornerShape
 import kotlinx.coroutines.launch
 
 enum class HomeTab(val label: String) {
@@ -56,36 +57,47 @@ fun HomeScreen(
             onMessagesClick = { onNavigate(Screen.MessagingList.route) }
         )
 
-        // ── Tab Row ──────────────────────────────────────────────────────────
-        TabRow(
-            selectedTabIndex = pagerState.currentPage,
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.primary,
-            indicator = { tabPositions ->
-                Box(
-                    modifier = Modifier
-                        .tabIndicatorOffset(tabPositions[pagerState.currentPage])
-                        .height(3.dp)
-                        .clip(MaterialTheme.shapes.small)
-                        .background(MaterialTheme.colorScheme.primary)
-                )
-            },
-            divider = {}
+        // ── Tab Row ─────────────────────────────────────────────────────────
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 2.dp
         ) {
-            HomeTab.entries.forEachIndexed { index, tab ->
-                Tab(
-                    selected = pagerState.currentPage == index,
-                    onClick = { coroutineScope.launch { pagerState.animateScrollToPage(index) } },
-                    text = {
-                        Text(
-                            tab.label,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (pagerState.currentPage == index)
-                                MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                )
+            TabRow(
+                selectedTabIndex = pagerState.currentPage,
+                containerColor = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.primary,
+                indicator = { tabPositions ->
+                    Box(
+                        modifier = Modifier
+                            .tabIndicatorOffset(tabPositions[pagerState.currentPage])
+                            .height(3.dp)
+                            .padding(horizontal = 24.dp)
+                            .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                    )
+                },
+                divider = {}
+            ) {
+                HomeTab.entries.forEachIndexed { index, tab ->
+                    Tab(
+                        selected = pagerState.currentPage == index,
+                        onClick = {
+                            coroutineScope.launch { pagerState.animateScrollToPage(index) }
+                        },
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        text = {
+                            Text(
+                                tab.label,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = if (pagerState.currentPage == index)
+                                    FontWeight.Bold else FontWeight.Normal,
+                                color = if (pagerState.currentPage == index)
+                                    MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    )
+                }
             }
         }
 
@@ -109,7 +121,7 @@ fun HomeScreen(
                     onPostClick = { onNavigate(Screen.PostDetail.createRoute(it)) },
                     onUserClick = { onNavigate(Screen.UserProfile.createRoute(it)) },
                     onLikeClick = { postId, liked -> viewModel.toggleLike(postId, liked) },
-                    onBookmarkClick = { viewModel.onToggleBookmark(it, "POST") }, // Generic POST type for mapping
+                    onBookmarkClick = { viewModel.onToggleBookmark(it, "POST") },
                     onCreatePost = { onNavigate(Screen.CreatePost.route) }
                 )
                 HomeTab.REELS -> {
@@ -127,6 +139,8 @@ fun HomeScreen(
     }
 }
 
+// ─── Header ──────────────────────────────────────────────────────────────────
+
 @Composable
 private fun HomeHeader(
     onSearchClick: () -> Unit,
@@ -134,60 +148,79 @@ private fun HomeHeader(
     onMessagesClick: () -> Unit
 ) {
     val colors = MaterialTheme.swiftColors
+
     Surface(
-        tonalElevation = 4.dp,
-        color = MaterialTheme.colorScheme.surface
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 0.dp
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Wordmark
-            Text(
-                "Swift Shop",
-                style = MaterialTheme.typography.titleLarge,
-                color = colors.brandBlue,
-                modifier = Modifier.weight(1f)
-            )
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Wordmark with gradient text effect via box
+                Text(
+                    "Swift Shop",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 22.sp
+                    ),
+                    color = colors.brandBlue,
+                    modifier = Modifier.weight(1f)
+                )
 
-            // Action icons
-            IconButton(onClick = onMessagesClick) {
-                Icon(Icons.Default.Message, "Messages",
-                    tint = MaterialTheme.colorScheme.onSurface)
+                // Icon buttons
+                IconButton(onClick = onMessagesClick) {
+                    Icon(
+                        Icons.Default.Message,
+                        "Messages",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                IconButton(onClick = onNotificationsClick) {
+                    Icon(
+                        Icons.Default.Notifications,
+                        "Notifications",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
-            IconButton(onClick = onNotificationsClick) {
-                Icon(Icons.Default.Notifications, "Notifications",
-                    tint = MaterialTheme.colorScheme.onSurface)
-            }
-        }
-    }
 
-    // Search bar below header
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable { onSearchClick() }
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Search, null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Search Swift Shop…", style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Search bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable { onSearchClick() }
+                    .padding(horizontal = 16.dp, vertical = 13.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Search,
+                        null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "Search Swift Shop…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
     }
 }
 
-// ─── Shop Tab ─────────────────────────────────────────────────────────────────
+// ─── Shop Tab ────────────────────────────────────────────────────────────────
 
 @Composable
 fun ShopTabContent(
@@ -204,9 +237,7 @@ fun ShopTabContent(
             is PagingState.Empty -> EmptyState(
                 title = "No listings yet",
                 subtitle = "Be the first to add something for sale",
-                action = {
-                    SwiftPrimaryButton("Add Listing", onClick = onCreateListing)
-                }
+                action = { SwiftPrimaryButton("Add Listing", onClick = onCreateListing) }
             )
             is PagingState.Error -> ErrorState(state.message, onRetry = onLoadMore)
             is PagingState.Success, is PagingState.LoadingMore -> {
@@ -217,26 +248,30 @@ fun ShopTabContent(
                 }
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
-                    contentPadding = PaddingValues(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(
+                        start = 12.dp, end = 12.dp, top = 12.dp, bottom = 88.dp
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(items, key = { it.id }) { listing ->
                         ListingCard(
-                            listing = listing, 
+                            listing = listing,
                             onClick = { onListingClick(listing.id) },
                             onBookmarkClick = { onBookmarkClick(listing.id) }
                         )
                     }
                     if (state is PagingState.LoadingMore) {
                         item(span = { GridItemSpan(2) }) {
-                            Box(Modifier.fillMaxWidth().padding(16.dp), Alignment.Center) {
+                            Box(
+                                Modifier.fillMaxWidth().padding(16.dp),
+                                Alignment.Center
+                            ) {
                                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
                             }
                         }
                     }
-                    // Trigger load more near end
                     item(span = { GridItemSpan(2) }) {
                         LaunchedEffect(Unit) { onLoadMore() }
                     }
@@ -245,18 +280,27 @@ fun ShopTabContent(
             else -> Unit
         }
 
-        // FAB
-        FloatingActionButton(
-            onClick = onCreateListing,
+        // Gradient FAB
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(16.dp),
-            containerColor = MaterialTheme.colorScheme.primary
+                .padding(20.dp)
+                .size(56.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(
+                    Brush.linearGradient(
+                        listOf(SwiftShopColors.BrandBlue, SwiftShopColors.ElectricBlue)
+                    )
+                )
+                .clickable { onCreateListing() },
+            contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.Add, "Add listing", tint = Color.White)
+            Icon(Icons.Default.Add, "Add listing", tint = Color.White, modifier = Modifier.size(28.dp))
         }
     }
 }
+
+// ─── Posts Tab ───────────────────────────────────────────────────────────────
 
 @Composable
 fun PostsTabContent(
@@ -280,7 +324,8 @@ fun PostsTabContent(
                     else -> emptyList()
                 }
                 LazyColumn(
-                    contentPadding = PaddingValues(vertical = 8.dp),
+                    contentPadding = PaddingValues(vertical = 8.dp, horizontal = 0.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(items, key = { it.id }) { post ->
@@ -291,7 +336,6 @@ fun PostsTabContent(
                             onLikeClick = { onLikeClick(post.id, !post.isLikedByMe) },
                             onBookmarkClick = { onBookmarkClick(post.id) }
                         )
-                        Spacer(Modifier.height(8.dp))
                     }
                     item { LaunchedEffect(Unit) { onLoadMore() } }
                 }
@@ -299,17 +343,26 @@ fun PostsTabContent(
             else -> Unit
         }
 
-        FloatingActionButton(
-            onClick = onCreatePost,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-            containerColor = MaterialTheme.colorScheme.primary
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(20.dp)
+                .size(56.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(
+                    Brush.linearGradient(
+                        listOf(SwiftShopColors.BrandBlue, SwiftShopColors.ElectricBlue)
+                    )
+                )
+                .clickable { onCreatePost() },
+            contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.Add, "Create post", tint = Color.White)
+            Icon(Icons.Default.Add, "Create post", tint = Color.White, modifier = Modifier.size(28.dp))
         }
     }
 }
 
-// ─── Reels Tab ────────────────────────────────────────────────────────────────
+// ─── Reels Tab ───────────────────────────────────────────────────────────────
 
 @Composable
 fun ReelsTabContent(
@@ -325,7 +378,7 @@ fun ReelsTabContent(
             is PagingState.Empty -> EmptyState(
                 "No reels yet",
                 "Create a short video to showcase your products",
-                action = { 
+                action = {
                     SwiftGlassmorphicButton(onClick = onCreateReel) {
                         Icon(Icons.Default.VideoCall, null)
                         Spacer(Modifier.width(8.dp))
@@ -340,9 +393,8 @@ fun ReelsTabContent(
                     is PagingState.LoadingMore -> state.items
                     else -> emptyList()
                 }
-                // Full-screen vertical pager for reels
                 VerticalReelsPager(
-                    reels = items, 
+                    reels = items,
                     onLoadMore = onLoadMore,
                     onBookmarkClick = onBookmarkClick
                 )
@@ -350,7 +402,6 @@ fun ReelsTabContent(
             else -> Unit
         }
 
-        // Upload Progress Overlay
         uploadProgress?.let { progress ->
             val p = when (progress) {
                 is com.swiftshop.core.media.MediaUploadProgress.InProgress -> progress.percent / 100f
@@ -366,7 +417,6 @@ fun ReelsTabContent(
             )
         }
 
-        // Glassmorphic Uploader Button - Bottom Center
         SwiftGlassmorphicButton(
             onClick = onCreateReel,
             modifier = Modifier

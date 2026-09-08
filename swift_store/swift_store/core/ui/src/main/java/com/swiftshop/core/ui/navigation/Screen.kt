@@ -29,7 +29,16 @@ sealed class Screen(val route: String) {
     }
     data object CreatePost : Screen("create_post")
     data object CreateReel : Screen("create_reel")
-    data object CreateListing : Screen("create_listing")
+    data object CreateListing : Screen("create_listing?shopId={shopId}") {
+        fun createRoute(shopId: String? = null) = if (shopId != null) "create_listing?shopId=$shopId" else "create_listing"
+    }
+    data object EditListing : Screen("edit_listing/{listingId}") {
+        fun createRoute(listingId: String) = "edit_listing/$listingId"
+    }
+    data object CreateListingForm : Screen("create_listing_form/{listingType}?shopId={shopId}") {
+        fun createRoute(type: com.swiftshop.core.model.ListingType, shopId: String? = null) = 
+            if (shopId != null) "create_listing_form/${type.name}?shopId=$shopId" else "create_listing_form/${type.name}"
+    }
     data object CreateAd : Screen("create_ad/{contentId}/{contentType}") {
         fun createRoute(contentId: String, type: String) = "create_ad/$contentId/$type"
     }
@@ -54,5 +63,8 @@ sealed class Screen(val route: String) {
         fun createRoute(id: String) = "manage_shop/$id"
     }
     data object CreateShop : Screen("create_shop")
+    data object TrackOrder : Screen("track_order/{orderId}") {
+        fun createRoute(orderId: String) = "track_order/$orderId"
+    }
 }
 

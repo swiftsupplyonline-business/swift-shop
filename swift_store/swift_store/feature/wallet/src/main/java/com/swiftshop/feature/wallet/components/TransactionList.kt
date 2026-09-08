@@ -20,18 +20,49 @@ import com.swiftshop.core.model.WalletTransaction
 import com.swiftshop.core.ui.components.SwiftCard
 import com.swiftshop.core.ui.theme.SwiftShopColors
 import com.swiftshop.feature.wallet.TransactionListState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 
 @Composable
 fun TransactionList(
     state: TransactionListState,
+    selectedFilter: TransactionType?,
+    onFilterSelected: (TransactionType?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
         Text(
-            text = "Recent Transactions",
+            text = "Transactions",
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(vertical = 8.dp)
+            modifier = Modifier.padding(top = 8.dp)
         )
+
+        // Filter Chips
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(
+                selected = selectedFilter == null,
+                onClick = { onFilterSelected(null) },
+                label = { Text("All") }
+            )
+            listOf(
+                TransactionType.DEPOSIT to "Deposits",
+                TransactionType.WITHDRAWAL to "Withdrawals",
+                TransactionType.PURCHASE to "Purchases",
+                TransactionType.SALE to "Sales"
+            ).forEach { (type, label) ->
+                FilterChip(
+                    selected = selectedFilter == type,
+                    onClick = { onFilterSelected(type) },
+                    label = { Text(label) }
+                )
+            }
+        }
         
         when (state) {
             is TransactionListState.Loading -> {

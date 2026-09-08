@@ -25,6 +25,7 @@ import com.swiftshop.feature.home.HomeScreen
 import com.swiftshop.feature.messaging.ConversationScreen
 import com.swiftshop.feature.messaging.MessagingListScreen
 import com.swiftshop.feature.orders.OrderDetailScreen
+import com.swiftshop.feature.orders.TrackOrderScreen
 import com.swiftshop.feature.orders.OrdersScreen
 import com.swiftshop.feature.posts.CreatePostScreen
 import com.swiftshop.feature.posts.PostDetailScreen
@@ -141,6 +142,10 @@ fun SwiftShopNavHost(
             arguments = listOf(navArgument("orderId") { type = NavType.StringType })
         ) { OrderDetailScreen(navController = navController) }
 
+        composable(
+            route = Screen.TrackOrder.route,
+            arguments = listOf(navArgument("orderId") { type = NavType.StringType })
+        ) { TrackOrderScreen(navController = navController) }
         composable(Screen.CreatePost.route) {
             CreatePostScreen(onBack = { navController.popBackStack() },
                 onCreated = { navController.popBackStack() })
@@ -150,8 +155,23 @@ fun SwiftShopNavHost(
                 onCreated = { navController.popBackStack() })
         }
         composable(Screen.CreateListing.route) {
-            CreateListingScreen(onBack = { navController.popBackStack() },
-                onCreated = { navController.popBackStack() })
+            com.swiftshop.feature.shop.CreateListingGatewayScreen(
+                onBack = { navController.popBackStack() },
+                onNavigateToForm = { type ->
+                    navController.navigate(Screen.CreateListingForm.createRoute(type))
+                }
+            )
+        }
+        composable(
+            route = Screen.CreateListingForm.route,
+            arguments = listOf(navArgument("listingType") { type = NavType.StringType })
+        ) {
+            CreateListingScreen(
+                onBack = { navController.popBackStack() },
+                onCreated = {
+                    navController.popBackStack(Screen.CreateListing.route, inclusive = true)
+                }
+            )
         }
         composable(
             route = Screen.CreateAd.route,

@@ -111,6 +111,9 @@ object ProfileModule {
     fun provideUpdateProfileUseCase(repo: ProfileRepository) = UpdateProfileUseCase(repo)
 
     @Provides
+    fun provideSearchProfilesUseCase(repo: ProfileRepository) = SearchProfilesUseCase(repo)
+
+    @Provides
     fun provideFollowUserUseCase(repo: ProfileRepository) = FollowUserUseCase(repo)
 
     @Provides
@@ -187,6 +190,9 @@ object CommerceModule {
     fun provideSearchListingsUseCase(repo: CommerceRepository) = SearchListingsUseCase(repo)
 
     @Provides
+    fun provideSearchShopsUseCase(repo: CommerceRepository) = SearchShopsUseCase(repo)
+
+    @Provides
     fun provideObserveCartUseCase(repo: CommerceRepository) = ObserveCartUseCase(repo)
 
     @Provides
@@ -218,6 +224,10 @@ object CommerceModule {
         CreateListingUseCase(repo, media)
 
     @Provides
+    fun provideUpdateListingUseCase(repo: CommerceRepository, media: com.swiftshop.core.media.MediaUploader) = 
+        UpdateListingUseCase(repo, media)
+
+    @Provides
     @Singleton
     fun provideGetDeliveryListingsUseCase(repo: CommerceRepository) = GetDeliveryListingsUseCase(repo)
 
@@ -246,6 +256,9 @@ object SocialModule {
 
     @Provides
     fun provideGetPostFeedUseCase(repo: FeedRepository) = GetPostFeedUseCase(repo)
+
+    @Provides
+    fun provideSearchPostsUseCase(repo: FeedRepository) = SearchPostsUseCase(repo)
 
     @Provides
     fun provideGetPostUseCase(repo: FeedRepository) = GetPostUseCase(repo)

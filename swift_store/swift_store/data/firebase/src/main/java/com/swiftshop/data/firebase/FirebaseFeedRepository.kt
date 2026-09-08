@@ -1,6 +1,7 @@
 package com.swiftshop.data.firebase
 
 import java.util.Date
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.swiftshop.core.model.*
 import com.swiftshop.domain.feed.FeedItem
@@ -11,6 +12,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -24,8 +26,46 @@ fun tsToLong(v: Any?): Long = when (v) {
 
 @Singleton
 class FirebaseFeedRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val auth: com.google.firebase.auth.FirebaseAuth
 ) : FeedRepository {
+
+    private suspend fun joinSocialState(posts: List<FeedPost>): List<FeedPost> {
+        val uid = auth.currentUser?.uid ?: return posts
+        if (posts.isEmpty()) return posts
+
+        val postIds = posts.map { it.id }.toSet()
+        
+        // 1. Fetch likes for these posts by current user
+        val likesMap = try {
+            postIds.chunked(10).flatMap { chunk ->
+                chunk.map { postId ->
+                    val exists = firestore.collection("posts").document(postId)
+                        .collection("likes").document(uid).get().await().exists()
+                    postId to exists
+                }
+            }.toMap()
+        } catch (e: Exception) {
+            Timber.e(e, "SECURITY_ERROR: Failed to fetch likes. Check firestore.rules parity.")
+            emptyMap()
+        }
+
+        // 2. Fetch bookmarks
+        val bookmarks = try {
+            firestore.collection("users").document(uid).collection("bookmarks")
+                .get().await().documents.map { it.id }.toSet()
+        } catch (e: Exception) {
+            Timber.e(e, "SECURITY_ERROR: Failed to fetch bookmarks. Check firestore.rules parity.")
+            emptySet()
+        }
+
+        return posts.map { post ->
+            post.copy(
+                isLikedByMe = likesMap[post.id] ?: false,
+                isBookmarkedByMe = post.id in bookmarks
+            )
+        }
+    }
 
     private suspend fun joinProfiles(posts: List<FeedPost>): List<FeedPost> {
         if (posts.isEmpty()) return posts
@@ -163,11 +203,11 @@ class FirebaseFeedRepository @Inject constructor(
         when (state) {
             is PagingState.Success<*> -> {
                 val s = state as PagingState.Success<FeedPost>
-                s.copy(items = joinProfiles(s.items))
+                s.copy(items = joinSocialState(joinProfiles(s.items)))
             }
             is PagingState.LoadingMore<*> -> {
                 val s = state as PagingState.LoadingMore<FeedPost>
-                s.copy(items = joinProfiles(s.items))
+                s.copy(items = joinSocialState(joinProfiles(s.items)))
             }
             else -> state
         }
@@ -187,37 +227,73 @@ class FirebaseFeedRepository @Inject constructor(
         when (state) {
             is PagingState.Success<*> -> {
                 val s = state as PagingState.Success<FeedPost>
-                s.copy(items = joinProfiles(s.items))
+                s.copy(items = joinSocialState(joinProfiles(s.items)))
             }
             is PagingState.LoadingMore<*> -> {
                 val s = state as PagingState.LoadingMore<FeedPost>
-                s.copy(items = joinProfiles(s.items))
+                s.copy(items = joinSocialState(joinProfiles(s.items)))
             }
             else -> state
         }
     }
 
+    override suspend fun searchPosts(query: String): Result<List<FeedPost>> = runCatching {
+        val snapshot = firestore.collection("posts")
+            .whereGreaterThanOrEqualTo("caption", query)
+            .whereLessThanOrEqualTo("caption", query + "\uf8ff")
+            .get().await()
+        
+        val posts = snapshot.toObjects(FirestoreFeedPost::class.java).map { it.toDomain() }
+        joinProfiles(posts)
+    }
+
     override fun getPersonalizedFeed(page: Int, pageSize: Int): Flow<PagingState<FeedItem>> = callbackFlow<PagingState<FeedItem>> {
-        // Personalized feed requires complex server-side ranking.
-        // Client fallback: Return image posts.
-        val subscription = firestore.collection("posts")
+        // ── Personalized Discovery Interleaving ──
+        // Fetches posts and listings and interleaves them for a mixed ecosystem discovery.
+        
+        val postsQuery = firestore.collection("posts")
             .whereIn("type", listOf("IMAGE", "CAROUSEL"))
-            .orderBy("rankingScore", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
             .limit(pageSize.toLong())
-            .addSnapshotListener { snapshot, _ ->
-                val posts = snapshot?.toObjects(FirestoreFeedPost::class.java)?.map { it.toDomain() } ?: emptyList()
-                val items: List<FeedItem> = posts.map { FeedItem.PostItem(it, RankingFactors(relevanceScore = it.rankingScore)) }
-                trySend(PagingState.Success(items, hasMore = items.size == pageSize))
-            }
+
+        val listingsQuery = firestore.collection("listings")
+            .whereEqualTo("isAvailable", true)
+            .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit((pageSize / 3).toLong().coerceAtLeast(5))
+
+        val subscription = postsQuery.addSnapshotListener { postsSnap, _ ->
+            val posts = postsSnap?.toObjects(FirestoreFeedPost::class.java)?.map { it.toDomain() } ?: emptyList()
+            
+            // Note: Mixing snapshot listeners is tricky for pagination, 
+            // but for a single-page pass this establishes the pattern.
+            firestore.collection("listings")
+                .whereEqualTo("isAvailable", true)
+                .limit(5)
+                .get()
+                .addOnSuccessListener { listingsSnap ->
+                    val listings = listingsSnap.toObjects(FirestoreListing::class.java).map { it.toDomain() }
+                    
+                    val interleaved = mutableListOf<FeedItem>()
+                    var listingIndex = 0
+                    
+                    posts.forEachIndexed { index, post ->
+                        interleaved.add(FeedItem.PostItem(post, RankingFactors(relevanceScore = post.rankingScore)))
+                        if ((index + 1) % 3 == 0 && listingIndex < listings.size) {
+                            interleaved.add(FeedItem.ListingItem(listings[listingIndex], RankingFactors()))
+                            listingIndex++
+                        }
+                    }
+                    
+                    trySend(PagingState.Success(interleaved, hasMore = posts.size == pageSize))
+                }
+        }
         awaitClose { subscription.remove() }
     }.map { state ->
         when (state) {
             is PagingState.Success<*> -> {
                 val s = state as PagingState.Success<FeedItem>
-                s.copy(items = joinProfilesToFeedItems(s.items))
-            }
-            is PagingState.LoadingMore<*> -> {
-                val s = state as PagingState.LoadingMore<FeedItem>
+                // Join social state for both posts and listings if applicable
+                // (Currently joinProfilesToFeedItems only handles posts)
                 s.copy(items = joinProfilesToFeedItems(s.items))
             }
             else -> state
@@ -233,15 +309,18 @@ class FirebaseFeedRepository @Inject constructor(
     }
 
     override suspend fun likePost(postId: String): Result<Unit> = runCatching {
-        // Atomic increment handled via Cloud Function or FieldValue.increment
+        val uid = auth.currentUser?.uid ?: throw IllegalStateException("Not signed in")
         firestore.collection("posts").document(postId)
-            .update("likeCount", com.google.firebase.firestore.FieldValue.increment(1))
+            .collection("likes").document(uid)
+            .set(mapOf("createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()))
             .await()
     }
 
     override suspend fun unlikePost(postId: String): Result<Unit> = runCatching {
+        val uid = auth.currentUser?.uid ?: throw IllegalStateException("Not signed in")
         firestore.collection("posts").document(postId)
-            .update("likeCount", com.google.firebase.firestore.FieldValue.increment(-1))
+            .collection("likes").document(uid)
+            .delete()
             .await()
     }
 

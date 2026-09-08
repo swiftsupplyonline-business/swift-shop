@@ -1,5 +1,6 @@
 package com.swiftshop.feature.orders
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -122,9 +123,7 @@ private fun OrderStatusBadge(status: OrderStatus) {
     androidx.compose.foundation.layout.Box(
         modifier = Modifier
             .clip(MaterialTheme.shapes.small)
-            .run {
-                background(color.copy(alpha = 0.15f))
-            }
+            .background(color.copy(alpha = 0.15f))
             .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = color)
@@ -294,13 +293,19 @@ fun OrderDetailScreen(
                         }
                     }
 
-                    // Actions
-                    if (order.status == OrderStatus.DISPATCHED) {
+                    val trackableStatuses = setOf(
+                        OrderStatus.CONFIRMED,
+                        OrderStatus.PROCESSING,
+                        OrderStatus.READY,
+                        OrderStatus.DISPATCHED,
+                        OrderStatus.DELIVERED
+                    )
+                    if (order.status in trackableStatuses) {
                         item {
                             SwiftPrimaryButton(
-                                text = "Track Delivery",
+                                text = if (order.status == OrderStatus.DELIVERED) "View Delivery" else "Track Order",
                                 onClick = {
-                                    navController.navigate(Screen.DeliveryTracking.createRoute(orderId = order.id))
+                                    navController.navigate(Screen.TrackOrder.createRoute(order.id))
                                 },
                                 leadingIcon = {
                                     SwiftEntityIcon(
@@ -354,22 +359,19 @@ private fun OrderProgressBar(status: OrderStatus) {
                     modifier = Modifier
                         .size(10.dp)
                         .clip(androidx.compose.foundation.shape.CircleShape)
-                        .run {
-                            background(
-                                if (i <= statusIndex) SwiftShopColors.BrandBlue
-                                else MaterialTheme.colorScheme.outline
-                            )
-                        }
+                        .background(
+                            if (i <= statusIndex) SwiftShopColors.BrandBlue
+                            else MaterialTheme.colorScheme.outline
+                        )
                 )
             }
             if (i < steps.size - 1) {
                 androidx.compose.foundation.layout.Box(
-                    modifier = Modifier.weight(0.5f).height(2.dp).run {
-                        background(
+                    modifier = Modifier.weight(0.5f).height(2.dp)
+                        .background(
                             if (i < statusIndex) SwiftShopColors.BrandBlue
                             else MaterialTheme.colorScheme.outline
                         )
-                    }
                 )
             }
         }
@@ -388,5 +390,4 @@ private fun SummaryRow(label: String, value: String, isTotal: Boolean = false) {
     }
 }
 
-private fun Modifier.background(color: Color): Modifier =
-    this.then(Modifier.background(color))
+

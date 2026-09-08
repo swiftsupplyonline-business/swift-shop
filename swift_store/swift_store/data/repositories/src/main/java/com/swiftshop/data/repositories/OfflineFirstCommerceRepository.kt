@@ -83,6 +83,9 @@ class OfflineFirstCommerceRepository @Inject constructor(
     override suspend fun searchListings(query: String): Result<List<Listing>> = 
         remote.searchListings(query)
 
+    override suspend fun searchShops(query: String): Result<List<Shop>> = 
+        remote.searchShops(query)
+
     override suspend fun createListing(listing: Listing) = remote.createListing(listing)
     override suspend fun updateListing(listing: Listing) = remote.updateListing(listing)
     override suspend fun deleteListing(listingId: String) = remote.deleteListing(listingId)

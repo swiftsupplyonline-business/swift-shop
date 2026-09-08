@@ -220,10 +220,12 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                     expiresAt: expiresAt
                 });
 
+                const newReserved = currentReserved + requestedQty;
                 transaction.update(ref, {
-                    reservedQuantity: currentReserved + requestedQty,
+                    reservedQuantity: newReserved,
+                    availableQuantity: currentTotal - newReserved,
                     // Mirror update
-                    stockQuantity: currentTotal - (currentReserved + requestedQty),
+                    stockQuantity: currentTotal - newReserved,
                     updatedAt: now
                 });
             }
@@ -426,9 +428,9 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
         const orderDoc = orderQuery.docs[0];
         const order = orderDoc.data();
 
-        // 2. State Gating: Only PENDING orders can be verified
-        if (order.status !== "PENDING") {
-            console.warn(`Attempted to verify non-PENDING order ${order.id} with status ${order.status}`);
+        // 2. State Gating: Only PENDING or RESERVED orders can be verified
+        if (order.status !== "PENDING" && order.status !== "RESERVED") {
+            console.warn(`Attempted to verify non-PENDING/RESERVED order ${order.id} with status ${order.status}`);
             return { status: order.status, orderId: order.id, message: "Order is no longer awaiting payment." };
         }
 
@@ -538,9 +540,11 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                                  const currentReserved = lData.reservedQuantity || 0;
                                  const total = lData.totalQuantity || 0;
 
+                                 const newReserved = Math.max(0, currentReserved - r.data.quantity);
                                  transaction.update(l.ref, {
-                                     reservedQuantity: Math.max(0, currentReserved - r.data.quantity),
-                                     stockQuantity: total - (Math.max(0, currentReserved - r.data.quantity)),
+                                     reservedQuantity: newReserved,
+                                     availableQuantity: total - newReserved,
+                                     stockQuantity: total - newReserved,
                                      updatedAt: now
                                  });
                              }
@@ -564,6 +568,7 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                         transaction.update(l.ref, {
                             totalQuantity: newTotal,
                             reservedQuantity: newReserved,
+                            availableQuantity: newTotal - newReserved,
                             stockQuantity: newTotal - newReserved, // Mirror update
                             updatedAt: now
                         });
@@ -631,6 +636,7 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                         const newReserved = Math.max(0, currentReserved - res.data.quantity);
                         transaction.update(l.ref, {
                             reservedQuantity: newReserved,
+                            availableQuantity: currentTotal - newReserved,
                             stockQuantity: currentTotal - newReserved,
                             updatedAt: now
                         });
@@ -708,11 +714,18 @@ export const cancelOrder = onCall(async (request) => {
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { orderId, reason } = request.data;
+    const { orderId, reason, idempotencyKey } = request.data;
     const db = admin.firestore();
 
     try {
         await db.runTransaction(async (transaction) => {
+            // 1. Idempotency Check
+            if (idempotencyKey) {
+                const idempotencyRef = db.collection("idempotencyKeys").doc(idempotencyKey);
+                const idempotencyDoc = await transaction.get(idempotencyRef);
+                if (idempotencyDoc.exists) return;
+            }
+
             const orderRef = db.collection("orders").doc(orderId);
             const orderDoc = await transaction.get(orderRef);
             if (!orderDoc.exists) throw new Error("Order not found");
@@ -779,6 +792,7 @@ export const cancelOrder = onCall(async (request) => {
                 const newReserved = Math.max(0, currentReserved - data.quantity);
                 transaction.update(l.ref, {
                     reservedQuantity: newReserved,
+                    availableQuantity: currentTotal - newReserved,
                     stockQuantity: currentTotal - newReserved,
                     updatedAt: now
                 });
@@ -789,6 +803,16 @@ export const cancelOrder = onCall(async (request) => {
                 cancelReason: reason || "User requested",
                 updatedAt: now
             });
+
+            if (idempotencyKey) {
+                const idempotencyRef = db.collection("idempotencyKeys").doc(idempotencyKey);
+                transaction.set(idempotencyRef, {
+                    orderId: orderId,
+                    userId: auth.uid,
+                    action: "CANCEL_ORDER",
+                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+            }
         });
         return { success: true };
     } catch (error: any) {
@@ -803,36 +827,120 @@ export const confirmMopayPayment = onCall(async (request) => {
     const auth = request.auth;
     if (!auth || !auth.token.admin) throw new HttpsError("permission-denied", "Admin only");
 
-    const { orderId, paymentId } = request.data;
+    const { orderId, paymentId, idempotencyKey } = request.data;
+    if (!orderId || !paymentId) throw new HttpsError("invalid-argument", "Missing orderId or paymentId");
+
     const db = admin.firestore();
 
     try {
         await db.runTransaction(async (transaction) => {
+            // 1. Idempotency Check
+            if (idempotencyKey) {
+                const idempotencyRef = db.collection("idempotencyKeys").doc(idempotencyKey);
+                const idempotencyDoc = await transaction.get(idempotencyRef);
+                if (idempotencyDoc.exists) return;
+            }
+
             const orderRef = db.collection("orders").doc(orderId);
             const orderDoc = await transaction.get(orderRef);
             if (!orderDoc.exists) throw new Error("Order not found");
             const order = orderDoc.data()!;
 
-            if (order.status !== "PENDING") throw new Error("Order not in PENDING state");
+            if (order.status === "CONFIRMED") return; // Already confirmed
+            if (order.status !== "PENDING" && order.status !== "RESERVED") {
+                throw new Error(`Order is in state ${order.status} and cannot be confirmed.`);
+            }
 
-            // Create Ledger Entry for external payment
+            const isService = order.fulfillmentType === "SERVICE";
+            const now = admin.firestore.Timestamp.now();
+
+            // 2. AUTHORITATIVE INVENTORY COMMITMENT
+            if (isService) {
+                const shopId = order.shopId;
+                const slotId = order.slotId;
+                if (slotId) {
+                    const slotRef = db.collection("availability").doc(shopId).collection("slots").doc(slotId);
+                    const slotSnap = await transaction.get(slotRef);
+                    if (slotSnap.exists && slotSnap.data()?.status === "RESERVED") {
+                        transaction.update(slotRef, { status: "BOOKED", updatedAt: now });
+
+                        const appointmentRef = db.collection("appointments").doc(orderId);
+                        transaction.set(appointmentRef, {
+                            id: orderId,
+                            orderId: orderId,
+                            buyerId: order.buyerId,
+                            sellerId: order.sellerId,
+                            shopId: order.shopId,
+                            listingId: order.items[0]?.listingId,
+                            listingTitle: order.items[0]?.title,
+                            appointmentStartTime: order.appointmentStartTime,
+                            status: "SCHEDULED",
+                            createdAt: now,
+                            updatedAt: now
+                        });
+                    }
+                }
+            } else {
+                // Physical items: Commit reservations
+                const resQuery = await db.collection("reservations").where("orderId", "==", orderId).get();
+                for (const resDoc of resQuery.docs) {
+                    const resData = resDoc.data();
+                    if (resData.status === "ACTIVE") {
+                        transaction.update(resDoc.ref, { status: "COMMITTED", committedAt: now, updatedAt: now });
+
+                        const listingRef = db.collection("listings").doc(resData.listingId);
+                        const lSnap = await transaction.get(listingRef);
+                        if (lSnap.exists) {
+                            const lData = lSnap.data()!;
+                            const currentTotal = lData.totalQuantity || 0;
+                            const currentReserved = lData.reservedQuantity || 0;
+
+                            const newTotal = Math.max(0, currentTotal - resData.quantity);
+                            const newReserved = Math.max(0, currentReserved - resData.quantity);
+
+                            transaction.update(listingRef, {
+                                totalQuantity: newTotal,
+                                reservedQuantity: newReserved,
+                                availableQuantity: newTotal - newReserved,
+                                stockQuantity: newTotal - newReserved, // Mirror update
+                                updatedAt: now
+                            });
+                        }
+                    }
+                }
+            }
+
+            // 3. LEDGER & ORDER UPDATE
             const ledgerId = db.collection("ledgerEntries").doc().id;
             transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
                 id: ledgerId,
+                transactionId: paymentId,
                 debitAccount: "system_mopay_clearing",
                 creditAccount: "system_order_escrow",
                 amountMinorUnits: order.totalMinorUnits,
                 currency: "LSL",
-                reference: `ORDER_CONFIRM_MOPAY_${orderId}`,
-                timestamp: admin.firestore.FieldValue.serverTimestamp()
+                reference: `ORDER_CONFIRM_MANUAL_${orderId}`,
+                involvedAccounts: ["system_mopay_clearing", "system_order_escrow"],
+                timestamp: now
             });
 
             transaction.update(orderRef, {
                 status: "CONFIRMED",
                 paymentId,
                 paymentStatus: "SUCCESS",
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                updatedAt: now
             });
+
+            // 4. Record Idempotency
+            if (idempotencyKey) {
+                const idempotencyRef = db.collection("idempotencyKeys").doc(idempotencyKey);
+                transaction.set(idempotencyRef, {
+                    orderId: orderId,
+                    userId: auth.uid,
+                    action: "CONFIRM_PAYMENT",
+                    createdAt: now
+                });
+            }
         });
         return { success: true };
     } catch (error: any) {
@@ -1076,11 +1184,24 @@ export const createListing = onCall(async (request) => {
 
             const listingId = db.collection("listings").doc().id;
             const isAvailable = listing.isAvailable !== false; // Default to true
+
+            // AUTHORITATIVE INVENTORY INITIALIZATION
+            // The client provides 'requestedQuantity' (formerly stockQuantity).
+            // The server establishes the canonical reservation contract.
+            const requestedQty = parseInt(listing.stockQuantity || listing.totalQuantity || "0");
+            const initialQuantity = isNaN(requestedQty) ? 0 : Math.max(0, requestedQty);
+
             const newListing = {
                 ...listing,
                 id: listingId,
                 sellerId: uid,
                 isAvailable,
+                // Canonical Inventory Contract
+                totalQuantity: initialQuantity,
+                reservedQuantity: 0,
+                availableQuantity: initialQuantity,
+                // Compatibility Mirror
+                stockQuantity: initialQuantity,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             };
@@ -1255,30 +1376,53 @@ export const createShop = onCall(async (request) => {
             const profileRef = db.collection("profiles").doc(uid);
             const profileDoc = await transaction.get(profileRef);
             if (!profileDoc.exists) throw new Error("Profile not found");
-            const currentShopCount = profileDoc.data()!.shopCount || 0;
 
-            // Enforce limits (Basic: 1 shop, Premium: 3 shops, Elite: unlimited)
+            // ── IDEMPOTENCY CHECK ──────────────────────────────────────────────────
+            // If the client-provided shop ID exists and is owned by the user, return it.
+            if (shop.id) {
+                const existingRef = db.collection("shops").doc(shop.id);
+                const existingDoc = await transaction.get(existingRef);
+                if (existingDoc.exists) {
+                    if (existingDoc.data()!.ownerId === uid) {
+                        console.log(`Idempotent creation for shop ${shop.id}`);
+                        return shop.id;
+                    }
+                    throw new Error("Shop ID already taken");
+                }
+            }
+
+            // ── AUTHORITATIVE TIER ENFORCEMENT ──────────────────────────────────────
+            // We use transaction.get(query) to ensure a concurrency-safe count.
+            const shopsQuery = db.collection("shops").where("ownerId", "==", uid);
+            const shopsSnapshot = await transaction.get(shopsQuery);
+            const realShopCount = shopsSnapshot.size;
+
             let maxShops = 1;
             if (tier === "PREMIUM") maxShops = 3;
             if (tier === "ELITE") maxShops = -1;
 
-            if (maxShops !== -1 && currentShopCount >= maxShops) {
-                throw new Error(`Shop limit reached for ${tier} tier. Upgrade to PREMIUM or ELITE.`);
+            if (maxShops !== -1 && realShopCount >= maxShops) {
+                throw new Error(`Shop limit reached for ${tier} tier (${realShopCount}/${maxShops}).`);
             }
 
-            const shopId = db.collection("shops").doc().id;
+            const shopId = shop.id || db.collection("shops").doc().id;
+            const now = admin.firestore.FieldValue.serverTimestamp();
+
             const newShop = {
                 ...shop,
                 id: shopId,
                 ownerId: uid,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                isVerified: false, // Server authoritative
+                createdAt: now,
+                updatedAt: now
             };
 
             transaction.set(db.collection("shops").doc(shopId), newShop);
+
+            // Sync denormalized counter
             transaction.update(profileRef, {
-                shopCount: currentShopCount + 1,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                shopCount: realShopCount + 1,
+                updatedAt: now
             });
 
             return shopId;
@@ -1296,6 +1440,8 @@ export const updateListing = onCall(async (request) => {
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
     const { listingId, updates } = request.data;
+    if (!listingId || !updates) throw new HttpsError("invalid-argument", "Missing listingId or updates");
+
     const db = admin.firestore();
 
     try {
@@ -1305,17 +1451,57 @@ export const updateListing = onCall(async (request) => {
             if (!listingDoc.exists) throw new Error("Listing not found");
             const listing = listingDoc.data()!;
 
+            // 1. Authoritative Ownership Verification
             if (listing.sellerId !== auth.uid && !auth.token.admin) {
-                throw new Error("Unauthorized");
+                throw new Error("Unauthorized: You do not own this listing");
             }
 
-            const oldAvailable = listing.isAvailable !== false;
-            const newAvailable = updates.isAvailable !== undefined ? updates.isAvailable : oldAvailable;
+            // 2. Authoritative Shop Ownership Verification
+            const shopRef = db.collection("shops").doc(listing.shopId);
+            const shopDoc = await transaction.get(shopRef);
+            if (!shopDoc.exists) throw new Error("Parent shop not found");
+            if (shopDoc.data()?.ownerId !== auth.uid && !auth.token.admin) {
+                throw new Error("Unauthorized: You do not own the parent shop");
+            }
 
-            transaction.update(listingRef, {
-                ...updates,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
+            // 3. Allowed Field Filtering (Prevent forgery of system/engagement fields)
+            const allowedFields = [
+                "title", "description", "category", "priceMinorUnits", "priceCurrency",
+                "imageUrls", "videoUrl", "tags", "isAvailable", "isSponsored",
+                "deliveryEstimateDays", "customFields", "totalQuantity"
+            ];
+
+            const filteredUpdates: Record<string, any> = {};
+            for (const key of Object.keys(updates)) {
+                if (allowedFields.includes(key)) {
+                    filteredUpdates[key] = updates[key];
+                }
+            }
+
+            // 4. Inventory Invariant Enforcement
+            const currentReserved = listing.reservedQuantity || 0;
+            const newTotalRequested = filteredUpdates.totalQuantity;
+
+            if (newTotalRequested !== undefined) {
+                const newTotal = parseInt(newTotalRequested);
+                if (isNaN(newTotal) || newTotal < 0) throw new Error("Invalid totalQuantity");
+
+                if (newTotal < currentReserved) {
+                    throw new Error(`Cannot reduce stock to ${newTotal} as ${currentReserved} units are already reserved.`);
+                }
+
+                // Maintain consistency
+                filteredUpdates.totalQuantity = newTotal;
+                filteredUpdates.availableQuantity = newTotal - currentReserved;
+                filteredUpdates.stockQuantity = newTotal - currentReserved; // Mirror
+            }
+
+            // 5. Active Listing Counter Management
+            const oldAvailable = listing.isAvailable !== false;
+            const newAvailable = filteredUpdates.isAvailable !== undefined ? filteredUpdates.isAvailable : oldAvailable;
+
+            filteredUpdates.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+            transaction.update(listingRef, filteredUpdates);
 
             if (oldAvailable !== newAvailable) {
                 const profileRef = db.collection("profiles").doc(listing.sellerId);

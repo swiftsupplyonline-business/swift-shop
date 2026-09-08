@@ -207,7 +207,20 @@ class CheckoutViewModel @Inject constructor(
     fun onLocationConfirmed(geoPoint: GeoPoint) {
         val current = _deliveryAddress.value
         updateAddress(current.copy(lat = geoPoint.lat, lng = geoPoint.lng))
+        _confirmedLocationSnapshot.value = LocationSnapshot(
+            lat = geoPoint.lat,
+            lng = geoPoint.lng,
+            addressSnapshot = buildList {
+                if (current.label.isNotBlank()) add(current.label)
+                if (current.streetHint.isNotBlank()) add(current.streetHint)
+                add("${current.city}, ${current.country}")
+            }.joinToString(" · "),
+            instructions = current.streetHint
+        )
     }
+
+    val confirmedLocationSnapshot: StateFlow<LocationSnapshot?> get() = _confirmedLocationSnapshot
+    private val _confirmedLocationSnapshot = MutableStateFlow<LocationSnapshot?>(null)
 
     private fun updateFees() {
         val delivery = _selectedDeliveryListing.value ?: return

@@ -101,6 +101,12 @@ service cloud.firestore {
             || request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(['likeCount', 'commentCount', 'reshareCount', 'bookmarkCount']));
       allow delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
+
+      // Likes subcollection
+      match /likes/{uid} {
+        allow read: if true;
+        allow write: if isOwner(uid) && isActive();
+      }
     }
 
     // ── Comments ───────────────────────────────────────────────────────────

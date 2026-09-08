@@ -1,4 +1,4 @@
-﻿package com.swiftshop.domain.commerce
+package com.swiftshop.domain.commerce
 
 import android.net.Uri
 import com.swiftshop.core.media.MediaUploadProgress
@@ -10,28 +10,32 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import timber.log.Timber
 
-class CreateListingUseCase(
+class UpdateListingUseCase(
     private val repository: CommerceRepository,
     private val mediaUploader: MediaUploader
 ) {
     suspend operator fun invoke(
+        listingId: String,
         title: String,
         description: String,
         category: String,
         price: MoneyAmount,
-        stockQuantity: Int,
-        imageUris: List<Uri>,
+        totalQuantity: Int,
+        imageUris: List<Uri>, // New images to upload
+        existingImageUrls: List<String>, // Images already in Cloud Storage
         sellerId: String,
-        shopId: String,
-        listingType: ListingType = ListingType.BUY,
+        listingType: ListingType,
         customFields: List<CustomField> = emptyList(),
-        deliveryEstimateDays: Int = 0
-    ): Result<String> = runCatching {
-        Timber.d("DEBUG_CREATE: Inside UseCase - title: $title, type: $listingType, sellerId: $sellerId, shopId: $shopId, imageCount: ${imageUris.size}")
+        deliveryEstimateDays: Int = 0,
+        isAvailable: Boolean = true
+    ): Result<Unit> = runCatching {
+        Timber.d("DEBUG_UPDATE: Updating listing $listingId - title: $title")
+        
         if (title.isBlank()) throw IllegalArgumentException("Title is required")
         if (price.minorUnits <= 0) throw IllegalArgumentException("Price must be positive")
 
-        val imageUrls = coroutineScope {
+        // 1. Upload new images if any
+        val newUploadedUrls = coroutineScope {
             imageUris.map { uri ->
                 async {
                     val progress = mediaUploader.uploadImage(sellerId, uri)
@@ -42,29 +46,30 @@ class CreateListingUseCase(
                 }
             }.awaitAll()
         }
-        Timber.d("DEBUG_CREATE: UseCase uploaded URLs: ${imageUrls.size}")
 
-        val listing = Listing(
-            id = "",
-            shopId = shopId,
+        val allImageUrls = existingImageUrls + newUploadedUrls
+
+        // 2. Prepare listing object for repository call
+        // Note: The repository implementation (FirebaseCommerceRepository) 
+        // expects a full Listing object but the backend updateListing 
+        // only uses certain fields from toFirestore().
+        val updatedListing = Listing(
+            id = listingId,
+            shopId = "", // Not allowed to change, ignored by backend
             sellerId = sellerId,
             title = title,
             description = description,
             price = price,
             category = category,
-            imageUrls = imageUrls,
-            stockQuantity = stockQuantity,
-            totalQuantity = stockQuantity,
-            reservedQuantity = 0,
-            availableQuantity = stockQuantity,
+            imageUrls = allImageUrls,
+            totalQuantity = totalQuantity,
             listingType = listingType,
             customFields = customFields,
             deliveryEstimateDays = deliveryEstimateDays,
-            isAvailable = stockQuantity > 0,
-            createdAt = System.currentTimeMillis(),
+            isAvailable = isAvailable,
             updatedAt = System.currentTimeMillis()
         )
 
-        repository.createListing(listing).getOrThrow()
+        repository.updateListing(updatedListing).getOrThrow()
     }
 }

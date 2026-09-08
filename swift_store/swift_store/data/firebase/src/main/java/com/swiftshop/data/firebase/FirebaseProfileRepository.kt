@@ -91,6 +91,17 @@ class FirebaseProfileRepository @Inject constructor(
             .await()
     }
 
+    override suspend fun searchProfiles(query: String): Result<List<UserProfile>> = runCatching {
+        val snapshot = firestore.collection("profiles")
+            .whereGreaterThanOrEqualTo("displayName", query)
+            .whereLessThanOrEqualTo("displayName", query + "\uf8ff")
+            .get().await()
+        
+        snapshot.documents.mapNotNull { doc ->
+            doc.toObject(FirestoreUserProfile::class.java)?.toDomain(doc.id)
+        }
+    }
+
     override suspend fun isFollowing(targetUid: String): Boolean {
         val currentUid = auth.currentUser?.uid ?: return false
         val followId = "${currentUid}_$targetUid"

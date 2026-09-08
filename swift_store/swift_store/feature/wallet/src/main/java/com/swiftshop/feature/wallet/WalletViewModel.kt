@@ -45,8 +45,18 @@ class WalletViewModel @Inject constructor(
     private val _walletState = MutableStateFlow<WalletScreenState>(WalletScreenState.Loading)
     val walletState: StateFlow<WalletScreenState> = _walletState.asStateFlow()
 
-    private val _transactions = MutableStateFlow<TransactionListState>(TransactionListState.Loading)
-    val transactions: StateFlow<TransactionListState> = _transactions.asStateFlow()
+    private val _transactionsRaw = MutableStateFlow<List<WalletTransaction>>(emptySet<WalletTransaction>().toList())
+    private val _selectedFilter = MutableStateFlow<TransactionType?>(null)
+    val selectedFilter: StateFlow<TransactionType?> = _selectedFilter.asStateFlow()
+
+    val transactions: StateFlow<TransactionListState> = combine(_transactionsRaw, _selectedFilter) { txs, filter ->
+        val filtered = if (filter == null) txs else txs.filter { it.type == filter }
+        if (filtered.isEmpty()) {
+            if (txs.isEmpty()) TransactionListState.Empty else TransactionListState.Empty // Could distinguish "No results for filter"
+        } else {
+            TransactionListState.Loaded(filtered)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TransactionListState.Loading)
 
     private val _actionState = MutableStateFlow<ActionState>(ActionState.Idle)
     val actionState: StateFlow<ActionState> = _actionState.asStateFlow()
@@ -92,13 +102,16 @@ class WalletViewModel @Inject constructor(
                 .filter { it.uid.isNotBlank() }
                 .collect { user ->
                     observeTransactions(user.uid)
-                        .catch { _transactions.value = TransactionListState.Error(it.message ?: "Error") }
+                        .catch { _transactionsRaw.value = emptyList() }
                         .collect { txs ->
-                            _transactions.value = if (txs.isEmpty()) TransactionListState.Empty
-                            else TransactionListState.Loaded(txs)
+                            _transactionsRaw.value = txs
                         }
                 }
         }
+    }
+
+    fun setFilter(type: TransactionType?) {
+        _selectedFilter.value = type
     }
 
     fun deposit(amount: MoneyAmount, provider: String, phone: String) {

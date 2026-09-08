@@ -115,7 +115,11 @@ fun WalletScreen(
 
             Spacer(Modifier.height(24.dp))
 
-            TransactionList(state = transactionsState)
+            TransactionList(
+                state = transactionsState,
+                selectedFilter = viewModel.selectedFilter.collectAsState().value,
+                onFilterSelected = viewModel::setFilter
+            )
         }
     }
 

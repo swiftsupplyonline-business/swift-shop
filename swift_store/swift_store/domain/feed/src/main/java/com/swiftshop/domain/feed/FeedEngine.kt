@@ -71,6 +71,7 @@ interface FeedRepository {
     fun getShopFeed(page: Int, pageSize: Int): Flow<PagingState<Listing>>
     fun getPostFeed(page: Int, pageSize: Int): Flow<PagingState<FeedPost>>
     fun getReelFeed(page: Int, pageSize: Int): Flow<PagingState<FeedPost>>
+    suspend fun searchPosts(query: String): Result<List<FeedPost>>
     fun getPersonalizedFeed(page: Int, pageSize: Int): Flow<PagingState<FeedItem>>
     fun getUserPosts(userId: String): Flow<List<FeedPost>>
     fun getUserReels(userId: String): Flow<List<FeedPost>>
@@ -105,6 +106,10 @@ class GetShopFeedUseCase(private val repository: FeedRepository) {
 class GetPostFeedUseCase(private val repository: FeedRepository) {
     operator fun invoke(page: Int, pageSize: Int = 20) =
         repository.getPostFeed(page, pageSize)
+}
+
+class SearchPostsUseCase(private val repository: FeedRepository) {
+    suspend operator fun invoke(query: String): Result<List<FeedPost>> = repository.searchPosts(query)
 }
 
 class GetPostUseCase(private val repository: FeedRepository) {

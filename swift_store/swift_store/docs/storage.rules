@@ -2,7 +2,7 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    match /media/{userId}/{assetId} {
+    match /media/{userId}/{assetId=**} {
       // Marketplace listing media is publicly readable
       allow read: if true;
 

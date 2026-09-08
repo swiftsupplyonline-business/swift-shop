@@ -10,6 +10,7 @@ interface ProfileRepository {
     suspend fun followUser(targetUid: String): Result<Unit>
     suspend fun unfollowUser(targetUid: String): Result<Unit>
     suspend fun isFollowing(targetUid: String): Boolean
+    suspend fun searchProfiles(query: String): Result<List<UserProfile>>
     fun observeFollowers(uid: String): Flow<List<String>>
     fun observeFollowing(uid: String): Flow<List<String>>
     suspend fun reportUser(uid: String, reason: String): Result<Unit>

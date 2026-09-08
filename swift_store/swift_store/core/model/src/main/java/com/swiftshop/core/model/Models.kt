@@ -167,7 +167,7 @@ data class Appointment(
     val updatedAt: Long = 0L
 ) : Parcelable
 enum class ListingType {
-    BUY, MAKE_PAYMENT, SET_APPOINTMENT, PLACE_ORDER, REGISTER, DELIVER, TAKE_ME_THERE
+    PRODUCT, SERVICE, BUY, MAKE_PAYMENT, SET_APPOINTMENT, PLACE_ORDER, REGISTER, DELIVER, TAKE_ME_THERE
 }
 
 @Serializable

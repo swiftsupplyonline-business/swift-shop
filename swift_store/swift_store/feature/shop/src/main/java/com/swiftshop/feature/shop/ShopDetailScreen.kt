@@ -33,6 +33,8 @@ import com.swiftshop.core.ui.navigation.Screen
 import com.swiftshop.core.ui.theme.swiftColors
 
 private fun ListingType.chipLabel(): String = when (this) {
+    ListingType.PRODUCT         -> "Products"
+    ListingType.SERVICE         -> "Services"
     ListingType.BUY             -> "Buy"
     ListingType.MAKE_PAYMENT    -> "Payment"
     ListingType.SET_APPOINTMENT -> "Appointments"
@@ -84,6 +86,11 @@ fun ShopDetailScreen(
                         }
                         // Owner: manage shop
                         if (isOwner) {
+                            IconButton(onClick = {
+                                navController.navigate(Screen.CreateListing.createRoute(shop.id))
+                            }) {
+                                Icon(Icons.Default.Add, "Create Listing")
+                            }
                             IconButton(onClick = {
                                 navController.navigate(Screen.ManageShop.createRoute(shop.id))
                             }) {

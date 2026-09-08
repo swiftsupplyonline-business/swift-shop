@@ -48,7 +48,7 @@ class FirebaseCommerceRepository @Inject constructor(
     }
 
     override suspend fun createShop(shop: Shop): Result<String> = runCatching {
-        val data = shop.toFirestore()
+        val data = shop.toCreateRequest()
         val result = functions.getHttpsCallable("createShop").call(data).await()
         result.data as String
     }
@@ -93,6 +93,14 @@ class FirebaseCommerceRepository @Inject constructor(
             .whereLessThanOrEqualTo("title", query + "\uf8ff")
             .get().await()
             .toObjects(FirestoreListing::class.java).map { it.toDomain() }
+    }
+
+    override suspend fun searchShops(query: String): Result<List<Shop>> = runCatching {
+        firestore.collection("shops")
+            .whereGreaterThanOrEqualTo("name", query)
+            .whereLessThanOrEqualTo("name", query + "\uf8ff")
+            .get().await()
+            .toObjects(FirestoreShop::class.java).map { it.toDomain() }
     }
 
     override suspend fun createListing(listing: Listing): Result<String> = runCatching {
@@ -314,7 +322,24 @@ fun Shop.toFirestore() = mapOf(
     "locationLat" to location.lat, "locationLng" to location.lng, "locationAddress" to locationAddress,
     "isVerified" to isVerified, "isActive" to isActive, "rating" to rating,
     "reviewCount" to reviewCount, "followerCount" to followerCount, "listingCount" to listingCount,
-    "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+    "createdAt" to createdAt
+)
+
+/**
+ * Creates a JSON-safe map for the createShop Cloud Function.
+ * Excludes Firestore sentinels and server-authoritative fields.
+ */
+fun Shop.toCreateRequest() = mapOf(
+    "id" to id,
+    "name" to name,
+    "description" to description,
+    "category" to category,
+    "locationLat" to location.lat,
+    "locationLng" to location.lng,
+    "locationAddress" to locationAddress,
+    "logoUrl" to logoUrl,
+    "coverUrl" to coverUrl,
+    "isActive" to isActive
 )
 
 fun Shop.toUpdateMap() = mapOf(
@@ -339,6 +364,9 @@ data class FirestoreListing(
     @get:PropertyName("isAvailable") @set:PropertyName("isAvailable") var isAvailable: Boolean = true,
     @get:PropertyName("isSponsored") @set:PropertyName("isSponsored") var isSponsored: Boolean = false,
     val stockQuantity: Int = 1,
+    val totalQuantity: Int = 1,
+    val reservedQuantity: Int = 0,
+    val availableQuantity: Int = 1,
     val commitmentCount: Int = 0,
     val bookmarkCount: Int = 0,
     val deliveryEstimateDays: Int = 0,
@@ -360,6 +388,9 @@ data class FirestoreListing(
         isAvailable = isAvailable,
         isSponsored = isSponsored,
         stockQuantity = stockQuantity,
+        totalQuantity = totalQuantity,
+        reservedQuantity = reservedQuantity,
+        availableQuantity = availableQuantity,
         commitmentCount = commitmentCount,
         bookmarkCount = bookmarkCount,
         isBookmarkedByMe = false, // derived at read-time if needed
@@ -376,6 +407,9 @@ fun Listing.toFirestore() = mapOf(
     "imageUrls" to imageUrls, "videoUrl" to videoUrl, "category" to category, "tags" to tags,
     "listingType" to listingType.name, "isAvailable" to isAvailable, "isSponsored" to isSponsored,
     "stockQuantity" to stockQuantity,
+    "totalQuantity" to totalQuantity,
+    "reservedQuantity" to reservedQuantity,
+    "availableQuantity" to availableQuantity,
     "commitmentCount" to commitmentCount,
     "bookmarkCount" to bookmarkCount,
     "deliveryEstimateDays" to deliveryEstimateDays,

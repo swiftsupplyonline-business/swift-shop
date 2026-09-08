@@ -23,10 +23,15 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
-import com.swiftshop.core.model.ListingType
+import com.swiftshop.core.model.*
+import com.swiftshop.core.ui.components.*
+import com.swiftshop.core.ui.theme.swiftColors
+import com.swiftshop.core.ui.navigation.Screen
 import com.swiftshop.core.ui.components.SwiftPrimaryButton
 
 private fun ListingType.displayName(): String = when (this) {
+    ListingType.PRODUCT         -> "Physical Product"
+    ListingType.SERVICE         -> "Service"
     ListingType.BUY             -> "Buy / Purchase"
     ListingType.MAKE_PAYMENT    -> "Make a Payment"
     ListingType.SET_APPOINTMENT -> "Book Appointment"
@@ -37,6 +42,8 @@ private fun ListingType.displayName(): String = when (this) {
 }
 
 private fun ListingType.helpText(): String = when (this) {
+    ListingType.PRODUCT         -> "Standard physical goods with inventory tracking."
+    ListingType.SERVICE         -> "A service offering with a booking/contact form."
     ListingType.BUY             -> "Standard product purchase with quantity and cart."
     ListingType.MAKE_PAYMENT    -> "Buyer enters an amount and pays via Mopay."
     ListingType.SET_APPOINTMENT -> "Buyer selects a date/time slot to book."
@@ -79,7 +86,7 @@ fun CreateListingScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Create Listing") },
+                title = { Text("Create ${listingType.displayName()}") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, "Back")
@@ -128,36 +135,74 @@ fun CreateListingScreen(
             }
 
             // Shop Selector
-            val userShops    by viewModel.userShops.collectAsState()
+            val shopsState   by viewModel.userShopsState.collectAsState()
             val selectedShop by viewModel.selectedShop.collectAsState()
-            if (userShops.isNotEmpty()) {
-                var expanded by remember { mutableStateOf(false) }
-                Text("Select Shop", style = MaterialTheme.typography.titleMedium)
-                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-                    OutlinedTextField(
-                        value = selectedShop?.name ?: "Select Shop",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Shop") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
-                        shape = MaterialTheme.shapes.medium
-                    )
-                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        userShops.forEach { shop ->
-                            DropdownMenuItem(
-                                text = { Text(shop.name) },
-                                onClick = { viewModel.onShopSelected(shop); expanded = false }
+            
+            when (val state = shopsState) {
+                is UserShopsState.Loading -> {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                }
+                is UserShopsState.Error -> {
+                    ErrorState(state.message, onRetry = { viewModel.onListingTypeChange(listingType) })
+                }
+                is UserShopsState.Empty -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("No Shops Found", style = MaterialTheme.typography.titleMedium)
+                            Text("You need to create a shop before you can add a listing.", 
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(vertical = 8.dp))
+                            SwiftPrimaryButton(
+                                text = "Create Shop First", 
+                                onClick = { /* Navigate to Create Shop - parent should handle this or use internal nav */ }
                             )
                         }
                     }
                 }
-            } else {
-                Text(
-                    "No shops found. Please create a shop first.",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                is UserShopsState.Success -> {
+                    var expanded by remember { mutableStateOf(false) }
+                    Text("Select Shop", style = MaterialTheme.typography.titleMedium)
+                    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+                        OutlinedTextField(
+                            value = selectedShop?.name ?: "Select Shop",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Shop") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                            shape = MaterialTheme.shapes.medium,
+                            leadingIcon = {
+                                if (selectedShop?.logoUrl?.isNotBlank() == true) {
+                                    com.swiftshop.core.ui.components.SwiftAvatar(url = selectedShop!!.logoUrl, size = 24.dp)
+                                } else {
+                                    Icon(Icons.Default.Store, null)
+                                }
+                            }
+                        )
+                        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                            state.shops.forEach { shop ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (shop.logoUrl.isNotBlank()) {
+                                                com.swiftshop.core.ui.components.SwiftAvatar(url = shop.logoUrl, size = 32.dp)
+                                                Spacer(Modifier.width(12.dp))
+                                            }
+                                            Column {
+                                                Text(shop.name, style = MaterialTheme.typography.bodyMedium)
+                                                Text(shop.category, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                        }
+                                    },
+                                    onClick = { viewModel.onShopSelected(shop); expanded = false }
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             // Core fields
@@ -182,41 +227,63 @@ fun CreateListingScreen(
             )
 
             // Listing Type
-            Divider()
+            HorizontalDivider()
             Text("Listing Type", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Choose how buyers interact with this listing.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            
+            // If the type is one of the gateway categories, we lock it to prevent confusion
+            val isLocked = listingType in listOf(
+                ListingType.PRODUCT, ListingType.SERVICE, ListingType.SET_APPOINTMENT, 
+                ListingType.PLACE_ORDER, ListingType.DELIVER
             )
-            var typeExpanded by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(expanded = typeExpanded, onExpandedChange = { typeExpanded = it }) {
+
+            if (!isLocked) {
+                Text(
+                    "Choose how buyers interact with this listing.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                var typeExpanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(expanded = typeExpanded, onExpandedChange = { typeExpanded = it }) {
+                    OutlinedTextField(
+                        value = listingType.displayName(),
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Type") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(typeExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        shape = MaterialTheme.shapes.medium
+                    )
+                    ExposedDropdownMenu(expanded = typeExpanded, onDismissRequest = { typeExpanded = false }) {
+                        ListingType.entries.forEach { type ->
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(type.displayName(), style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            type.helpText(),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                },
+                                onClick = { viewModel.onListingTypeChange(type); typeExpanded = false }
+                            )
+                        }
+                    }
+                }
+            } else {
                 OutlinedTextField(
                     value = listingType.displayName(),
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Type") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(typeExpanded) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor(),
-                    shape = MaterialTheme.shapes.medium
+                    label = { Text("Selected Type") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.outline,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                    )
                 )
-                ExposedDropdownMenu(expanded = typeExpanded, onDismissRequest = { typeExpanded = false }) {
-                    ListingType.entries.forEach { type ->
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(type.displayName(), style = MaterialTheme.typography.bodyMedium)
-                                    Text(
-                                        type.helpText(),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            },
-                            onClick = { viewModel.onListingTypeChange(type); typeExpanded = false }
-                        )
-                    }
-                }
             }
             Surface(
                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
@@ -271,7 +338,7 @@ fun CreateListingScreen(
 
             // Custom Field Builder
             if (showFieldBuilder) {
-                Divider()
+                HorizontalDivider()
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,

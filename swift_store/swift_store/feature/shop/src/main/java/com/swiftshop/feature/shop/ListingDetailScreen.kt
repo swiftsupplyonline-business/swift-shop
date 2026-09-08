@@ -36,6 +36,8 @@ data class CtaConfig(
 
 @Composable
 fun ctaForListingType(type: ListingType, brandColor: Color): CtaConfig = when (type) {
+    ListingType.PRODUCT -> CtaConfig("Buy Now", Icons.Default.ShoppingCart, brandColor)
+    ListingType.SERVICE -> CtaConfig("Book Service", Icons.Default.Assignment, brandColor)
     ListingType.BUY -> CtaConfig("Buy Now", Icons.Default.ShoppingCart, brandColor)
     ListingType.MAKE_PAYMENT -> CtaConfig("Make Payment", Icons.Default.Payment, brandColor)
     ListingType.SET_APPOINTMENT -> CtaConfig("Book Appointment", Icons.Default.CalendarMonth, brandColor)
@@ -154,6 +156,9 @@ fun ListingDetailScreen(
                         },
                         actions = {
                             if (isOwner) {
+                                IconButton(onClick = { navController.navigate(Screen.EditListing.createRoute(listing.id)) }) {
+                                    Icon(Icons.Default.Edit, "Edit")
+                                }
                                 IconButton(onClick = { showDeleteDialog = true }) {
                                     Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
                                 }
@@ -209,7 +214,7 @@ fun ListingDetailScreen(
                                 text = cta.label,
                                 onClick = {
                                     when (listing.listingType) {
-                                        ListingType.BUY, ListingType.PLACE_ORDER -> {
+                                        ListingType.PRODUCT, ListingType.BUY, ListingType.PLACE_ORDER -> {
                                             viewModel.buyNow()
                                         }
                                         ListingType.DELIVER, ListingType.TAKE_ME_THERE ->
@@ -578,7 +583,11 @@ private fun FormSubmitSheet(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            if (listing.listingType == ListingType.REGISTER) "Registration Form" else "Order Details",
+            when (listing.listingType) {
+                ListingType.REGISTER -> "Registration Form"
+                ListingType.SERVICE -> "Service Details"
+                else -> "Order Details"
+            },
             style = MaterialTheme.typography.titleLarge
         )
         Text(listing.title, style = MaterialTheme.typography.bodyMedium,
@@ -650,7 +659,11 @@ private fun FormSubmitSheet(
             .all { (fieldValues[it.id] ?: "").isNotBlank() }
 
         SwiftPrimaryButton(
-            text = if (listing.listingType == ListingType.REGISTER) "Submit Registration" else "Place Order",
+            text = when (listing.listingType) {
+                ListingType.REGISTER -> "Submit Registration"
+                ListingType.SERVICE -> "Book Service"
+                else -> "Place Order"
+            },
             enabled = allRequiredFilled,
             onClick = onSubmit,
             modifier = Modifier.fillMaxWidth()
