@@ -43,6 +43,8 @@ android {
             )
             buildConfigField("Boolean", "ENABLE_LOGGING", "false")
         }
+
+
     }
 
     flavorDimensions += "environment"

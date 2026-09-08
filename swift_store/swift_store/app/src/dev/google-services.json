@@ -23,7 +23,27 @@
           "other_platform_oauth_client": []
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:510436072620:android:b8a99b511d6c8169a55309",
+        "android_client_info": {
+          "package_name": "com.swiftshop.client.dev"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyArRqHcECmhbEcKkAXVGr19tx1UGXSALq8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
     }
   ],
+
   "configuration_version": "1"
 }
