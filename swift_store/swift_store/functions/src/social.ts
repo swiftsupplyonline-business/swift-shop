@@ -81,29 +81,3 @@ export const onFollowDeleted = onDocumentDeleted("follows/{followId}", async (ev
     await batch.commit();
 });
 
-/**
- * Triggered when a user likes a post.
- * Path: posts/{postId}/likes/{uid}
- */
-export const onLikeCreated = onDocumentCreated("posts/{postId}/likes/{uid}", async (event) => {
-    const { postId } = event.params;
-    const db = admin.firestore();
-
-    await db.collection("posts").doc(postId).update({
-        likeCount: admin.firestore.FieldValue.increment(1),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-});
-
-/**
- * Triggered when a user removes a like.
- */
-export const onLikeDeleted = onDocumentDeleted("posts/{postId}/likes/{uid}", async (event) => {
-    const { postId } = event.params;
-    const db = admin.firestore();
-
-    await db.collection("posts").doc(postId).update({
-        likeCount: admin.firestore.FieldValue.increment(-1),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-});

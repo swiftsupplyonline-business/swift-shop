@@ -56,9 +56,47 @@ export const calculateOrderFees = onCall(async (request) => {
         platformFeeMinorUnits: platformFee,
         totalMinorUnits: total,
         currency: "LSL",
-        deliveryListingId
+        deliveryListingId,
+        orderType: "PRODUCT_PURCHASE" // Default for multi-item product checkout
     };
 });
+
+/**
+ * Mapping from ListingType to OrderType.
+ */
+const MAP_LISTING_TO_ORDER_TYPE: Record<string, string> = {
+    "PRODUCT": "PRODUCT_PURCHASE",
+    "PHYSICAL_ITEM": "PRODUCT_PURCHASE",
+    "BUY": "PRODUCT_PURCHASE",
+    "SERVICE": "SERVICE_BOOKING",
+    "BOOKABLE_SERVICE": "SERVICE_BOOKING",
+    "SET_APPOINTMENT": "SERVICE_BOOKING",
+    "PREPARED_FOOD": "FOOD_ORDER",
+    "BULK_SUPPLY": "BULK_PURCHASE",
+    "DELIVER": "DELIVERY_REQUEST",
+    "DELIVERY_SERVICE": "DELIVERY_REQUEST"
+};
+
+/**
+ * Captures a transactional snapshot of a Listing.
+ */
+function captureListingSnapshot(listing: any): any {
+    return {
+        listingId: listing.id,
+        shopId: listing.shopId,
+        sellerId: listing.sellerId,
+        sellerName: listing.sellerName || "",
+        title: listing.title,
+        description: listing.description,
+        priceMinorUnits: listing.priceMinorUnits,
+        currency: listing.priceCurrency || "LSL",
+        listingType: listing.listingType,
+        category: listing.category || "",
+        variantId: null,
+        fulfillmentOptions: listing.fulfillmentOptions || [],
+        snapshotAt: Date.now()
+    };
+}
 
 /**
  * Creates a server-authoritative order.
@@ -247,11 +285,21 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
 
             const orderStatus = isWalletPayment ? "CONFIRMED" : "RESERVED";
 
+            const orderType = MAP_LISTING_TO_ORDER_TYPE[listingSnaps[0]?.doc.data()?.listingType] || "PRODUCT_PURCHASE";
+
             const orderDoc: Record<string, unknown> = {
                 id: newOrderId,
                 buyerId: auth.uid,
                 sellerId: sellerId,
                 shopId: shopId,
+                type: orderType,
+                sourceListingId: listingSnaps[0]?.item.listingId || "",
+                listingSnapshot: captureListingSnapshot(listingSnaps[0]?.doc.data()),
+                participants: {
+                    "REQUESTER": auth.uid,
+                    "SELLER": sellerId,
+                    "LISTING_AUTHOR": sellerId
+                },
                 items: validatedItems,
                 subtotalMinorUnits: subtotal,
                 deliveryFeeMinorUnits: deliveryFee,
@@ -259,6 +307,10 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 totalMinorUnits: total,
                 currency: "LSL",
                 status: orderStatus,
+                paymentStatus: isWalletPayment ? "PAID" : "PENDING",
+                fulfillmentStatus: "PENDING",
+                settlementStatus: isWalletPayment ? "ESCROW_HOLD" : "PENDING",
+                inventoryStatus: "RESERVED",
                 deliveryAddress: deliveryAddress || {},
                 selectedDeliveryListingId: deliveryListingId,
                 deliveryListingSnapshot: deliveryListingSnapshot,
@@ -270,8 +322,13 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 updatedAt: now
             };
 
-            if (isWalletPayment) {
-                orderDoc.paymentStatus = "SUCCESS";
+            // Initialize Payload
+            if (orderType === "PRODUCT_PURCHASE") {
+                orderDoc.payload = {
+                    quantity: validatedItems.reduce((acc, i) => acc + i.quantity, 0),
+                    unitPriceMinorUnits: validatedItems[0]?.unitPriceMinorUnits || 0,
+                    buyerNotes: ""
+                };
             }
 
             transaction.set(db.collection("orders").doc(newOrderId), orderDoc);
@@ -589,12 +646,22 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                     timestamp: now
                 });
 
-                transaction.update(orderDoc.ref, {
+                const updates: Record<string, any> = {
                     status: "CONFIRMED",
-                    paymentStatus: "SUCCESS",
+                    paymentStatus: "PAID",
+                    inventoryStatus: "COMMITTED",
+                    settlementStatus: "ESCROW_HOLD",
                     gatewayTransactionId: mopaySession.transactionId,
                     updatedAt: now
-                });
+                };
+
+                if (freshOrder.type === "FOOD_ORDER") {
+                    updates.fulfillmentStatus = "PREPARING";
+                } else if (freshOrder.type === "SERVICE_BOOKING") {
+                    updates.fulfillmentStatus = "READY";
+                }
+
+                transaction.update(orderDoc.ref, updates);
 
                 return { status: "SUCCESS" };
             });

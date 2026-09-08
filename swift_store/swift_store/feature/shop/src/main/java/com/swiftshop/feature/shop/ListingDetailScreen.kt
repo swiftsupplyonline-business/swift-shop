@@ -45,7 +45,13 @@ fun ctaForListingType(type: ListingType, brandColor: Color): CtaConfig = when (t
     ListingType.REGISTER -> CtaConfig("Register", Icons.Default.HowToReg, brandColor)
     ListingType.DELIVER -> CtaConfig("Request Delivery", Icons.Default.DeliveryDining, brandColor)
     ListingType.TAKE_ME_THERE -> CtaConfig("Take Me There", Icons.Default.Navigation, brandColor)
+    ListingType.PHYSICAL_ITEM -> CtaConfig("Buy Now", Icons.Default.ShoppingCart, brandColor)
+    ListingType.PREPARED_FOOD -> CtaConfig("Order Now", Icons.Default.Restaurant, brandColor)
+    ListingType.BOOKABLE_SERVICE -> CtaConfig("Book Now", Icons.Default.CalendarMonth, brandColor)
+    ListingType.BULK_SUPPLY -> CtaConfig("Request Quote", Icons.Default.Inventory, brandColor)
+    ListingType.DELIVERY_SERVICE -> CtaConfig("Request Delivery", Icons.Default.DeliveryDining, brandColor)
 }
+
 
 // â”€â”€â”€ Listing Detail Screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

@@ -108,6 +108,10 @@ object ProfileModule {
     fun provideObserveProfileUseCase(repo: ProfileRepository) = ObserveProfileUseCase(repo)
 
     @Provides
+    @Singleton
+    fun provideUserPreferenceRepository(impl: FirebaseUserPreferenceRepository): UserPreferenceRepository = impl
+
+    @Provides
     fun provideUpdateProfileUseCase(repo: ProfileRepository) = UpdateProfileUseCase(repo)
 
     @Provides
@@ -241,6 +245,10 @@ object CommerceModule {
     @Provides
     @Singleton
     fun provideAvailabilityRepository(impl: FirebaseAvailabilityRepository): AvailabilityRepository = impl
+
+    @Provides
+    @Singleton
+    fun provideContextEngine(impl: FirebaseContextEngine): ContextEngine = impl
 }
 
 @Module

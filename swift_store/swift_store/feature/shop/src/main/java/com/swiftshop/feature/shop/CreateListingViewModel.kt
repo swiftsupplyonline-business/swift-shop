@@ -7,7 +7,9 @@ import com.swiftshop.core.model.*
 import com.swiftshop.domain.auth.ObserveCurrentUserUseCase
 import com.swiftshop.domain.commerce.CommerceRepository
 import com.swiftshop.domain.commerce.CreateListingUseCase
+import com.swiftshop.domain.commerce.WorkflowContext
 import dagger.hilt.android.lifecycle.HiltViewModel
+
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -34,12 +36,13 @@ class CreateListingViewModel @Inject constructor(
     private val observeCurrentUser: ObserveCurrentUserUseCase,
     private val observeProfile: com.swiftshop.domain.profile.ObserveProfileUseCase,
     private val createListing: CreateListingUseCase,
+    private val contextEngine: com.swiftshop.domain.commerce.ContextEngine,
     private val repository: CommerceRepository
 ) : ViewModel() {
 
     private val initialType: ListingType = savedStateHandle.get<String>("listingType")?.let {
         runCatching { ListingType.valueOf(it) }.getOrNull()
-    } ?: ListingType.PRODUCT
+    } ?: ListingType.PHYSICAL_ITEM
 
     private val _uiState = MutableStateFlow<CreateListingUiState>(CreateListingUiState.Idle)
     val uiState = _uiState.asStateFlow()
@@ -89,14 +92,25 @@ class CreateListingViewModel @Inject constructor(
     val deliveryEstimateDays = _deliveryEstimateDays.asStateFlow()
 
     val showCustomFieldBuilder: StateFlow<Boolean> = _listingType.map { type ->
-        type in listOf(ListingType.PLACE_ORDER, ListingType.REGISTER, ListingType.SET_APPOINTMENT, ListingType.SERVICE)
+        type in listOf(ListingType.PLACE_ORDER, ListingType.REGISTER, ListingType.SET_APPOINTMENT, ListingType.SERVICE, ListingType.BOOKABLE_SERVICE, ListingType.PREPARED_FOOD)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     val showDeliveryEstimate: StateFlow<Boolean> = _listingType.map { type ->
-        type in listOf(ListingType.PRODUCT, ListingType.BUY, ListingType.PLACE_ORDER, ListingType.DELIVER)
+        type in listOf(ListingType.PRODUCT, ListingType.BUY, ListingType.PLACE_ORDER, ListingType.DELIVER, ListingType.PHYSICAL_ITEM, ListingType.DELIVERY_SERVICE)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
+    private val _selectedUnit = MutableStateFlow<String?>(null)
+    val selectedUnit = _selectedUnit.asStateFlow()
+
     init {
+        viewModelScope.launch {
+            contextEngine.getActiveMarketContext().collect { market ->
+                if (_selectedUnit.value == null) {
+                    _selectedUnit.value = market.defaultUnits.firstOrNull()
+                }
+            }
+        }
+
         viewModelScope.launch {
             observeCurrentUser()
                 .filter { it != null && it.uid.isNotBlank() }
@@ -158,7 +172,37 @@ class CreateListingViewModel @Inject constructor(
 
     fun onTitleChange(value: String) { _title.value = value }
     fun onDescriptionChange(value: String) { _description.value = value }
-    fun onCategoryChange(value: String) { _category.value = value }
+    fun onCategoryChange(value: String) { 
+        _category.value = value 
+        applyCategoryDefaults(value)
+    }
+
+    private fun applyCategoryDefaults(categoryId: String) {
+        viewModelScope.launch {
+            val market = contextEngine.getActiveMarketContext().first()
+            val schema = market.categories.find { it.id == categoryId || it.label == categoryId } ?: return@launch
+            
+            // Tier 2: Apply suggested fields as custom fields
+            val suggestions = schema.suggestedFields.map { field ->
+                CustomField(
+                    id = field.id,
+                    label = field.label,
+                    type = field.type,
+                    options = field.options,
+                    isRequired = field.isRequired
+                )
+            }
+            if (suggestions.isNotEmpty()) {
+                _customFields.value = suggestions
+            }
+            
+            // Suggest units
+            if (schema.suggestedUnits.isNotEmpty()) {
+                _selectedUnit.value = schema.suggestedUnits.first()
+            }
+        }
+    }
+
     fun onPriceChange(value: String) { _priceMajor.value = value }
     fun onStockChange(value: String) { _stockQuantity.value = value }
     fun onDeliveryEstimateChange(value: String) { _deliveryEstimateDays.value = value }
@@ -256,6 +300,11 @@ class CreateListingViewModel @Inject constructor(
                 deliveryEstimateDays = deliveryDays
             ).onSuccess {
                 _uiState.value = CreateListingUiState.Success
+                // Learn from this successful creation
+                viewModelScope.launch {
+                    contextEngine.recordUserChoice("category", _category.value, WorkflowContext(categoryId = _category.value))
+                    _selectedUnit.value?.let { contextEngine.recordUserChoice("unit", it, WorkflowContext(categoryId = _category.value)) }
+                }
             }.onFailure {
                 _uiState.value = CreateListingUiState.Error(it.message ?: "Failed to create listing")
             }

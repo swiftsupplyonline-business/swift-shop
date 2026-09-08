@@ -18,8 +18,9 @@ data class OrderSummary(
     val deliveryFee: MoneyAmount = MoneyAmount.ZERO,
     val platformFee: MoneyAmount = MoneyAmount.ZERO,
     val total: MoneyAmount = MoneyAmount.ZERO,
-    // The delivery listing that sourced deliveryFee â€” null when no delivery applies.
-    val selectedDeliveryListingId: String = ""
+    // The delivery listing that sourced deliveryFee — null when no delivery applies.
+    val selectedDeliveryListingId: String = "",
+    val orderType: OrderType = OrderType.PRODUCT_PURCHASE
 )
 
 object TierEntitlements {
@@ -118,6 +119,13 @@ interface CommerceRepository {
     ): Result<OrderInitiation>
     suspend fun verifyMopayPayment(sessionId: String): Result<Unit>
     fun observeUserOrders(userId: String): Flow<List<Order>>
+
+    /**
+     * Observes orders where the user occupies a specific role.
+     * Supports Buyer (REQUESTER), Seller (SELLER), etc.
+     */
+    fun observeOrdersByRole(userId: String, role: OrderRole): Flow<List<Order>>
+
     suspend fun getOrder(orderId: String): Result<Order>
     suspend fun updateOrderStatus(orderId: String, status: OrderStatus): Result<Unit>
     suspend fun cancelOrder(orderId: String, reason: String): Result<Unit>

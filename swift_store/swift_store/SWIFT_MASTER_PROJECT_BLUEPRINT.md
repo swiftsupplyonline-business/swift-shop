@@ -647,3 +647,5 @@ The migration to the revised Listing-to-Order architecture must follow a server-
 *   2026-09-01: Introduced Swift Fulfillment & Tracking Subsystem architecture.
 *   2026-09-02: Formalized Swift Maps & Geospatial subsystem. Added ADRs (MAPS-001 to MAPS-005). Established Maseru as initial geography.
 *   2026-09-08: Established Listing-to-Order marketplace architecture. Introduced polymorphic payloads, transactional snapshots, role-based participants, and Maseru landmark addressing. Added ADRs (ORDER-001 to ORDER-008). Added Conflict Register entries (CF-004 to CF-012).
+*   2026-09-08: Remedied polymorphic payload read-path gaps, implemented role-based UI perspectives, and restored Cloud Functions build integrity.
+

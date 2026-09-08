@@ -39,7 +39,13 @@ private fun ListingType.displayName(): String = when (this) {
     ListingType.REGISTER        -> "Register / Sign Up"
     ListingType.DELIVER         -> "Request Delivery"
     ListingType.TAKE_ME_THERE   -> "Navigation / Directions"
+    ListingType.PHYSICAL_ITEM    -> "Physical Item"
+    ListingType.PREPARED_FOOD    -> "Prepared Food"
+    ListingType.BOOKABLE_SERVICE -> "Bookable Service"
+    ListingType.BULK_SUPPLY      -> "Bulk Supply"
+    ListingType.DELIVERY_SERVICE -> "Delivery Service"
 }
+
 
 private fun ListingType.helpText(): String = when (this) {
     ListingType.PRODUCT         -> "Standard physical goods with inventory tracking."
@@ -51,7 +57,13 @@ private fun ListingType.helpText(): String = when (this) {
     ListingType.REGISTER        -> "Buyer submits a registration form (events, courses, etc.)."
     ListingType.DELIVER         -> "Buyer requests a delivery pickup/dropoff."
     ListingType.TAKE_ME_THERE   -> "Shows directions to your physical location."
+    ListingType.PHYSICAL_ITEM    -> "Standard physical goods."
+    ListingType.PREPARED_FOOD    -> "Food items for order."
+    ListingType.BOOKABLE_SERVICE -> "Services that require booking."
+    ListingType.BULK_SUPPLY      -> "Wholesale or bulk supplies."
+    ListingType.DELIVERY_SERVICE -> "Courier or transport services."
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

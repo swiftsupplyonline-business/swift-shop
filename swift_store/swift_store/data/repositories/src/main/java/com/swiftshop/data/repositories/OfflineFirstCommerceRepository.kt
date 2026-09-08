@@ -141,7 +141,12 @@ class OfflineFirstCommerceRepository @Inject constructor(
     )
 
     override fun observeUserOrders(userId: String): Flow<List<Order>> = remote.observeUserOrders(userId)
+
+    override fun observeOrdersByRole(userId: String, role: com.swiftshop.core.model.OrderRole): Flow<List<Order>> = 
+        remote.observeOrdersByRole(userId, role)
+
     override suspend fun getOrder(orderId: String) = remote.getOrder(orderId)
+
     override suspend fun updateOrderStatus(orderId: String, status: OrderStatus) = remote.updateOrderStatus(orderId, status)
     override suspend fun cancelOrder(orderId: String, reason: String) = remote.cancelOrder(orderId, reason)
 }

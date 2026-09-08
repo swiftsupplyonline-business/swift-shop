@@ -5,7 +5,7 @@ import kotlinx.parcelize.Parcelize
 import kotlinx.serialization.Serializable
 import java.util.UUID
 
-// â”€â”€â”€ Money â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Money ─────────────────────────────────────────────────────────────────────────
 
 /**
  * Exact monetary representation. Never use Double for money.
@@ -33,7 +33,7 @@ data class MoneyAmount(
     }
 }
 
-// â”€â”€â”€ Tier â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Tier ──────────────────────────────────────────────────────────────────────────
 
 enum class UserTier {
     BASIC,   // Free: 1 shop, unlimited listings
@@ -41,7 +41,7 @@ enum class UserTier {
     ELITE    // M499/mo: unlimited shops, max exposure
 }
 
-// â”€â”€â”€ Account Status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Account Status ───────────────────────────────────────────────────────────────
 
 enum class UserAccountStatus {
     ACTIVE,
@@ -53,7 +53,7 @@ enum class UserAccountStatus {
     DELETED
 }
 
-// â”€â”€â”€ User / Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── User / Auth ──────────────────────────────────────────────────────────────────
 
 @Serializable
 @Parcelize
@@ -91,7 +91,7 @@ data class UserProfile(
     val achievements: List<Achievement> = emptyList()
 ) : Parcelable
 
-// â”€â”€â”€ Achievement â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Achievement ──────────────────────────────────────────────────────────────────
 
 @Serializable
 @Parcelize
@@ -103,7 +103,7 @@ data class Achievement(
     val earnedAt: Long = 0L
 ) : Parcelable
 
-// â”€â”€â”€ Shop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Shop ──────────────────────────────────────────────────────────────────────────
 
 @Serializable
 @Parcelize
@@ -126,7 +126,7 @@ data class Shop(
     val createdAt: Long = 0L
 ) : Parcelable
 
-// â”€â”€â”€ Listing / Product â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Listing / Product ─────────────────────────────────────────────────────────────
 
 enum class SlotStatus {
     AVAILABLE,
@@ -166,8 +166,27 @@ data class Appointment(
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
 ) : Parcelable
+
 enum class ListingType {
-    PRODUCT, SERVICE, BUY, MAKE_PAYMENT, SET_APPOINTMENT, PLACE_ORDER, REGISTER, DELIVER, TAKE_ME_THERE
+    // Legacy Taxonomy
+    PRODUCT, SERVICE, BUY, MAKE_PAYMENT, SET_APPOINTMENT, PLACE_ORDER, REGISTER, DELIVER, TAKE_ME_THERE,
+    
+    // Maseru-First Taxonomy
+    PHYSICAL_ITEM,
+    PREPARED_FOOD,
+    BOOKABLE_SERVICE,
+    BULK_SUPPLY,
+    DELIVERY_SERVICE;
+
+    /**
+     * Maps legacy types to the new Maseru-First taxonomy.
+     */
+    fun toCanonical(): ListingType = when (this) {
+        PRODUCT -> PHYSICAL_ITEM
+        SERVICE -> BOOKABLE_SERVICE
+        BUY -> PHYSICAL_ITEM
+        else -> this
+    }
 }
 
 @Serializable
@@ -198,7 +217,19 @@ data class Listing(
     val customFields: List<CustomField> = emptyList(),
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
-) : Parcelable
+) : Parcelable {
+    fun toSnapshot() = ListingSnapshot(
+        listingId = id,
+        shopId = shopId,
+        sellerId = sellerId,
+        title = title,
+        description = description,
+        price = price,
+        listingType = listingType.name,
+        category = category,
+        snapshotAt = System.currentTimeMillis()
+    )
+}
 
 @Serializable
 @Parcelize
@@ -210,7 +241,7 @@ data class CustomField(
     val isRequired: Boolean = false
 ) : Parcelable
 
-// â”€â”€â”€ Feed Post â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Feed Post ─────────────────────────────────────────────────────────────────────
 
 enum class PostType { IMAGE, CAROUSEL, REEL }
 
@@ -252,7 +283,7 @@ data class Bookmark(
     val createdAt: Long = 0L
 ) : Parcelable
 
-// â”€â”€â”€ Comment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Comment ───────────────────────────────────────────────────────────────────────
 
 @Serializable
 @Parcelize
@@ -269,7 +300,7 @@ data class Comment(
     val createdAt: Long = 0L
 ) : Parcelable
 
-// â”€â”€â”€ Order / Commerce â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Order / Commerce ──────────────────────────────────────────────────────────────
 
 enum class OrderStatus {
     PENDING, 
@@ -284,25 +315,134 @@ enum class OrderStatus {
     REFUNDED
 }
 
+/** Independent state contracts to prevent state conflation. */
+enum class PaymentStatus { PENDING, AUTHORIZED, PAID, FAILED, REFUNDED }
+enum class FulfillmentStatus { PENDING, PREPARING, READY, DISPATCHED, DELIVERED, RETURNED }
+enum class SettlementStatus { PENDING, ESCROW_HOLD, RELEASED, SETTLED }
+enum class InventoryStatus { PENDING, RESERVED, COMMITTED, RELEASED }
+
+/** Explicit transaction/workflow types derived from the originating Listing. */
+enum class OrderType {
+    PRODUCT_PURCHASE,
+    FOOD_ORDER,
+    SERVICE_BOOKING,
+    BULK_PURCHASE,
+    DELIVERY_REQUEST,
+    LEGACY
+}
+
+/** Roles a user can occupy on an order. */
+enum class OrderRole {
+    REQUESTER,
+    LISTING_AUTHOR,
+    SELLER,
+    SERVICE_PROVIDER,
+    DELIVERY_PROVIDER,
+    RECIPIENT,
+    ADMIN
+}
+
+/**
+ * A transactional snapshot of the Listing state at Order creation.
+ */
+@Serializable
+@Parcelize
+data class ListingSnapshot(
+    val listingId: String = "",
+    val shopId: String = "",
+    val sellerId: String = "",
+    val sellerName: String = "",
+    val title: String = "",
+    val description: String = "",
+    val price: MoneyAmount = MoneyAmount.ZERO,
+    val listingType: String = "",
+    val category: String = "",
+    val variantId: String? = null,
+    val fulfillmentOptions: List<String> = emptyList(),
+    val snapshotAt: Long = 0L
+) : Parcelable
+
+/**
+ * Controlled polymorphic payload for type-specific Order data.
+ */
+@Serializable
+@Parcelize
+sealed class OrderPayload : Parcelable {
+    @Serializable @Parcelize
+    data class ProductPurchase(
+        val variantId: String? = null,
+        val quantity: Int = 1,
+        val unitPrice: MoneyAmount = MoneyAmount.ZERO,
+        val buyerNotes: String? = null
+    ) : OrderPayload()
+
+    @Serializable @Parcelize
+    data class FoodOrder(
+        val items: List<FoodOrderItem> = emptyList(),
+        val preparationNotes: String? = null,
+        val requestedDeliveryTime: Long? = null
+    ) : OrderPayload()
+
+    @Serializable @Parcelize
+    data class ServiceBooking(
+        val serviceId: String = "",
+        val requestedDate: String = "",
+        val requestedTime: String = "",
+        val durationMinutes: Int = 0,
+        val locationType: String = "ON_SITE"
+    ) : OrderPayload()
+
+    @Serializable @Parcelize
+    data class BulkPurchase(
+        val quantity: Double = 0.0,
+        val unitOfMeasure: String = "",
+        val pricingTier: String? = null
+    ) : OrderPayload()
+
+    @Serializable @Parcelize
+    data class DeliveryRequest(
+        val pickupLocation: LocationSnapshot? = null,
+        val destinationLocation: LocationSnapshot? = null,
+        val packageDescription: String = "",
+        val recipientName: String = "",
+        val recipientPhone: String = "",
+        val instructions: String = ""
+    ) : OrderPayload()
+}
+
+@Serializable
+@Parcelize
+data class FoodOrderItem(
+    val id: String = "",
+    val title: String = "",
+    val quantity: Int = 1,
+    val addOns: List<String> = emptyList()
+) : Parcelable
+
 @Serializable
 @Parcelize
 data class Order(
     val id: String = "",
-    val buyerId: String = "",
-    val sellerId: String = "",
+    val buyerId: String = "",         // Legacy compatibility
+    val sellerId: String = "",        // Legacy compatibility
     val shopId: String = "",
+    val type: OrderType = OrderType.LEGACY,
+    val sourceListingId: String = "",
+    val listingSnapshot: ListingSnapshot? = null,
+    val participants: Map<String, String> = emptyMap(), // Role.name -> userId
+    val payload: OrderPayload? = null,
     val items: List<OrderItem> = emptyList(),
     val subtotal: MoneyAmount = MoneyAmount.ZERO,
     val deliveryFee: MoneyAmount = MoneyAmount.ZERO,
     val platformFee: MoneyAmount = MoneyAmount.ZERO,
     val total: MoneyAmount = MoneyAmount.ZERO,
     val status: OrderStatus = OrderStatus.PENDING,
+    val paymentStatus: PaymentStatus = PaymentStatus.PENDING,
+    val fulfillmentStatus: FulfillmentStatus = FulfillmentStatus.PENDING,
+    val settlementStatus: SettlementStatus = SettlementStatus.PENDING,
+    val inventoryStatus: InventoryStatus = InventoryStatus.PENDING,
     val deliveryAddress: DeliveryAddress = DeliveryAddress(),
-    // The delivery listing selected by the buyer at checkout.
-    // This ID is validated server-side; the fee is never trusted from the client.
     val selectedDeliveryListingId: String = "",
-    // Immutable snapshot of the delivery offering at time of order.
-    // Protects historical orders from future changes to the delivery listing.
     val deliveryListingSnapshot: DeliveryListingSnapshot? = null,
     val paymentId: String = "",
     val paymentUrl: String? = null,
@@ -339,7 +479,7 @@ data class DeliveryAddress(
     val country: String = "Lesotho"
 ) : Parcelable
 
-// â”€â”€â”€ Wallet / Ledger â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Wallet / Ledger ──────────────────────────────────────────────────────────────
 
 @Serializable
 @Parcelize
@@ -378,7 +518,7 @@ data class WalletTransaction(
     val completedAt: Long = 0L
 ) : Parcelable
 
-// â”€â”€â”€ Payment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Payment ───────────────────────────────────────────────────────────────────────
 
 enum class PaymentMethod { MOPAY, SWIFT_WALLET }
 
@@ -401,7 +541,7 @@ data class OrderInitiation(
     val mopaySessionId: String? = null
 ) : Parcelable
 
-// â”€â”€â”€ Messaging â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Messaging ────────────────────────────────────────────────────────────────────
 
 @Serializable
 @Parcelize
@@ -424,36 +564,27 @@ data class Message(
     val attachmentUrl: String = "",
     val isRead: Boolean = false,
     val createdAt: Long = 0L,
-    // E2E Readiness - Implementation INACTIVE until cryptographic audit
     val isEncrypted: Boolean = false,
     val encryptedPayload: String? = null,
     val encryptionVersion: String? = null,
     val keyVersion: String? = null
 ) : Parcelable
 
-// â”€â”€â”€ Delivery Listing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-//
-// A DeliveryListing is a commercial offering created by a delivery provider.
-// It appears in the marketplace, in checkout, and in search/discovery just like
-// any other listing.  The price it carries is the canonical delivery fee for an
-// order â€” never a hard-coded constant and never derived from route distance.
-//
-// Architecture law: the selected DeliveryListing is the ONLY authoritative source
-// of the delivery fee.  The backend validates the fee against this record.
+// ── Delivery Listing ─────────────────────────────────────────────────────────────
 
 @Serializable
 @Parcelize
 data class DeliveryListing(
     val id: String = "",
     val shopId: String = "",
-    val providerId: String = "",        // uid of the delivery provider / business owner
+    val providerId: String = "",
     val providerName: String = "",
     val providerAvatarUrl: String = "",
-    val title: String = "",             // e.g. "Standard Maseru Delivery"
+    val title: String = "",
     val description: String = "",
     val price: MoneyAmount = MoneyAmount.ZERO,
-    val estimatedMinutes: Int = 0,      // indicative only â€” not a contractual guarantee
-    val coverageArea: String = "",      // human-readable e.g. "Maseru CBD & surrounds"
+    val estimatedMinutes: Int = 0,
+    val coverageArea: String = "",
     val isAvailable: Boolean = true,
     val rating: Float = 0f,
     val completedDeliveries: Int = 0,
@@ -462,8 +593,6 @@ data class DeliveryListing(
     val updatedAt: Long = 0L
 ) : Parcelable
 
-// Immutable snapshot stored on an order at checkout time.
-// If the delivery listing is later edited or deleted, the order record is unaffected.
 @Serializable
 @Parcelize
 data class DeliveryListingSnapshot(
@@ -476,7 +605,7 @@ data class DeliveryListingSnapshot(
     val estimatedMinutes: Int = 0
 ) : Parcelable
 
-// â”€â”€â”€ Delivery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Delivery ─────────────────────────────────────────────────────────────────────
 
 enum class DeliveryStatus {
     REQUESTED, ASSIGNED, PICKUP, IN_TRANSIT, DELIVERED, FAILED, CANCELLED
@@ -528,14 +657,10 @@ data class MapMarker(
 data class MapPolyline(
     val id: String,
     val points: List<GeoPoint>,
-    val color: String = "#3D5AFE", // Swift Brand Blue default
+    val color: String = "#3D5AFE",
     val width: Float = 5f
 ) : Parcelable
 
-/**
- * An immutable snapshot of a physical location associated with a transaction.
- * Captures the exact coordinates and address context at order creation.
- */
 @Serializable
 @Parcelize
 data class LocationSnapshot(
@@ -547,7 +672,7 @@ data class LocationSnapshot(
     fun toGeoPoint(): GeoPoint = GeoPoint(lat, lng)
 }
 
-// â”€â”€â”€ Advertising â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Advertising ──────────────────────────────────────────────────────────────────
 
 enum class CampaignStatus { DRAFT, ACTIVE, PAUSED, COMPLETED, REJECTED }
 enum class CampaignContentType { POST, LISTING, REEL }
@@ -577,7 +702,7 @@ data class AdTargeting(
     val ageRange: String = ""
 ) : Parcelable
 
-// â”€â”€â”€ Subscription â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Subscription ─────────────────────────────────────────────────────────────────
 
 @Serializable
 @Parcelize
@@ -592,7 +717,7 @@ data class Subscription(
     val cancelledAt: Long = 0L
 ) : Parcelable
 
-// â”€â”€â”€ UI State Wrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── UI State Wrapper ─────────────────────────────────────────────────────────────
 
 sealed interface UiState<out T> {
     data object Idle : UiState<Nothing>
@@ -611,4 +736,3 @@ sealed interface PagingState<out T> {
     data object Empty : PagingState<Nothing>
     data class LoadingMore<T>(val items: List<T>) : PagingState<T>
 }
-

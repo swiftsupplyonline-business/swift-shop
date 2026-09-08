@@ -104,7 +104,7 @@ class ListingDetailViewModel @Inject constructor(
                 onSuccess = { listing ->
                     val shop = getShop(listing.shopId).getOrNull()
                     _uiState.value = ListingDetailState.Loaded(listing, shop)
-                    if (listing.listingType == ListingType.SET_APPOINTMENT) {
+                    if (listing.listingType == ListingType.SET_APPOINTMENT || listing.listingType == ListingType.BOOKABLE_SERVICE) {
                         observeSlots(listing.shopId)
                     }
                 },

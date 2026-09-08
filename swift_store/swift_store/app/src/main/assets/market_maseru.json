@@ -1,0 +1,64 @@
+{
+  "id": "maseru",
+  "country": "Lesotho",
+  "currency": "LSL",
+  "region": "Maseru District",
+  "availableDistricts": [
+    "Maseru",
+    "Berea",
+    "Leribe",
+    "Mafeteng",
+    "Mohale's Hoek",
+    "Quthing",
+    "Qacha's Nek",
+    "Mokhotlong",
+    "Butha-Buthe",
+    "Thaba-Tseka"
+  ],
+  "defaultUnits": [
+    "piece",
+    "kg",
+    "litre",
+    "set",
+    "dozen"
+  ],
+  "categories": [
+    {
+      "id": "fashion",
+      "label": "Fashion",
+      "subcategories": ["Men's Clothing", "Women's Clothing", "Shoes", "Accessories"],
+      "suggestedFields": [
+        { "id": "size", "label": "Size", "type": "dropdown", "options": ["XS", "S", "M", "L", "XL", "XXL"] },
+        { "id": "condition", "label": "Condition", "type": "dropdown", "options": ["New", "Gently Used", "Used"] }
+      ],
+      "suggestedUnits": ["piece", "pair", "set"]
+    },
+    {
+      "id": "beauty",
+      "label": "Beauty & Personal Care",
+      "subcategories": ["Skincare", "Makeup", "Haircare", "Fragrance"],
+      "suggestedFields": [
+        { "id": "brand", "label": "Brand", "type": "text" },
+        { "id": "volume", "label": "Volume/Weight", "type": "text" }
+      ],
+      "suggestedUnits": ["ml", "g", "piece"]
+    },
+    {
+      "id": "electronics",
+      "label": "Electronics",
+      "subcategories": ["Phones", "Laptops", "Audio", "Accessories"],
+      "suggestedFields": [
+        { "id": "brand", "label": "Brand", "type": "text" },
+        { "id": "model", "label": "Model", "type": "text" },
+        { "id": "warranty", "label": "Warranty", "type": "dropdown", "options": ["No Warranty", "6 Months", "1 Year", "2 Years"] }
+      ],
+      "suggestedUnits": ["piece", "set"]
+    }
+  ],
+  "metadata": {
+    "source": "Lesotho Bureau of Statistics (Market Alignment)",
+    "sourceYear": "2024",
+    "geography": "Lesotho / Maseru",
+    "confidence": 0.95
+  }
+}

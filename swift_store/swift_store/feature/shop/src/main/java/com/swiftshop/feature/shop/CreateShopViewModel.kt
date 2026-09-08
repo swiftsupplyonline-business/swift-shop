@@ -7,6 +7,7 @@ import com.swiftshop.domain.auth.ObserveCurrentUserUseCase
 import com.swiftshop.domain.commerce.CommerceRepository
 import com.swiftshop.domain.commerce.CreateShopUseCase
 import com.swiftshop.domain.commerce.CanCreateShopUseCase
+import com.swiftshop.domain.commerce.ContextEngine
 import com.swiftshop.core.media.MediaUploader
 import com.swiftshop.core.media.MediaUploadProgress
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -27,6 +28,7 @@ class CreateShopViewModel @Inject constructor(
     private val observeProfile: com.swiftshop.domain.profile.ObserveProfileUseCase,
     private val createShop: CreateShopUseCase,
     private val canCreateShop: CanCreateShopUseCase,
+    private val contextEngine: ContextEngine,
     private val repository: com.swiftshop.domain.commerce.CommerceRepository,
     private val mediaUploader: MediaUploader
 ) : ViewModel() {
@@ -77,6 +79,14 @@ class CreateShopViewModel @Inject constructor(
                     val max = if (entitlement.maxShops == -1) "Unlimited" else entitlement.maxShops.toString()
                     _usageText.value = "Usage: ${profile.shopCount} / $max shops"
                 }
+        }
+
+        viewModelScope.launch {
+            // Apply market defaults for initial state
+            val market = contextEngine.getActiveMarketContext().first()
+            if (_locationAddress.value.isBlank()) {
+                _locationAddress.value = "${market.region}, ${market.country}"
+            }
         }
     }
 

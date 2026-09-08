@@ -29,11 +29,17 @@ fun OrdersScreen(
     viewModel: OrdersViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val currentRole by viewModel.currentRole.collectAsState()
+
+    val tabs = listOf(
+        "My Requests" to OrderRole.REQUESTER,
+        "Orders Received" to OrderRole.SELLER
+    )
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("My Orders", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("Orders", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Default.ArrowBack, "Back")
@@ -42,30 +48,49 @@ fun OrdersScreen(
             )
         }
     ) { padding ->
-        when (val state = uiState) {
-            is OrdersUiState.Loading -> LoadingState()
-            is OrdersUiState.Empty -> EmptyState(
-                "No orders yet",
-                "Your orders will appear here after you make a purchase"
-            )
-            is OrdersUiState.Error -> ErrorState(state.message, onRetry = { viewModel.load() })
-            is OrdersUiState.Loaded -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(padding),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(state.orders, key = { it.id }) { order ->
-                        OrderCard(
-                            order = order,
-                            onClick = { navController.navigate(Screen.OrderDetail.createRoute(order.id)) }
-                        )
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            TabRow(
+                selectedTabIndex = tabs.indexOfFirst { it.second == currentRole }.coerceAtLeast(0),
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.primary
+            ) {
+                tabs.forEach { (label, role) ->
+                    Tab(
+                        selected = currentRole == role,
+                        onClick = { viewModel.setRole(role) },
+                        text = { Text(label, style = MaterialTheme.typography.labelLarge) }
+                    )
+                }
+            }
+
+            when (val state = uiState) {
+                is OrdersUiState.Loading -> LoadingState()
+                is OrdersUiState.Empty -> EmptyState(
+                    "No orders yet",
+                    if (currentRole == OrderRole.REQUESTER) 
+                        "Your orders will appear here after you make a purchase"
+                    else "Orders received from your listings will appear here"
+                )
+                is OrdersUiState.Error -> ErrorState(state.message, onRetry = { viewModel.load() })
+                is OrdersUiState.Loaded -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(state.orders, key = { it.id }) { order ->
+                            OrderCard(
+                                order = order,
+                                onClick = { navController.navigate(Screen.OrderDetail.createRoute(order.id)) }
+                            )
+                        }
                     }
                 }
             }
         }
     }
 }
+
 
 @Composable
 private fun OrderCard(order: Order, onClick: () -> Unit) {

@@ -42,7 +42,13 @@ private fun ListingType.chipLabel(): String = when (this) {
     ListingType.REGISTER        -> "Register"
     ListingType.DELIVER         -> "Delivery"
     ListingType.TAKE_ME_THERE   -> "Directions"
+    ListingType.PHYSICAL_ITEM    -> "Products"
+    ListingType.PREPARED_FOOD    -> "Food"
+    ListingType.BOOKABLE_SERVICE -> "Services"
+    ListingType.BULK_SUPPLY      -> "Wholesale"
+    ListingType.DELIVERY_SERVICE -> "Transport"
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

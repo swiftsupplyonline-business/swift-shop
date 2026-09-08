@@ -195,7 +195,8 @@ class FirebaseCommerceRepository @Inject constructor(
             deliveryFee = MoneyAmount(currency, (resMap["deliveryFeeMinorUnits"] as Number).toLong()),
             platformFee = MoneyAmount(currency, (resMap["platformFeeMinorUnits"] as Number).toLong()),
             total = MoneyAmount(currency, (resMap["totalMinorUnits"] as Number).toLong()),
-            selectedDeliveryListingId = deliveryListingId
+            selectedDeliveryListingId = deliveryListingId,
+            orderType = runCatching { OrderType.valueOf(resMap["orderType"] as? String ?: "") }.getOrDefault(OrderType.PRODUCT_PURCHASE)
         )
     }
 
@@ -266,9 +267,11 @@ class FirebaseCommerceRepository @Inject constructor(
         }
     }
 
-    override fun observeUserOrders(userId: String): Flow<List<Order>> = callbackFlow {
+    override fun observeUserOrders(userId: String): Flow<List<Order>> = observeOrdersByRole(userId, OrderRole.REQUESTER)
+
+    override fun observeOrdersByRole(userId: String, role: OrderRole): Flow<List<Order>> = callbackFlow {
         val subscription = firestore.collection("orders")
-            .whereEqualTo("buyerId", userId)
+            .whereEqualTo("participants.${role.name}", userId)
             .addSnapshotListener { snapshot, _ ->
                 val list = snapshot?.toObjects(FirestoreOrder::class.java)?.map { it.toDomain() } ?: emptyList()
                 trySend(list)
@@ -477,6 +480,11 @@ data class FirestoreOrder(
     val buyerId: String = "",
     val sellerId: String = "",
     val shopId: String = "",
+    val type: String? = null,
+    val sourceListingId: String? = null,
+    val listingSnapshot: FirestoreListingSnapshot? = null,
+    val participants: Map<String, String>? = null,
+    val payload: Map<String, Any>? = null,
     val items: List<FirestoreOrderItem> = emptyList(),
     val subtotalMinorUnits: Long = 0L,
     val deliveryFeeMinorUnits: Long = 0L,
@@ -484,6 +492,10 @@ data class FirestoreOrder(
     val totalMinorUnits: Long = 0L,
     val currency: String = "LSL",
     val status: String = "PENDING",
+    val paymentStatus: String? = null,
+    val fulfillmentStatus: String? = null,
+    val settlementStatus: String? = null,
+    val inventoryStatus: String? = null,
     val deliveryAddress: FirestoreDeliveryAddress? = null,
     val selectedDeliveryListingId: String = "",
     val deliveryListingSnapshot: FirestoreDeliveryListingSnapshot? = null,
@@ -495,28 +507,119 @@ data class FirestoreOrder(
     val destinationLocationSnapshot: FirestoreLocationSnapshot? = null,
     val createdAt: Any? = null
 ) {
-    fun toDomain() = Order(
-        id = id, buyerId = buyerId, sellerId = sellerId, shopId = shopId,
-        items = items.map { it.toDomain() },
-        subtotal = MoneyAmount(currency, subtotalMinorUnits),
-        deliveryFee = MoneyAmount(currency, deliveryFeeMinorUnits),
-        platformFee = MoneyAmount(currency, platformFeeMinorUnits),
-        total = MoneyAmount(currency, totalMinorUnits),
-        status = runCatching { OrderStatus.valueOf(status) }.getOrDefault(OrderStatus.PENDING),
-        deliveryAddress = deliveryAddress?.toDomain() ?: DeliveryAddress(),
-        selectedDeliveryListingId = selectedDeliveryListingId,
-        deliveryListingSnapshot = deliveryListingSnapshot?.toDomain(),
-        paymentId = paymentId,
-        slotId = slotId,
-        fulfillmentType = fulfillmentType,
-        appointmentStartTime = appointmentStartTime,
-        originLocationSnapshot = originLocationSnapshot?.toDomain(),
-        destinationLocationSnapshot = destinationLocationSnapshot?.toDomain(),
-        notes = "",
-        createdAt = tsToLong(createdAt),
-        updatedAt = 0L
+    fun toDomain(): Order {
+        val domainStatus = runCatching { OrderStatus.valueOf(status) }.getOrDefault(OrderStatus.PENDING)
+        return Order(
+            id = id,
+            buyerId = buyerId,
+            sellerId = sellerId,
+            shopId = shopId,
+            type = runCatching { OrderType.valueOf(type ?: "LEGACY") }.getOrDefault(OrderType.LEGACY),
+            sourceListingId = sourceListingId ?: "",
+            listingSnapshot = listingSnapshot?.toDomain(),
+            participants = participants ?: buildMap {
+                // Legacy mapping
+                if (buyerId.isNotBlank()) put(OrderRole.REQUESTER.name, buyerId)
+                if (sellerId.isNotBlank()) put(OrderRole.SELLER.name, sellerId)
+            },
+            payload = mapPayload(type, payload),
+            items = items.map { it.toDomain() },
+            subtotal = MoneyAmount(currency, subtotalMinorUnits),
+            deliveryFee = MoneyAmount(currency, deliveryFeeMinorUnits),
+            platformFee = MoneyAmount(currency, platformFeeMinorUnits),
+            total = MoneyAmount(currency, totalMinorUnits),
+            status = domainStatus,
+            paymentStatus = runCatching { PaymentStatus.valueOf(paymentStatus ?: "") }.getOrElse {
+                // Derive from legacy status
+                when (domainStatus) {
+                    OrderStatus.CONFIRMED, OrderStatus.PROCESSING, OrderStatus.READY,
+                    OrderStatus.DISPATCHED, OrderStatus.DELIVERED -> PaymentStatus.PAID
+                    OrderStatus.REFUNDED -> PaymentStatus.REFUNDED
+                    else -> PaymentStatus.PENDING
+                }
+            },
+            fulfillmentStatus = runCatching { FulfillmentStatus.valueOf(fulfillmentStatus ?: "") }.getOrElse {
+                when (domainStatus) {
+                    OrderStatus.DISPATCHED -> FulfillmentStatus.DISPATCHED
+                    OrderStatus.DELIVERED -> FulfillmentStatus.DELIVERED
+                    OrderStatus.READY -> FulfillmentStatus.READY
+                    OrderStatus.PROCESSING -> FulfillmentStatus.PREPARING
+                    else -> FulfillmentStatus.PENDING
+                }
+            },
+            settlementStatus = runCatching { SettlementStatus.valueOf(settlementStatus ?: "") }.getOrElse {
+                when (domainStatus) {
+                    OrderStatus.CONFIRMED, OrderStatus.PROCESSING, OrderStatus.READY,
+                    OrderStatus.DISPATCHED, OrderStatus.DELIVERED -> SettlementStatus.ESCROW_HOLD
+                    else -> SettlementStatus.PENDING
+                }
+            },
+            inventoryStatus = runCatching { InventoryStatus.valueOf(inventoryStatus ?: "") }.getOrElse {
+                when (domainStatus) {
+                    OrderStatus.RESERVED -> InventoryStatus.RESERVED
+                    OrderStatus.CONFIRMED, OrderStatus.PROCESSING, OrderStatus.READY,
+                    OrderStatus.DISPATCHED, OrderStatus.DELIVERED -> InventoryStatus.COMMITTED
+                    OrderStatus.CANCELLED -> InventoryStatus.RELEASED
+                    else -> InventoryStatus.PENDING
+                }
+            },
+            deliveryAddress = deliveryAddress?.toDomain() ?: DeliveryAddress(),
+            selectedDeliveryListingId = selectedDeliveryListingId,
+            deliveryListingSnapshot = deliveryListingSnapshot?.toDomain(),
+            paymentId = paymentId,
+            slotId = slotId,
+            fulfillmentType = fulfillmentType,
+            appointmentStartTime = appointmentStartTime,
+            originLocationSnapshot = originLocationSnapshot?.toDomain(),
+            destinationLocationSnapshot = destinationLocationSnapshot?.toDomain(),
+            notes = "",
+            createdAt = tsToLong(createdAt),
+            updatedAt = 0L
+        )
+    }
+}
+
+data class FirestoreListingSnapshot(
+    val listingId: String = "",
+    val shopId: String = "",
+    val sellerId: String = "",
+    val sellerName: String = "",
+    val title: String = "",
+    val description: String = "",
+    val priceMinorUnits: Long = 0L,
+    val currency: String = "LSL",
+    val listingType: String = "",
+    val category: String = "",
+    val variantId: String? = null,
+    val fulfillmentOptions: List<String> = emptyList(),
+    val snapshotAt: Long = 0L
+) {
+    fun toDomain() = ListingSnapshot(
+        listingId = listingId,
+        shopId = shopId,
+        sellerId = sellerId,
+        sellerName = sellerName,
+        title = title,
+        description = description,
+        price = MoneyAmount(currency, priceMinorUnits),
+        listingType = listingType,
+        category = category,
+        variantId = variantId,
+        fulfillmentOptions = fulfillmentOptions,
+        snapshotAt = snapshotAt
     )
 }
+
+fun ListingSnapshot.toFirestore() = mapOf(
+    "listingId" to listingId, "shopId" to shopId, "sellerId" to sellerId,
+    "sellerName" to sellerName,
+    "title" to title, "description" to description,
+    "priceMinorUnits" to price.minorUnits, "currency" to price.currency,
+    "listingType" to listingType, "category" to category,
+    "variantId" to variantId,
+    "fulfillmentOptions" to fulfillmentOptions,
+    "snapshotAt" to snapshotAt
+)
 
 data class FirestoreDeliveryListingSnapshot(
     val listingId: String = "",
@@ -576,18 +679,130 @@ data class FirestoreDeliveryAddress(
     fun toDomain() = DeliveryAddress(label, lat, lng, streetHint, city, district, country)
 }
 
-fun Order.toFirestore() = mapOf(
-    "id" to id, "buyerId" to buyerId, "sellerId" to sellerId, "shopId" to shopId,
-    "items" to items.map { it.toFirestore() },
-    "subtotalMinorUnits" to subtotal.minorUnits, "deliveryFeeMinorUnits" to deliveryFee.minorUnits,
-    "platformFeeMinorUnits" to platformFee.minorUnits, "totalMinorUnits" to total.minorUnits,
-    "currency" to total.currency, "status" to status.name, "paymentId" to paymentId,
-    "deliveryAddress" to deliveryAddress.toFirestore(),
-    "selectedDeliveryListingId" to selectedDeliveryListingId,
-    "originLocationSnapshot" to originLocationSnapshot?.toFirestore(),
-    "destinationLocationSnapshot" to destinationLocationSnapshot?.toFirestore(),
-    "createdAt" to createdAt
-)
+fun Order.toFirestore() = buildMap {
+    putAll(mapOf(
+        "id" to id, "buyerId" to buyerId, "sellerId" to sellerId, "shopId" to shopId,
+        "type" to type.name,
+        "sourceListingId" to sourceListingId,
+        "listingSnapshot" to listingSnapshot?.toFirestore(),
+        "participants" to participants,
+        "items" to items.map { it.toFirestore() },
+        "subtotalMinorUnits" to subtotal.minorUnits, "deliveryFeeMinorUnits" to deliveryFee.minorUnits,
+        "platformFeeMinorUnits" to platformFee.minorUnits, "totalMinorUnits" to total.minorUnits,
+        "currency" to total.currency, "status" to status.name,
+        "paymentStatus" to paymentStatus.name,
+        "fulfillmentStatus" to fulfillmentStatus.name,
+        "settlementStatus" to settlementStatus.name,
+        "inventoryStatus" to inventoryStatus.name,
+        "paymentId" to paymentId,
+        "deliveryAddress" to deliveryAddress.toFirestore(),
+        "selectedDeliveryListingId" to selectedDeliveryListingId,
+        "originLocationSnapshot" to originLocationSnapshot?.toFirestore(),
+        "destinationLocationSnapshot" to destinationLocationSnapshot?.toFirestore(),
+        "createdAt" to createdAt
+    ))
+    payload?.let { put("payload", it.toFirestore()) }
+}
+
+private fun mapPayload(type: String?, data: Map<String, Any>?): OrderPayload? {
+    if (data == null) return null
+    return when (runCatching { OrderType.valueOf(type ?: "") }.getOrNull()) {
+        OrderType.PRODUCT_PURCHASE -> OrderPayload.ProductPurchase(
+            variantId = data["variantId"] as? String,
+            quantity = (data["quantity"] as? Number)?.toInt() ?: 1,
+            unitPrice = (data["unitPriceMinorUnits"] as? Number)?.let { 
+                MoneyAmount(data["unitPriceCurrency"] as? String ?: "LSL", it.toLong())
+            } ?: MoneyAmount.ZERO,
+            buyerNotes = data["buyerNotes"] as? String
+        )
+        OrderType.FOOD_ORDER -> OrderPayload.FoodOrder(
+            items = (data["items"] as? List<Map<String, Any>>)?.map { 
+                FoodOrderItem(
+                    id = it["id"] as? String ?: "",
+                    title = it["title"] as? String ?: "",
+                    quantity = (it["quantity"] as? Number)?.toInt() ?: 1,
+                    addOns = (it["addOns"] as? List<String>) ?: emptyList()
+                )
+            } ?: emptyList(),
+            preparationNotes = data["preparationNotes"] as? String,
+            requestedDeliveryTime = (data["requestedDeliveryTime"] as? Number)?.toLong()
+        )
+        OrderType.SERVICE_BOOKING -> OrderPayload.ServiceBooking(
+            serviceId = data["serviceId"] as? String ?: "",
+            requestedDate = data["requestedDate"] as? String ?: "",
+            requestedTime = data["requestedTime"] as? String ?: "",
+            durationMinutes = (data["durationMinutes"] as? Number)?.toInt() ?: 0,
+            locationType = data["locationType"] as? String ?: "ON_SITE"
+        )
+        OrderType.BULK_PURCHASE -> OrderPayload.BulkPurchase(
+            quantity = (data["quantity"] as? Number)?.toDouble() ?: 0.0,
+            unitOfMeasure = data["unitOfMeasure"] as? String ?: "",
+            pricingTier = data["pricingTier"] as? String
+        )
+        OrderType.DELIVERY_REQUEST -> OrderPayload.DeliveryRequest(
+            pickupLocation = (data["pickupLocation"] as? Map<String, Any>)?.let { 
+                LocationSnapshot(
+                    lat = (it["lat"] as? Number)?.toDouble() ?: 0.0,
+                    lng = (it["lng"] as? Number)?.toDouble() ?: 0.0,
+                    addressSnapshot = it["addressSnapshot"] as? String ?: "",
+                    instructions = it["instructions"] as? String ?: ""
+                )
+            },
+            destinationLocation = (data["destinationLocation"] as? Map<String, Any>)?.let { 
+                LocationSnapshot(
+                    lat = (it["lat"] as? Number)?.toDouble() ?: 0.0,
+                    lng = (it["lng"] as? Number)?.toDouble() ?: 0.0,
+                    addressSnapshot = it["addressSnapshot"] as? String ?: "",
+                    instructions = it["instructions"] as? String ?: ""
+                )
+            },
+            packageDescription = data["packageDescription"] as? String ?: "",
+            recipientName = data["recipientName"] as? String ?: "",
+            recipientPhone = data["recipientPhone"] as? String ?: "",
+            instructions = data["instructions"] as? String ?: ""
+        )
+        else -> null
+    }
+}
+
+
+private fun OrderPayload.toFirestore(): Map<String, Any> = when (this) {
+    is OrderPayload.ProductPurchase -> buildMap {
+        variantId?.let { put("variantId", it) }
+        put("quantity", quantity)
+        put("unitPriceMinorUnits", unitPrice.minorUnits)
+        put("unitPriceCurrency", unitPrice.currency)
+        buyerNotes?.let { put("buyerNotes", it) }
+    }
+    is OrderPayload.FoodOrder -> buildMap {
+        put("items", items.map { mapOf("id" to it.id, "title" to it.title, "quantity" to it.quantity, "addOns" to it.addOns) })
+        preparationNotes?.let { put("preparationNotes", it) }
+        requestedDeliveryTime?.let { put("requestedDeliveryTime", it) }
+    }
+    is OrderPayload.ServiceBooking -> mapOf(
+        "serviceId" to serviceId,
+        "requestedDate" to requestedDate,
+        "requestedTime" to requestedTime,
+        "durationMinutes" to durationMinutes,
+        "locationType" to locationType
+    )
+    is OrderPayload.BulkPurchase -> buildMap {
+        put("quantity", quantity)
+        put("unitOfMeasure", unitOfMeasure)
+        pricingTier?.let { put("pricingTier", it) }
+    }
+    is OrderPayload.DeliveryRequest -> buildMap {
+        pickupLocation?.let { put("pickupLocation", it.toFirestore()) }
+        destinationLocation?.let { put("destinationLocation", it.toFirestore()) }
+        put("packageDescription", packageDescription)
+        put("recipientName", recipientName)
+        put("recipientPhone", recipientPhone)
+        put("instructions", instructions)
+    }
+}
+
+
+
 
 fun OrderItem.toFirestore() = mapOf(
     "listingId" to listingId, "title" to title, "quantity" to quantity,
