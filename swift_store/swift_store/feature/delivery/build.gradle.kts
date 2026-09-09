@@ -42,4 +42,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.osmdroid.android)
     implementation(libs.timber)
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 }
+

@@ -1,6 +1,11 @@
 package com.swiftshop.feature.orders
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -29,9 +34,11 @@ import com.swiftshop.domain.commerce.CommerceRepository
 import com.swiftshop.domain.delivery.DeliveryRepository
 import com.swiftshop.domain.delivery.DeliveryRole
 import com.swiftshop.domain.delivery.ObserveDeliveryRoutesByOrderUseCase
+import com.swiftshop.feature.delivery.DriverLocationPublisher
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+
 import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
@@ -64,8 +71,10 @@ class TrackOrderViewModel @Inject constructor(
     private val observeCurrentUser: ObserveCurrentUserUseCase,
     private val commerceRepository: CommerceRepository,
     private val deliveryRepository: DeliveryRepository,
-    private val observeRoutesByOrder: ObserveDeliveryRoutesByOrderUseCase
+    private val observeRoutesByOrder: ObserveDeliveryRoutesByOrderUseCase,
+    private val driverLocationPublisher: DriverLocationPublisher
 ) : ViewModel() {
+
 
     val orderId: String = checkNotNull(savedStateHandle["orderId"])
 
@@ -94,8 +103,9 @@ class TrackOrderViewModel @Inject constructor(
                     order.participants[OrderRole.SELLER.name] == user.uid -> TrackingRole.SELLER
                     order.participants[OrderRole.SERVICE_PROVIDER.name] == user.uid -> TrackingRole.SELLER
                     order.participants[OrderRole.DELIVERY_PROVIDER.name] == user.uid -> TrackingRole.DRIVER
-                    else -> TrackingRole.BUYER
+                    else -> TrackingRole.DRIVER // confirmed below once route loads
                 }
+
 
 
                 // Observe live delivery route if one exists
@@ -139,9 +149,39 @@ class TrackOrderViewModel @Inject constructor(
                             )
                         )
                     }
-            }.collect { _uiState.value = it }
+            }.collect { state -> 
+                _uiState.value = state
+                handlePublisherLifecycle(state)
+            }
         }
     }
+
+    private fun handlePublisherLifecycle(state: TrackOrderUiState) {
+        if (state is TrackOrderUiState.Loaded) {
+            val route = state.route
+            val isDriver = state.viewerRole == TrackingRole.DRIVER
+            val isActive = route?.status in listOf(
+                DeliveryStatus.ASSIGNED, 
+                DeliveryStatus.PICKUP, 
+                DeliveryStatus.IN_TRANSIT
+            )
+            
+            if (isDriver && isActive && route != null) {
+                driverLocationPublisher.start(route.id, viewModelScope)
+            } else {
+                driverLocationPublisher.stop()
+            }
+        } else {
+            driverLocationPublisher.stop()
+        }
+    }
+
+
+    override fun onCleared() {
+        super.onCleared()
+        driverLocationPublisher.stop()
+    }
+
 
     private fun selectActiveRoute(routes: List<DeliveryRoute>): DeliveryRoute? {
         val inProgress = listOf(
@@ -248,8 +288,26 @@ fun TrackOrderScreen(
     viewModel: TrackOrderViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) viewModel.load()
+    }
+
+    LaunchedEffect(uiState) {
+        val state = uiState
+        if (state is TrackOrderUiState.Loaded && state.viewerRole == TrackingRole.DRIVER) {
+            if (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
+        }
+    }
+
 
     Scaffold(
+
         topBar = {
             TopAppBar(
                 title = { Text("Track Order", style = MaterialTheme.typography.titleLarge) },
