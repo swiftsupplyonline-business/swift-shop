@@ -19,23 +19,22 @@ export const calculateOrderFees = onCall(async (request) => {
 
     const db = admin.firestore();
 
-    // ── Authoritative delivery fee ─────────────────────────────────────────────
-    // The delivery fee is read exclusively from the selected DeliveryListing
-    // document in Firestore. No fee is ever invented by the function, derived from
-    // route distance, or accepted from the client. This replaces the former
-    // hard-coded M25.00 constant.
-    const deliveryListingDoc = await db.collection("listings").doc(deliveryListingId).get();
-    if (!deliveryListingDoc.exists) {
-        throw new HttpsError("not-found", `Delivery listing ${deliveryListingId} not found`);
+    let deliveryFee = 0;
+    if (deliveryListingId !== "none") {
+        const deliveryListingDoc = await db.collection("listings").doc(deliveryListingId).get();
+        if (!deliveryListingDoc.exists) {
+            throw new HttpsError("not-found", `Delivery listing ${deliveryListingId} not found`);
+        }
+        const deliveryListing = deliveryListingDoc.data()!;
+        if (deliveryListing.listingType !== "DELIVER" && deliveryListing.listingType !== "DELIVERY_SERVICE") {
+            throw new HttpsError("invalid-argument", "The provided listing is not a delivery listing");
+        }
+        if (!deliveryListing.isAvailable) {
+            throw new HttpsError("failed-precondition", "The selected delivery listing is no longer available");
+        }
+        deliveryFee = deliveryListing.priceMinorUnits || 0;
     }
-    const deliveryListing = deliveryListingDoc.data()!;
-    if (deliveryListing.listingType !== "DELIVER") {
-        throw new HttpsError("invalid-argument", "The provided listing is not a delivery listing");
-    }
-    if (!deliveryListing.isAvailable) {
-        throw new HttpsError("failed-precondition", "The selected delivery listing is no longer available");
-    }
-    const deliveryFee: number = deliveryListing.priceMinorUnits || 0;
+
 
     // ── Item subtotal (authoritative price from each listing) ──────────────────
     let subtotal = 0;
@@ -121,7 +120,7 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
         throw new HttpsError("invalid-argument", "Missing items or idempotencyKey");
     }
     if (!deliveryListingId) {
-        throw new HttpsError("invalid-argument", "deliveryListingId is required — delivery fee must come from a delivery listing");
+        throw new HttpsError("invalid-argument", "deliveryListingId is required");
     }
 
     const db = admin.firestore();
@@ -129,34 +128,34 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
     let finalTotal = 0;
 
     try {
-        // ── Validate delivery listing BEFORE the transaction (fail fast). ─────────
-        // The fee is read exclusively from the delivery listing document.
-        // No fee amount is ever accepted from the client, calculated from distance,
-        // or defaulted to a hard-coded constant. This replaces the former M25 constant.
-        const deliveryListingDoc = await db.collection("listings").doc(deliveryListingId).get();
-        if (!deliveryListingDoc.exists) {
-            throw new HttpsError("not-found", `Delivery listing ${deliveryListingId} not found`);
-        }
-        const deliveryListingData = deliveryListingDoc.data()!;
-        if (deliveryListingData.listingType !== "DELIVER") {
-            throw new HttpsError("invalid-argument", "The provided listing is not a delivery listing");
-        }
-        if (!deliveryListingData.isAvailable) {
-            throw new HttpsError("failed-precondition", "The selected delivery option is no longer available");
-        }
-        const deliveryFeeFromListing: number = deliveryListingData.priceMinorUnits || 0;
+        let deliveryFeeFromListing \u003d 0;
+        let deliveryListingSnapshot \u003d null;
 
-        // Immutable snapshot stored on the order for historical integrity.
-        // If the provider later changes their price, existing orders are unaffected.
-        const deliveryListingSnapshot = {
-            listingId: deliveryListingId,
-            providerId: deliveryListingData.sellerId || "",
-            providerName: deliveryListingData.providerName || "",
-            title: deliveryListingData.title || "",
-            priceMinorUnits: deliveryFeeFromListing,
-            currency: deliveryListingData.priceCurrency || "LSL",
-            estimatedMinutes: deliveryListingData.estimatedMinutes || 0
-        };
+        if (deliveryListingId !== "none") {
+            const deliveryListingDoc \u003d await db.collection("listings").doc(deliveryListingId).get();
+            if (!deliveryListingDoc.exists) {
+                throw new HttpsError("not-found", `Delivery listing ${deliveryListingId} not found`);
+            }
+            const deliveryListingData \u003d deliveryListingDoc.data()!;
+            if (deliveryListingData.listingType !== "DELIVER" \u0026\u0026 deliveryListingData.listingType !== "DELIVERY_SERVICE") {
+                throw new HttpsError("invalid-argument", "The provided listing is not a delivery listing");
+            }
+            if (!deliveryListingData.isAvailable) {
+                throw new HttpsError("failed-precondition", "The selected delivery option is no longer available");
+            }
+            deliveryFeeFromListing \u003d deliveryListingData.priceMinorUnits || 0;
+
+            deliveryListingSnapshot \u003d {
+                listingId: deliveryListingId,
+                providerId: deliveryListingData.sellerId || "",
+                providerName: deliveryListingData.providerName || "",
+                title: deliveryListingData.title || "",
+                priceMinorUnits: deliveryFeeFromListing,
+                currency: deliveryListingData.priceCurrency || "LSL",
+                estimatedMinutes: deliveryListingData.estimatedMinutes || 0
+            };
+        }
+
 
         // STEP 1: Atomic Inventory Reservation & Order Record Creation
         const result = await db.runTransaction(async (transaction) => {
@@ -287,6 +286,30 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
 
             const orderType = MAP_LISTING_TO_ORDER_TYPE[listingSnaps[0]?.doc.data()?.listingType] || "PRODUCT_PURCHASE";
 
+            // Determine Participants based on OrderType
+            const participants: Record<string, string> = {
+                "REQUESTER": auth.uid,
+                "LISTING_AUTHOR": sellerId
+            };
+
+            if (orderType === "PRODUCT_PURCHASE" || orderType === "FOOD_ORDER" || orderType === "BULK_PURCHASE") {
+                participants["SELLER"] = sellerId;
+            } else if (orderType === "SERVICE_BOOKING") {
+                participants["SERVICE_PROVIDER"] = sellerId;
+            } else if (orderType === "DELIVERY_REQUEST") {
+                // For a direct delivery request, the listing author is the provider
+                participants["DELIVERY_PROVIDER"] = sellerId;
+            }
+
+            // Source origin from Shop document
+            const shopDoc = await transaction.get(db.collection("shops").doc(shopId));
+            const shopData = shopDoc.exists ? shopDoc.data() : null;
+            const originLocationSnapshot = shopData ? {
+                lat: shopData.locationLat || 0,
+                lng: shopData.locationLng || 0,
+                addressSnapshot: shopData.locationAddress || ""
+            } : null;
+
             const orderDoc: Record<string, unknown> = {
                 id: newOrderId,
                 buyerId: auth.uid,
@@ -295,11 +318,7 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 type: orderType,
                 sourceListingId: listingSnaps[0]?.item.listingId || "",
                 listingSnapshot: captureListingSnapshot(listingSnaps[0]?.doc.data()),
-                participants: {
-                    "REQUESTER": auth.uid,
-                    "SELLER": sellerId,
-                    "LISTING_AUTHOR": sellerId
-                },
+                participants: participants,
                 items: validatedItems,
                 subtotalMinorUnits: subtotal,
                 deliveryFeeMinorUnits: deliveryFee,
@@ -314,6 +333,12 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 deliveryAddress: deliveryAddress || {},
                 selectedDeliveryListingId: deliveryListingId,
                 deliveryListingSnapshot: deliveryListingSnapshot,
+                originLocationSnapshot: originLocationSnapshot,
+                destinationLocationSnapshot: deliveryAddress ? {
+                    lat: deliveryAddress.lat || 0,
+                    lng: deliveryAddress.lng || 0,
+                    addressSnapshot: deliveryAddress.label || ""
+                } : null,
                 paymentMethod: paymentMethod || "MOPAY",
                 provider: provider || null,
                 idempotencyKey: idempotencyKey,
@@ -322,16 +347,54 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 updatedAt: now
             };
 
-            // Initialize Payload
-            if (orderType === "PRODUCT_PURCHASE") {
-                orderDoc.payload = {
-                    quantity: validatedItems.reduce((acc, i) => acc + i.quantity, 0),
-                    unitPriceMinorUnits: validatedItems[0]?.unitPriceMinorUnits || 0,
-                    buyerNotes: ""
-                };
+            // Initialize Type-Specific Payload (Default)
+            let payload: any = null;
+            switch (orderType) {
+                case "PRODUCT_PURCHASE":
+                    payload = {
+                        quantity: validatedItems.reduce((acc, i) => acc + i.quantity, 0),
+                        unitPriceMinorUnits: validatedItems[0]?.unitPriceMinorUnits || 0,
+                        buyerNotes: ""
+                    };
+                    break;
+                case "FOOD_ORDER":
+                    payload = {
+                        items: validatedItems.map(i => ({ id: i.listingId, title: i.title, quantity: i.quantity, addOns: [] })),
+                        preparationNotes: ""
+                    };
+                    break;
+                case "SERVICE_BOOKING":
+                    payload = {
+                        serviceId: listingSnaps[0]?.item.listingId || "",
+                        requestedDate: "",
+                        requestedTime: "",
+                        durationMinutes: listingSnaps[0]?.doc.data()?.durationMinutes || 0
+                    };
+                    break;
+                case "BULK_PURCHASE":
+                    payload = {
+                        quantity: validatedItems.reduce((acc, i) => acc + i.quantity, 0),
+                        unitOfMeasure: listingSnaps[0]?.doc.data()?.unitOfMeasure || "unit"
+                    };
+                    break;
+                case "DELIVERY_REQUEST":
+                    payload = {
+                        packageDescription: "",
+                        recipientName: "",
+                        recipientPhone: ""
+                    };
+                    break;
             }
 
+            // Merge with client-provided payload if available
+            if (request.data.payload) {
+                payload = { ...payload, ...request.data.payload };
+            }
+            orderDoc.payload = payload;
+
             transaction.set(db.collection("orders").doc(newOrderId), orderDoc);
+
+
             transaction.set(idempotencyRef, {
                 orderId: newOrderId,
                 userId: auth.uid,
@@ -655,13 +718,25 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                     updatedAt: now
                 };
 
-                if (freshOrder.type === "FOOD_ORDER") {
-                    updates.fulfillmentStatus = "PREPARING";
-                } else if (freshOrder.type === "SERVICE_BOOKING") {
-                    updates.fulfillmentStatus = "READY";
+                // Type-Specific Initial Fulfillment Status
+                switch (freshOrder.type) {
+                    case "FOOD_ORDER":
+                        updates.fulfillmentStatus = "PREPARING";
+                        break;
+                    case "SERVICE_BOOKING":
+                        updates.fulfillmentStatus = "READY"; // Service provider is notified
+                        break;
+                    case "PRODUCT_PURCHASE":
+                    case "BULK_PURCHASE":
+                        updates.fulfillmentStatus = "PREPARING";
+                        break;
+                    case "DELIVERY_REQUEST":
+                        updates.fulfillmentStatus = "PENDING"; // Driver assignment needed
+                        break;
                 }
 
                 transaction.update(orderDoc.ref, updates);
+
 
                 return { status: "SUCCESS" };
             });
@@ -833,37 +908,55 @@ export const cancelOrder = onCall(async (request) => {
             }
 
             // INVENTORY RESTORATION (READ ALL BEFORE WRITE)
-            const resQuery = await db.collection("reservations").where("orderId", "==", order.id).get();
-            const listingSnaps = [];
+            const isService = order.fulfillmentType === "SERVICE";
             const reservationSnaps = [];
+            const listingSnaps = [];
+            let slotRef = null;
 
-            for (const resDoc of resQuery.docs) {
-                const reservation = resDoc.data();
-                if (reservation.status !== "ACTIVE") continue;
-                const listingRef = db.collection("listings").doc(reservation.listingId);
-                const listingSnap = await transaction.get(listingRef);
-                reservationSnaps.push({ ref: resDoc.ref, data: reservation });
-                listingSnaps.push({ ref: listingRef, snap: listingSnap });
+            if (isService && order.slotId) {
+                slotRef = db.collection("availability").doc(order.shopId).collection("slots").doc(order.slotId);
+            } else {
+                const resQuery = await db.collection("reservations").where("orderId", "==", order.id).get();
+                for (const resDoc of resQuery.docs) {
+                    const reservation = resDoc.data();
+                    if (reservation.status !== "ACTIVE") continue;
+                    const listingRef = db.collection("listings").doc(reservation.listingId);
+                    const listingSnap = await transaction.get(listingRef);
+                    reservationSnaps.push({ ref: resDoc.ref, data: reservation });
+                    listingSnaps.push({ ref: listingRef, snap: listingSnap });
+                }
             }
 
             // APPLY RESTORATION (ALL WRITES AFTER ALL READS)
             const now = admin.firestore.Timestamp.now();
-            for (const { ref, data } of reservationSnaps) {
-                transaction.update(ref, { status: "RELEASED", releasedAt: now, updatedAt: now });
-                const l = listingSnaps.find(ls => ls.ref.id === data.listingId)!;
-                const lData = l.snap.data()!;
 
-                const currentTotal = lData.totalQuantity || 0;
-                const currentReserved = lData.reservedQuantity || 0;
-
-                const newReserved = Math.max(0, currentReserved - data.quantity);
-                transaction.update(l.ref, {
-                    reservedQuantity: newReserved,
-                    availableQuantity: currentTotal - newReserved,
-                    stockQuantity: currentTotal - newReserved,
+            if (isService && slotRef) {
+                transaction.update(slotRef, {
+                    status: "AVAILABLE",
+                    reservedBy: null,
+                    expiresAt: null,
+                    orderId: null,
                     updatedAt: now
                 });
+            } else {
+                for (const { ref, data } of reservationSnaps) {
+                    transaction.update(ref, { status: "RELEASED", releasedAt: now, updatedAt: now });
+                    const l = listingSnaps.find(ls \u003d\u003e ls.ref.id === data.listingId)!;
+                    const lData = l.snap.data()!;
+
+                    const currentTotal = lData.totalQuantity || 0;
+                    const currentReserved = lData.reservedQuantity || 0;
+
+                    const newReserved = Math.max(0, currentReserved - data.quantity);
+                    transaction.update(l.ref, {
+                        reservedQuantity: newReserved,
+                        availableQuantity: currentTotal - newReserved,
+                        stockQuantity: currentTotal - newReserved,
+                        updatedAt: now
+                    });
+                }
             }
+
 
             transaction.update(orderRef, {
                 status: "CANCELLED",
@@ -1106,11 +1199,18 @@ export const initiateServiceBooking = onCall({ secrets: [MOPAY_API_KEY] }, async
 
             // 4. Create Order (PENDING)
             const orderId = db.collection("orders").doc().id;
+            const startDate = new Date(startTime);
             const orderData = {
                 id: orderId,
                 buyerId: auth.uid,
                 sellerId: listing.sellerId,
                 shopId: shopId,
+                type: "SERVICE_BOOKING",
+                participants: {
+                    "REQUESTER": auth.uid,
+                    "LISTING_AUTHOR": listing.sellerId,
+                    "SERVICE_PROVIDER": listing.sellerId
+                },
                 status: "PENDING",
                 fulfillmentType: "SERVICE",
                 slotId: slotId,
@@ -1129,8 +1229,17 @@ export const initiateServiceBooking = onCall({ secrets: [MOPAY_API_KEY] }, async
                     quantity: 1,
                     unitPriceMinorUnits: priceMinorUnits,
                     unitPriceCurrency: currency
-                }]
+                }],
+                payload: {
+                    serviceId: listingId,
+                    requestedDate: startDate.toISOString().split("T")[0],
+                    requestedTime: startDate.toISOString().split("T")[1].substring(0, 5),
+                    durationMinutes: listing.durationMinutes || 0,
+                    locationType: "ON_SITE"
+                }
             };
+
+
             transaction.set(db.collection("orders").doc(orderId), orderData);
 
             // 5. Reserve Slot

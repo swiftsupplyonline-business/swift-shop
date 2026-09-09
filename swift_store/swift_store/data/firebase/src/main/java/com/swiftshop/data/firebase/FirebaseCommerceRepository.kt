@@ -126,12 +126,13 @@ class FirebaseCommerceRepository @Inject constructor(
 
     override suspend fun getDeliveryListings(): Result<List<DeliveryListing>> = runCatching {
         firestore.collection("listings")
-            .whereEqualTo("listingType", "DELIVER")
+            .whereIn("listingType", listOf("DELIVER", "DELIVERY_SERVICE"))
             .whereEqualTo("isAvailable", true)
             .get().await()
             .toObjects(FirestoreDeliveryListingDto::class.java)
             .map { it.toDomain() }
     }
+
 
     // --- Cart ---------------------------------------------------------------
 
@@ -207,17 +208,19 @@ class FirebaseCommerceRepository @Inject constructor(
         paymentMethod: PaymentMethod,
         provider: String?,
         phoneNumber: String,
-        idempotencyKey: String
+        idempotencyKey: String,
+        payload: OrderPayload?
     ): Result<OrderInitiation> = runCatching {
-        val data = mapOf(
-            "items" to items.map { it.toFirestore() },
-            "deliveryAddress" to address.toFirestore(),
-            "deliveryListingId" to deliveryListingId,
-            "paymentMethod" to paymentMethod.name,
-            "provider" to provider,
-            "phoneNumber" to phoneNumber,
-            "idempotencyKey" to idempotencyKey
-        )
+        val data = buildMap {
+            put("items", items.map { it.toFirestore() })
+            put("deliveryAddress", address.toFirestore())
+            put("deliveryListingId", deliveryListingId)
+            put("paymentMethod", paymentMethod.name)
+            put("provider", provider)
+            put("phoneNumber", phoneNumber)
+            put("idempotencyKey", idempotencyKey)
+            payload?.let { put("payload", it.toFirestore()) }
+        }
         val result = functions.getHttpsCallable("createOrder").call(data).await()
         val resMap = result.data as Map<String, Any>
 
@@ -230,6 +233,7 @@ class FirebaseCommerceRepository @Inject constructor(
             mopaySessionId = resMap["mopaySessionId"] as? String
         )
     }
+
 
     override suspend fun initiateBooking(
         buyerId: String,
@@ -298,6 +302,8 @@ class FirebaseCommerceRepository @Inject constructor(
 // --- DTOs & Mappers ---------------------------------------------------------
 
 data class FirestoreShop(
+
+
     val id: String = "",
     val ownerId: String = "",
     val name: String = "",
@@ -373,6 +379,7 @@ data class FirestoreListing(
     val commitmentCount: Int = 0,
     val bookmarkCount: Int = 0,
     val deliveryEstimateDays: Int = 0,
+    val customFields: List<FirestoreCustomField> = emptyList(),
     val createdAt: Any? = null,
     val updatedAt: Any? = null
 ) {
@@ -398,11 +405,26 @@ data class FirestoreListing(
         bookmarkCount = bookmarkCount,
         isBookmarkedByMe = false, // derived at read-time if needed
         deliveryEstimateDays = deliveryEstimateDays,
-        customFields = emptyList(),
+        customFields = customFields.map { it.toDomain() },
         createdAt = tsToLong(createdAt),
         updatedAt = tsToLong(updatedAt)
     )
 }
+
+data class FirestoreCustomField(
+    val id: String = "",
+    val label: String = "",
+    val type: String = "text",
+    val options: List<String> = emptyList(),
+    @get:PropertyName("isRequired") @set:PropertyName("isRequired") var isRequired: Boolean = false
+) {
+    fun toDomain() = CustomField(id, label, type, options, isRequired)
+}
+
+fun CustomField.toFirestore() = mapOf(
+    "id" to id, "label" to label, "type" to type, "options" to options, "isRequired" to isRequired
+)
+
 
 fun Listing.toFirestore() = mapOf(
     "id" to id, "shopId" to shopId, "sellerId" to sellerId, "title" to title, "description" to description,
@@ -416,8 +438,10 @@ fun Listing.toFirestore() = mapOf(
     "commitmentCount" to commitmentCount,
     "bookmarkCount" to bookmarkCount,
     "deliveryEstimateDays" to deliveryEstimateDays,
+    "customFields" to customFields.map { it.toFirestore() },
     "createdAt" to createdAt, "updatedAt" to updatedAt
 )
+
 
 data class FirestoreDeliveryListingDto(
     val id: String = "",
@@ -505,7 +529,8 @@ data class FirestoreOrder(
     val appointmentStartTime: Long? = null,
     val originLocationSnapshot: FirestoreLocationSnapshot? = null,
     val destinationLocationSnapshot: FirestoreLocationSnapshot? = null,
-    val createdAt: Any? = null
+    val createdAt: Any? = null,
+    val updatedAt: Any? = null
 ) {
     fun toDomain(): Order {
         val domainStatus = runCatching { OrderStatus.valueOf(status) }.getOrDefault(OrderStatus.PENDING)
@@ -574,10 +599,11 @@ data class FirestoreOrder(
             destinationLocationSnapshot = destinationLocationSnapshot?.toDomain(),
             notes = "",
             createdAt = tsToLong(createdAt),
-            updatedAt = 0L
+            updatedAt = tsToLong(updatedAt)
         )
     }
 }
+
 
 data class FirestoreListingSnapshot(
     val listingId: String = "",
@@ -610,7 +636,7 @@ data class FirestoreListingSnapshot(
     )
 }
 
-fun ListingSnapshot.toFirestore() = mapOf(
+fun ListingSnapshot.toFirestore(): Map<String, Any?> = mapOf(
     "listingId" to listingId, "shopId" to shopId, "sellerId" to sellerId,
     "sellerName" to sellerName,
     "title" to title, "description" to description,
@@ -641,6 +667,17 @@ data class FirestoreDeliveryListingSnapshot(
     )
 }
 
+fun DeliveryListingSnapshot.toFirestore(): Map<String, Any?> = mapOf(
+    "listingId" to listingId,
+    "providerId" to providerId,
+    "providerName" to providerName,
+    "title" to title,
+    "priceMinorUnits" to priceMinorUnits,
+    "currency" to currency,
+    "estimatedMinutes" to estimatedMinutes
+)
+
+
 data class FirestoreOrderItem(
     val listingId: String = "",
     val title: String = "",
@@ -660,7 +697,8 @@ data class FirestoreLocationSnapshot(
     fun toDomain() = LocationSnapshot(lat, lng, addressSnapshot, instructions)
 }
 
-fun LocationSnapshot.toFirestore() = mapOf(
+fun LocationSnapshot.toFirestore(): Map<String, Any?> = mapOf(
+
     "lat" to lat,
     "lng" to lng,
     "addressSnapshot" to addressSnapshot,
@@ -679,7 +717,7 @@ data class FirestoreDeliveryAddress(
     fun toDomain() = DeliveryAddress(label, lat, lng, streetHint, city, district, country)
 }
 
-fun Order.toFirestore() = buildMap {
+fun Order.toFirestore(): Map<String, Any?> = buildMap {
     putAll(mapOf(
         "id" to id, "buyerId" to buyerId, "sellerId" to sellerId, "shopId" to shopId,
         "type" to type.name,
@@ -697,12 +735,16 @@ fun Order.toFirestore() = buildMap {
         "paymentId" to paymentId,
         "deliveryAddress" to deliveryAddress.toFirestore(),
         "selectedDeliveryListingId" to selectedDeliveryListingId,
+        "deliveryListingSnapshot" to deliveryListingSnapshot?.toFirestore(),
         "originLocationSnapshot" to originLocationSnapshot?.toFirestore(),
         "destinationLocationSnapshot" to destinationLocationSnapshot?.toFirestore(),
-        "createdAt" to createdAt
+        "createdAt" to createdAt,
+        "updatedAt" to updatedAt
     ))
     payload?.let { put("payload", it.toFirestore()) }
 }
+
+
 
 private fun mapPayload(type: String?, data: Map<String, Any>?): OrderPayload? {
     if (data == null) return null
@@ -766,7 +808,8 @@ private fun mapPayload(type: String?, data: Map<String, Any>?): OrderPayload? {
 }
 
 
-private fun OrderPayload.toFirestore(): Map<String, Any> = when (this) {
+internal fun OrderPayload.toFirestore(): Map<String, Any?> = when (this) {
+
     is OrderPayload.ProductPurchase -> buildMap {
         variantId?.let { put("variantId", it) }
         put("quantity", quantity)
@@ -810,7 +853,8 @@ fun OrderItem.toFirestore() = mapOf(
     "selectedOptions" to selectedOptions
 )
 
-fun DeliveryAddress.toFirestore() = mapOf(
+fun DeliveryAddress.toFirestore(): Map<String, Any?> = mapOf(
+
     "label" to label, "lat" to lat, "lng" to lng, "streetHint" to streetHint,
     "city" to city, "district" to district, "country" to country
 )

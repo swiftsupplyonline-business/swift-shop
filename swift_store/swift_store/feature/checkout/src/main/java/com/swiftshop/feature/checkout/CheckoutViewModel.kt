@@ -91,8 +91,10 @@ class CheckoutViewModel @Inject constructor(
     var paymentMethod by mutableStateOf(PaymentMethod.MOPAY)
     var paymentProvider by mutableStateOf<String?>(null)
     var paymentPhone by mutableStateOf("")
+    var buyerNotes by mutableStateOf("")
 
     private var currentUserId: String = ""
+
     private var feeCalculationJob: Job? = null
 
     init {
@@ -279,6 +281,22 @@ class CheckoutViewModel @Inject constructor(
                 )
             }
 
+            val payload = when (cartState.summary.orderType) {
+                OrderType.PRODUCT_PURCHASE -> OrderPayload.ProductPurchase(
+                    quantity = orderItems.sumOf { it.quantity },
+                    unitPrice = orderItems.firstOrNull()?.unitPrice ?: MoneyAmount.ZERO,
+                    buyerNotes = buyerNotes
+                )
+                OrderType.FOOD_ORDER -> OrderPayload.FoodOrder(
+                    items = orderItems.map { FoodOrderItem(it.listingId, it.title, it.quantity) },
+                    preparationNotes = buyerNotes
+                )
+                OrderType.BULK_PURCHASE -> OrderPayload.BulkPurchase(
+                    quantity = orderItems.sumOf { it.quantity }.toDouble()
+                )
+                else -> null
+            }
+
             placeOrder(
                 items = orderItems,
                 address = deliveryAddress,
@@ -286,9 +304,11 @@ class CheckoutViewModel @Inject constructor(
                 paymentMethod = paymentMethod,
                 provider = paymentProvider,
                 phoneNumber = paymentPhone,
-                idempotencyKey = idempotencyKey
+                idempotencyKey = idempotencyKey,
+                payload = payload
             ).fold(
                 onSuccess = { initiation ->
+
                     clearCartUseCase(currentUserId)
                     if (initiation.paymentUrl != null && initiation.mopaySessionId != null) {
                         _uiState.value = CheckoutUiState.AwaitingPayment(

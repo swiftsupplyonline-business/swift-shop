@@ -165,9 +165,12 @@ fun CheckoutScreen(
                         viewModel.paymentMethod = method
                         viewModel.paymentProvider = provider
                     },
-                    onPhoneChange = { viewModel.paymentPhone = it }
+                    onPhoneChange = { viewModel.paymentPhone = it },
+                    buyerNotes = viewModel.buyerNotes,
+                    onNotesChange = { viewModel.buyerNotes = it }
                 )
                 CheckoutStep.VERIFICATION -> VerificationStep(
+
                     state = uiState,
                     onVerify = {
                         (uiState as? CheckoutUiState.AwaitingPayment)?.sessionId?.let {
@@ -453,8 +456,9 @@ private fun CartStep(
                     OrderSummaryRow("Subtotal", summary.subtotal.toDisplayString())
                     OrderSummaryRow("Delivery", summary.deliveryFee.toDisplayString())
                     OrderSummaryRow("Platform fee", summary.platformFee.toDisplayString())
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     OrderSummaryRow("Total", summary.total.toDisplayString(), isTotal = true)
+
                 }
             }
         } else if (state is CheckoutUiState.Loading) {
@@ -595,7 +599,9 @@ private fun PaymentStep(
     selectedProvider: String?,
     phone: String,
     onMethodChange: (PaymentMethod, String?) -> Unit,
-    onPhoneChange: (String) -> Unit
+    onPhoneChange: (String) -> Unit,
+    buyerNotes: String,
+    onNotesChange: (String) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -603,7 +609,7 @@ private fun PaymentStep(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        // Show order total from current state
+        // ... summary card ...
         (state as? CheckoutUiState.CartLoaded)?.summary?.let { summary ->
             SwiftCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -612,7 +618,7 @@ private fun PaymentStep(
                     OrderSummaryRow("Subtotal", summary.subtotal.toDisplayString())
                     OrderSummaryRow("Delivery", summary.deliveryFee.toDisplayString())
                     OrderSummaryRow("Platform fee", summary.platformFee.toDisplayString())
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     OrderSummaryRow("Total", summary.total.toDisplayString(), isTotal = true)
                 }
             }
@@ -665,8 +671,21 @@ private fun PaymentStep(
                 shape = MaterialTheme.shapes.medium
             )
         }
+
+        Spacer(Modifier.height(24.dp))
+        Text("Order Notes (Optional)", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = buyerNotes,
+            onValueChange = onNotesChange,
+            label = { Text("Instructions for seller or driver...") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            minLines = 3
+        )
     }
 }
+
 
 // ─── Confirmation Step ────────────────────────────────────────────────────────
 

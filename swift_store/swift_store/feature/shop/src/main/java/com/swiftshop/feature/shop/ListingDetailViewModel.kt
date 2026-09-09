@@ -39,7 +39,9 @@ class ListingDetailViewModel @Inject constructor(
     private val addToCartUseCase: com.swiftshop.domain.commerce.AddToCartUseCase,
     private val observeAvailableSlots: ObserveAvailableSlotsUseCase,
     private val initiateBooking: InitiateBookingUseCase,
+    private val placeOrder: PlaceOrderUseCase,
     private val toggleBookmark: com.swiftshop.domain.feed.ToggleBookmarkUseCase,
+
     private val observeBookmarkedIds: com.swiftshop.domain.feed.ObserveBookmarkedIdsUseCase
 ) : ViewModel() {
 
@@ -158,6 +160,75 @@ class ListingDetailViewModel @Inject constructor(
             )
         }
     }
+
+    fun submitCustomOrder(fieldValues: Map<String, String>) {
+        val state = _uiState.value as? ListingDetailState.Loaded ?: return
+        val opId = java.util.UUID.randomUUID().toString()
+
+        viewModelScope.launch {
+            _actionState.value = ActionState.Loading
+            
+            val item = OrderItem(
+                listingId = state.listing.id,
+                title = state.listing.title,
+                quantity = _quantity.value,
+                unitPrice = state.listing.price,
+                selectedOptions = fieldValues
+            )
+
+            // Construct payload based on type
+            val payload = when (state.listing.listingType) {
+                ListingType.DELIVERY_SERVICE, ListingType.DELIVER -> OrderPayload.DeliveryRequest(
+                    packageDescription = fieldValues["package"] ?: "Package delivery",
+                    recipientName = fieldValues["recipient_name"] ?: "Recipient",
+                    recipientPhone = fieldValues["recipient_phone"] ?: "",
+                    instructions = fieldValues["instructions"] ?: ""
+                )
+                ListingType.SERVICE, ListingType.BOOKABLE_SERVICE -> OrderPayload.ServiceBooking(
+                    serviceId = state.listing.id,
+                    requestedDate = fieldValues["date"] ?: "",
+                    requestedTime = fieldValues["time"] ?: "",
+                    durationMinutes = state.listing.deliveryEstimateDays * 60, // Placeholder mapping
+                    locationType = fieldValues["location_type"] ?: "ON_SITE"
+                )
+                ListingType.PREPARED_FOOD -> OrderPayload.FoodOrder(
+                    items = listOf(FoodOrderItem(state.listing.id, state.listing.title, _quantity.value)),
+                    preparationNotes = fieldValues["notes"] ?: ""
+                )
+                ListingType.BULK_SUPPLY -> OrderPayload.BulkPurchase(
+                    quantity = _quantity.value.toDouble(),
+                    unitOfMeasure = "unit"
+                )
+                else -> null 
+            }
+
+
+            val isDeliveryService = state.listing.listingType == ListingType.DELIVERY_SERVICE || 
+                                   state.listing.listingType == ListingType.DELIVER
+
+            placeOrder(
+                items = listOf(item),
+                address = DeliveryAddress(label = "Direct Order"),
+                deliveryListingId = if (isDeliveryService) state.listing.id else "none", // Direct order from listing
+                paymentMethod = PaymentMethod.MOPAY,
+                provider = null,
+                phoneNumber = "",
+                idempotencyKey = opId,
+                payload = payload
+            ).fold(
+
+
+                onSuccess = {
+                    _navigationEvents.emit(ListingDetailNavigation.GoToCheckout(it.orderId))
+                },
+                onFailure = {
+                    _actionState.value = ActionState.Error(it.message ?: "Order failed")
+                }
+            )
+        }
+    }
+
+
 
     fun updateQuantity(q: Int) {
         _quantity.value = q.coerceAtLeast(1)

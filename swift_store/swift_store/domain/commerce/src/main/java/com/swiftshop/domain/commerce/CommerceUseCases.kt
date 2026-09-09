@@ -106,8 +106,10 @@ interface CommerceRepository {
         paymentMethod: PaymentMethod,
         provider: String?,
         phoneNumber: String,
-        idempotencyKey: String
+        idempotencyKey: String,
+        payload: OrderPayload? = null
     ): Result<OrderInitiation>
+
     suspend fun initiateBooking(
         buyerId: String,
         listingId: String,
@@ -204,16 +206,18 @@ class PlaceOrderUseCase(private val repository: CommerceRepository) {
         paymentMethod: PaymentMethod,
         provider: String?,
         phoneNumber: String,
-        idempotencyKey: String
+        idempotencyKey: String,
+        payload: OrderPayload? = null
     ): Result<OrderInitiation> {
         if (items.isEmpty()) return Result.failure(IllegalArgumentException("Cart is empty"))
         if (idempotencyKey.isBlank()) return Result.failure(IllegalArgumentException("Idempotency key required"))
         if (deliveryListingId.isBlank()) return Result.failure(IllegalArgumentException("A delivery option must be selected"))
         // Server-side validates deliveryListingId and reads the canonical price from the listing.
-        // The client must never pass a fee amount â€” the backend is the only financial authority.
-        return repository.placeOrder(items, address, deliveryListingId, paymentMethod, provider, phoneNumber, idempotencyKey)
+        // The client must never pass a fee amount — the backend is the only financial authority.
+        return repository.placeOrder(items, address, deliveryListingId, paymentMethod, provider, phoneNumber, idempotencyKey, payload)
     }
 }
+
 
 class VerifyMopayPaymentUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(sessionId: String): Result<Unit> = repository.verifyMopayPayment(sessionId)

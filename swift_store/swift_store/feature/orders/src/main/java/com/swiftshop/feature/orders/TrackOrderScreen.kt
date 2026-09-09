@@ -88,12 +88,15 @@ class TrackOrderViewModel @Inject constructor(
                 }
                 val order = orderResult.getOrThrow()
 
-                // Determine this user's role in the order
+                // Determine this user's role in the order using the authoritative participants map
                 val role = when {
-                    user.uid == order.buyerId -> TrackingRole.BUYER
-                    user.uid == order.sellerId -> TrackingRole.SELLER
-                    else -> TrackingRole.BUYER // driver role determined from route
+                    order.participants[OrderRole.REQUESTER.name] == user.uid -> TrackingRole.BUYER
+                    order.participants[OrderRole.SELLER.name] == user.uid -> TrackingRole.SELLER
+                    order.participants[OrderRole.SERVICE_PROVIDER.name] == user.uid -> TrackingRole.SELLER
+                    order.participants[OrderRole.DELIVERY_PROVIDER.name] == user.uid -> TrackingRole.DRIVER
+                    else -> TrackingRole.BUYER
                 }
+
 
                 // Observe live delivery route if one exists
                 val deliveryRole = when (role) {

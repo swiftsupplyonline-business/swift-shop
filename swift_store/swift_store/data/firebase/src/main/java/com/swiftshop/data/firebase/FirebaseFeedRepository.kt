@@ -16,16 +16,9 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
-fun tsToLong(v: Any?): Long = when (v) {
-    is com.google.firebase.Timestamp -> v.toDate().time
-    is java.util.Date -> v.time
-    is Long -> v
-    is Number -> v.toLong()
-    else -> 0L
-}
-
 @Singleton
 class FirebaseFeedRepository @Inject constructor(
+
     private val firestore: FirebaseFirestore,
     private val auth: com.google.firebase.auth.FirebaseAuth
 ) : FeedRepository {

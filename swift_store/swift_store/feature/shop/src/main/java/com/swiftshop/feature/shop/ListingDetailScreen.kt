@@ -146,9 +146,14 @@ fun ListingDetailScreen(
                 }
             } else if (activeSheet != null) {
                 ModalBottomSheet(onDismissRequest = { activeSheet = null }) {
-                    FormSubmitSheet(listing = listing, onDismiss = { activeSheet = null }, onSubmit = {})
+                    FormSubmitSheet(
+                        listing = listing, 
+                        onDismiss = { activeSheet = null }, 
+                        onSubmit = { viewModel.submitCustomOrder(it); activeSheet = null }
+                    )
                 }
             }
+
 
             Scaffold(
                 snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -220,14 +225,26 @@ fun ListingDetailScreen(
                                 text = cta.label,
                                 onClick = {
                                     when (listing.listingType) {
-                                        ListingType.PRODUCT, ListingType.BUY, ListingType.PLACE_ORDER -> {
+                                        ListingType.PRODUCT, ListingType.BUY, ListingType.PHYSICAL_ITEM,
+                                        ListingType.PREPARED_FOOD, ListingType.BULK_SUPPLY -> {
                                             viewModel.buyNow()
                                         }
-                                        ListingType.DELIVER, ListingType.TAKE_ME_THERE ->
+                                        ListingType.DELIVER, ListingType.DELIVERY_SERVICE ->
                                             navController.navigate(Screen.DeliveryTracking.createRoute(listing.id))
+                                        ListingType.TAKE_ME_THERE -> {
+                                            state.shop?.let { shop ->
+                                                if (shop.locationAddress.isNotBlank()) {
+                                                    val uri = android.net.Uri.parse("geo:0,0?q=${android.net.Uri.encode(shop.locationAddress)}")
+                                                    val mapIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
+                                                    navController.context.startActivity(mapIntent)
+                                                }
+                                            }
+                                        }
+
                                         else -> { activeSheet = listing.listingType }
                                     }
                                 },
+
                                 leadingIcon = { Icon(cta.icon, null, modifier = Modifier.size(18.dp)) },
                                 modifier = Modifier.weight(1.5f)
                             )
@@ -576,9 +593,10 @@ private fun MakePaymentSheet(
 private fun FormSubmitSheet(
     listing: Listing,
     onDismiss: () -> Unit,
-    onSubmit: () -> Unit
+    onSubmit: (Map<String, String>) -> Unit
 ) {
     val fieldValues = remember { mutableStateMapOf<String, String>() }
+
 
     Column(
         modifier = Modifier
@@ -667,13 +685,14 @@ private fun FormSubmitSheet(
         SwiftPrimaryButton(
             text = when (listing.listingType) {
                 ListingType.REGISTER -> "Submit Registration"
-                ListingType.SERVICE -> "Book Service"
+                ListingType.SERVICE, ListingType.BOOKABLE_SERVICE -> "Book Service"
                 else -> "Place Order"
             },
             enabled = allRequiredFilled,
-            onClick = onSubmit,
+            onClick = { onSubmit(fieldValues.toMap()) },
             modifier = Modifier.fillMaxWidth()
         )
+
         OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
     }
 }

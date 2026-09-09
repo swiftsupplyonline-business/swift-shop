@@ -171,8 +171,9 @@ fun CreateAdScreen(
                                 style = MaterialTheme.typography.bodyMedium)
                         }
                     }
-                    Divider()
+                    HorizontalDivider()
                     Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
+
                         Text("Total", style = MaterialTheme.typography.titleSmall)
                         Text(total.toDisplayString(), style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.primary)

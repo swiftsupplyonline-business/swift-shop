@@ -30,10 +30,16 @@ fun OrdersScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val currentRole by viewModel.currentRole.collectAsState()
+    val availableRoles by viewModel.availableRoles.collectAsState()
 
-    val tabs = listOf(
-        "My Requests" to OrderRole.REQUESTER,
-        "Orders Received" to OrderRole.SELLER
+    val roleLabels = mapOf(
+        OrderRole.REQUESTER to "My Requests",
+        OrderRole.SELLER to "Orders Received",
+        OrderRole.SERVICE_PROVIDER to "Service Bookings",
+        OrderRole.DELIVERY_PROVIDER to "Delivery Requests",
+        OrderRole.LISTING_AUTHOR to "My Listings",
+        OrderRole.RECIPIENT to "To Me",
+        OrderRole.ADMIN to "Admin"
     )
 
     Scaffold(
@@ -49,19 +55,21 @@ fun OrdersScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            TabRow(
-                selectedTabIndex = tabs.indexOfFirst { it.second == currentRole }.coerceAtLeast(0),
+            ScrollableTabRow(
+                selectedTabIndex = availableRoles.indexOf(currentRole).coerceAtLeast(0),
                 containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary
+                contentColor = MaterialTheme.colorScheme.primary,
+                edgePadding = 16.dp
             ) {
-                tabs.forEach { (label, role) ->
+                availableRoles.forEach { role ->
                     Tab(
                         selected = currentRole == role,
                         onClick = { viewModel.setRole(role) },
-                        text = { Text(label, style = MaterialTheme.typography.labelLarge) }
+                        text = { Text(roleLabels[role] ?: role.name, style = MaterialTheme.typography.labelLarge) }
                     )
                 }
             }
+
 
             when (val state = uiState) {
                 is OrdersUiState.Loading -> LoadingState()
@@ -294,13 +302,67 @@ fun OrderDetailScreen(
                                 SummaryRow("Subtotal", order.subtotal.toDisplayString())
                                 SummaryRow("Delivery", order.deliveryFee.toDisplayString())
                                 SummaryRow("Platform fee", order.platformFee.toDisplayString())
-                                Divider()
+                                HorizontalDivider()
                                 SummaryRow("Total", order.total.toDisplayString(), isTotal = true)
                             }
                         }
                     }
 
+                    // Order-Type Specific Payloads
+                    order.payload?.let { payload ->
+                        item {
+                            Text("Workflow Details", style = MaterialTheme.typography.titleMedium)
+                        }
+                        item {
+                            SwiftCard(modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    when (payload) {
+                                        is OrderPayload.ProductPurchase -> {
+                                            if (!payload.buyerNotes.isNullOrBlank()) {
+                                                Text("Buyer Notes", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                                Text(payload.buyerNotes!!, style = MaterialTheme.typography.bodyMedium)
+                                            }
+                                        }
+                                        is OrderPayload.FoodOrder -> {
+                                            if (!payload.preparationNotes.isNullOrBlank()) {
+                                                Text("Preparation Notes", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                                Text(payload.preparationNotes!!, style = MaterialTheme.typography.bodyMedium)
+                                            }
+                                            payload.requestedDeliveryTime?.let {
+                                                Text("Requested Time", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                                Text(SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(it)), style = MaterialTheme.typography.bodyMedium)
+                                            }
+                                        }
+                                        is OrderPayload.ServiceBooking -> {
+                                            Text("Booking Date", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                            Text(payload.requestedDate, style = MaterialTheme.typography.bodyMedium)
+                                            Text("Booking Time", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                            Text(payload.requestedTime, style = MaterialTheme.typography.bodyMedium)
+                                            Text("Duration", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                            Text("${payload.durationMinutes} minutes", style = MaterialTheme.typography.bodyMedium)
+                                        }
+                                        is OrderPayload.BulkPurchase -> {
+                                            Text("Quantity", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                            Text("${payload.quantity} ${payload.unitOfMeasure}", style = MaterialTheme.typography.bodyMedium)
+                                        }
+                                        is OrderPayload.DeliveryRequest -> {
+                                            Text("Package", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                            Text(payload.packageDescription, style = MaterialTheme.typography.bodyMedium)
+                                            Text("Recipient", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                            Text("${payload.recipientName} (${payload.recipientPhone})", style = MaterialTheme.typography.bodyMedium)
+                                            if (payload.instructions.isNotBlank()) {
+                                                Text("Instructions", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                                Text(payload.instructions, style = MaterialTheme.typography.bodyMedium)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Delivery address
+
                     item {
                         SwiftCard(modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(16.dp)) {

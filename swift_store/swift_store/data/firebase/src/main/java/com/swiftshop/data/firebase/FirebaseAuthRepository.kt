@@ -147,6 +147,7 @@ class FirebaseAuthRepository @Inject constructor(
 // ─── Firestore serialization helpers ─────────────────────────────────────────
 
 data class FirestoreUser(
+
     val uid: String = "",
     val email: String = "",
     val phoneNumber: String = "",
@@ -155,8 +156,8 @@ data class FirestoreUser(
     val tier: String = "BASIC",
     val isVerified: Boolean = false,
     val accountStatus: String = "ACTIVE",
-    val createdAt: Date = Date(0),
-    val updatedAt: Date = Date(0)
+    val createdAt: Any? = null,
+    val updatedAt: Any? = null
 ) {
     fun toDomain(uid: String) = User(
         uid = uid,
@@ -167,10 +168,11 @@ data class FirestoreUser(
         tier = runCatching { UserTier.valueOf(tier) }.getOrDefault(UserTier.BASIC),
         isVerified = isVerified,
         accountStatus = runCatching { UserAccountStatus.valueOf(accountStatus) }.getOrDefault(UserAccountStatus.ACTIVE),
-        createdAt = createdAt.time,
-        updatedAt = updatedAt.time
+        createdAt = tsToLong(createdAt),
+        updatedAt = tsToLong(updatedAt)
     )
 }
+
 
 fun User.toFirestore() = mapOf(
     "uid" to uid,

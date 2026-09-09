@@ -57,8 +57,9 @@ fun MessagingListScreen(
                                 navController.navigate(Screen.Conversation.createRoute(conversation.id))
                             }
                         )
-                        Divider(modifier = Modifier.padding(start = 76.dp))
+                        HorizontalDivider(modifier = Modifier.padding(start = 76.dp))
                     }
+
                 }
             }
         }

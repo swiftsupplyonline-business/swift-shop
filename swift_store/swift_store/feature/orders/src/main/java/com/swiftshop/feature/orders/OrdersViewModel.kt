@@ -49,6 +49,19 @@ class OrdersViewModel @Inject constructor(
     private val _detailState = MutableStateFlow<OrderDetailState>(OrderDetailState.Loading)
     val detailState: StateFlow<OrderDetailState> = _detailState.asStateFlow()
 
+    val availableRoles = flow {
+        observeCurrentUser().filterNotNull().collect { user ->
+            // In a real app, we might check user claims or profile to see which roles they actually hold.
+            // For now, we expose the canonical set relevant to the marketplace.
+            emit(listOf(
+                OrderRole.REQUESTER,
+                OrderRole.SELLER,
+                OrderRole.SERVICE_PROVIDER,
+                OrderRole.DELIVERY_PROVIDER
+            ))
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), listOf(OrderRole.REQUESTER))
+
     init {
         // Automatically reload when role changes or manual refresh triggered
         combine(_currentRole, refreshTrigger.onStart { emit(Unit) }) { role, _ -> role }
@@ -67,6 +80,7 @@ class OrdersViewModel @Inject constructor(
 
         if (orderId != null) loadDetail()
     }
+
 
     fun setRole(role: OrderRole) {
         _currentRole.value = role

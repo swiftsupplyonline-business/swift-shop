@@ -117,8 +117,10 @@ class OfflineFirstCommerceRepository @Inject constructor(
         paymentMethod: com.swiftshop.core.model.PaymentMethod,
         provider: String?,
         phoneNumber: String,
-        idempotencyKey: String
-    ) = remote.placeOrder(items, address, deliveryListingId, paymentMethod, provider, phoneNumber, idempotencyKey)
+        idempotencyKey: String,
+        payload: com.swiftshop.core.model.OrderPayload?
+    ) = remote.placeOrder(items, address, deliveryListingId, paymentMethod, provider, phoneNumber, idempotencyKey, payload)
+
 
     override suspend fun verifyMopayPayment(sessionId: String) = remote.verifyMopayPayment(sessionId)
 
