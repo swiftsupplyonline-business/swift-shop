@@ -178,18 +178,11 @@ class ListingDetailViewModel @Inject constructor(
 
             // Construct payload based on type
             val payload = when (state.listing.listingType) {
-                ListingType.DELIVERY_SERVICE, ListingType.DELIVER -> OrderPayload.DeliveryRequest(
+                ListingType.DELIVER, ListingType.DELIVERY_SERVICE -> OrderPayload.DeliveryRequest(
                     packageDescription = fieldValues["package"] ?: "Package delivery",
                     recipientName = fieldValues["recipient_name"] ?: "Recipient",
                     recipientPhone = fieldValues["recipient_phone"] ?: "",
                     instructions = fieldValues["instructions"] ?: ""
-                )
-                ListingType.SERVICE, ListingType.BOOKABLE_SERVICE -> OrderPayload.ServiceBooking(
-                    serviceId = state.listing.id,
-                    requestedDate = fieldValues["date"] ?: "",
-                    requestedTime = fieldValues["time"] ?: "",
-                    durationMinutes = state.listing.deliveryEstimateDays * 60, // Placeholder mapping
-                    locationType = fieldValues["location_type"] ?: "ON_SITE"
                 )
                 ListingType.PREPARED_FOOD -> OrderPayload.FoodOrder(
                     items = listOf(FoodOrderItem(state.listing.id, state.listing.title, _quantity.value)),
@@ -199,8 +192,13 @@ class ListingDetailViewModel @Inject constructor(
                     quantity = _quantity.value.toDouble(),
                     unitOfMeasure = "unit"
                 )
+                ListingType.SERVICE, ListingType.BOOKABLE_SERVICE, ListingType.SET_APPOINTMENT -> {
+                    _actionState.value = ActionState.Error("Invalid order path for service")
+                    return@launch
+                }
                 else -> null 
             }
+
 
 
             val isDeliveryService = state.listing.listingType == ListingType.DELIVERY_SERVICE || 

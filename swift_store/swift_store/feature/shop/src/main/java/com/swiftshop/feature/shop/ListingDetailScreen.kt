@@ -126,7 +126,7 @@ fun ListingDetailScreen(
                 )
             }
 
-            if (activeSheet == ListingType.SET_APPOINTMENT) {
+            if (activeSheet == ListingType.SET_APPOINTMENT || activeSheet == ListingType.BOOKABLE_SERVICE) {
                 ModalBottomSheet(onDismissRequest = { activeSheet = null }) {
                     AppointmentSheet(
                         listing = listing,
@@ -141,6 +141,7 @@ fun ListingDetailScreen(
                     )
                 }
             } else if (activeSheet == ListingType.MAKE_PAYMENT) {
+
                 ModalBottomSheet(onDismissRequest = { activeSheet = null }) {
                     MakePaymentSheet(listing = listing, onDismiss = { activeSheet = null }, onConfirm = {})
                 }

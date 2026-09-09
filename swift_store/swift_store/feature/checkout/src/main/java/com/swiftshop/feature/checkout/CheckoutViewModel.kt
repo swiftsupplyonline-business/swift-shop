@@ -317,9 +317,7 @@ class CheckoutViewModel @Inject constructor(
                     clearCartUseCase(currentUserId)
                     if (initiation.paymentUrl != null && initiation.mopaySessionId != null) {
                         // Persist payment context locally before launching browser
-                        viewModelScope.launch {
-                            preferenceManager.setActivePaymentOrderId(initiation.orderId)
-                        }
+                        preferenceManager.setActivePaymentOrderId(initiation.orderId)
 
                         _uiState.value = CheckoutUiState.AwaitingPayment(
                             initiation.orderId,
@@ -328,6 +326,7 @@ class CheckoutViewModel @Inject constructor(
                         )
                         _currentStep.value = CheckoutStep.VERIFICATION
                     } else {
+
 
                         _uiState.value = CheckoutUiState.OrderPlaced(initiation.orderId)
                         _currentStep.value = CheckoutStep.CONFIRMATION

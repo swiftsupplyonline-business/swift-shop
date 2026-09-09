@@ -190,7 +190,15 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 throw new Error("Service bookings must be initiated individually.");
             }
 
+            if (orderType === "SERVICE_BOOKING") {
+                throw new HttpsError(
+                    "invalid-argument",
+                    "Service bookings must use initiateServiceBooking."
+                );
+            }
+
             let subtotal = 0;
+
             const newOrderId = db.collection("orders").doc().id;
             const validatedItems = [];
             let shopId = "";
