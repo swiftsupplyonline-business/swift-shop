@@ -50,10 +50,11 @@ class OrdersViewModel @Inject constructor(
     val detailState: StateFlow<OrderDetailState> = _detailState.asStateFlow()
 
     val availableRoles = flow {
-        observeCurrentUser().filterNotNull().collect { user ->
+        observeCurrentUser().filterNotNull().collect { _ ->
             // In a real app, we might check user claims or profile to see which roles they actually hold.
             // For now, we expose the canonical set relevant to the marketplace.
             emit(listOf(
+
                 OrderRole.REQUESTER,
                 OrderRole.SELLER,
                 OrderRole.SERVICE_PROVIDER,
