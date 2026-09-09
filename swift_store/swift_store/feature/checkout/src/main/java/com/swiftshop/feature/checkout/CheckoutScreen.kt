@@ -24,6 +24,8 @@ import com.swiftshop.core.ui.navigation.Screen
 import com.swiftshop.domain.commerce.CartItem
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalUriHandler
+import kotlinx.coroutines.launch
+
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -37,8 +39,12 @@ fun CheckoutScreen(
     val deliveryListingsState by viewModel.deliveryListingsState.collectAsState()
     val selectedDeliveryListing by viewModel.selectedDeliveryListing.collectAsState()
     val shopMarkers by viewModel.shopMarkers.collectAsState()
+    val confirmedLocation by viewModel.confirmedLocationSnapshot.collectAsState()
     
     val uriHandler = LocalUriHandler.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
 
     LaunchedEffect(uiState) {
         if (uiState is CheckoutUiState.AwaitingPayment) {
@@ -55,7 +61,9 @@ fun CheckoutScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
+
             TopAppBar(
                 title = {
                     Text(
@@ -153,9 +161,16 @@ fun CheckoutScreen(
                 CheckoutStep.ADDRESS -> AddressStep(
                     address = viewModel.deliveryAddress,
                     markers = shopMarkers,
+                    isConfirmed = confirmedLocation != null,
                     onAddressUpdate = { viewModel.updateAddress(it) },
-                    onLocationConfirmed = { viewModel.onLocationConfirmed(it) }
+                    onLocationConfirmed = { 
+                        viewModel.onLocationConfirmed(it)
+                        scope.launch {
+                            snackbarHostState.showSnackbar("Location confirmed")
+                        }
+                    }
                 )
+
                 CheckoutStep.PAYMENT -> PaymentStep(
                     state = uiState,
                     selectedMethod = viewModel.paymentMethod,
@@ -515,6 +530,7 @@ private fun OrderSummaryRow(label: String, value: String, isTotal: Boolean = fal
 private fun AddressStep(
     address: DeliveryAddress,
     markers: List<MapMarker> = emptyList(),
+    isConfirmed: Boolean = false,
     onAddressUpdate: (DeliveryAddress) -> Unit,
     onLocationConfirmed: (GeoPoint) -> Unit
 ) {
@@ -524,6 +540,7 @@ private fun AddressStep(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
+        // ... Card ...
         SwiftCard(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -557,8 +574,7 @@ private fun AddressStep(
                     onValueChange = { onAddressUpdate(address.copy(district = it)) },
                     label = { Text("District") },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.medium,
-                    singleLine = true
+                    shape = MaterialTheme.shapes.medium, singleLine = true
                 )
             }
         }
@@ -569,11 +585,13 @@ private fun AddressStep(
         Spacer(Modifier.height(8.dp))
 
         DropYourPinComponent(
-            modifier = Modifier.fillMaxWidth().height(300.dp),
+            modifier = Modifier.fillMaxWidth(),
             initialLocation = if (address.lat != 0.0) GeoPoint(address.lat, address.lng) else null,
             markers = markers,
+            isConfirmed = isConfirmed,
             onLocationConfirmed = onLocationConfirmed
         )
+
 
         Spacer(Modifier.height(16.dp))
         

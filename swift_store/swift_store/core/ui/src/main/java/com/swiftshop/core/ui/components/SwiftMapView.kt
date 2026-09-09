@@ -16,7 +16,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import android.graphics.Color
+
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -251,11 +253,16 @@ fun DropYourPinComponent(
     modifier: Modifier = Modifier,
     initialLocation: GeoPoint? = null,
     markers: List<MapMarker> = emptyList(),
+    mapHeight: Dp = 360.dp,
+    isConfirmed: Boolean = false,
     onLocationConfirmed: (GeoPoint) -> Unit
 ) {
     val mapState = rememberMapState(initialCenter = initialLocation ?: GeoPoint(-29.3167, 27.4833))
     var currentSelection by remember { mutableStateOf(mapState.center) }
     var snappedMarker by remember { mutableStateOf<MapMarker?>(null) }
+    
+    // FIX 3: Persistent confirmed marker
+    var confirmedMarker by remember { mutableStateOf<MapMarker?>(null) }
 
     LaunchedEffect(mapState.center) {
         val near = markers.find { 
@@ -267,13 +274,13 @@ fun DropYourPinComponent(
 
     Column(modifier = modifier) {
         Box(modifier = Modifier
-            .weight(1f)
+            .height(mapHeight)
             .clip(MaterialTheme.shapes.large)
             .background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
             SwiftMapView(
                 state = mapState,
-                markers = markers,
+                markers = markers + listOfNotNull(confirmedMarker),
                 showCenterPin = true,
                 modifier = Modifier.fillMaxSize(),
                 onMapMoved = { currentSelection = it }
@@ -318,12 +325,25 @@ fun DropYourPinComponent(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(16.dp))
+                
+                // FIX 2: Visual feedback for confirmed state
                 SwiftPrimaryButton(
-                    text = "Confirm Location",
-                    onClick = { onLocationConfirmed(currentSelection) },
-                    modifier = Modifier.fillMaxWidth()
+                    text = if (isConfirmed) "✓ Location Confirmed" else "Confirm Location",
+                    onClick = { 
+                        onLocationConfirmed(currentSelection)
+                        confirmedMarker = MapMarker(
+                            id = "confirmed_pin",
+                            position = currentSelection,
+                            title = "Confirmed Location",
+                            entityType = SwiftEntity.PIN
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isConfirmed // Optional: disable if confirmed or let it re-confirm
                 )
+
             }
         }
     }
 }
+
