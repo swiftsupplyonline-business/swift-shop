@@ -187,9 +187,11 @@ enum class ListingType {
         PRODUCT -> PHYSICAL_ITEM
         SERVICE -> BOOKABLE_SERVICE
         BUY -> PHYSICAL_ITEM
+        DELIVER -> DELIVERY_SERVICE
         else -> this
     }
 }
+
 
 @Serializable
 @Parcelize
@@ -227,11 +229,12 @@ data class Listing(
         title = title,
         description = description,
         price = price,
-        listingType = listingType.name,
+        listingType = listingType.toCanonical().name,
         category = category,
         snapshotAt = System.currentTimeMillis()
     )
 }
+
 
 @Serializable
 @Parcelize
@@ -314,8 +317,10 @@ enum class OrderStatus {
     DISPATCHED, 
     DELIVERED, 
     CANCELLED, 
-    REFUNDED
+    REFUNDED,
+    HOLD
 }
+
 
 /** Independent state contracts to prevent state conflation. */
 enum class PaymentStatus { PENDING, AUTHORIZED, PAID, FAILED, REFUNDED }

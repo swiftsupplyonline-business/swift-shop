@@ -33,9 +33,15 @@ export const requestDelivery = onCall(async (request) => {
             const order = orderDoc.data()!;
 
             const isAdmin = auth.token.admin === true;
-            if (order.buyerId !== auth.uid && order.sellerId !== auth.uid && !isAdmin) {
-                throw new Error("Unauthorized");
+            const participants = order.participants || {};
+            const isRequester = participants["REQUESTER"] === auth.uid;
+            const isSeller = participants["SELLER"] === auth.uid;
+            const isProvider = participants["DELIVERY_PROVIDER"] === auth.uid;
+
+            if (!isRequester && !isSeller && !isProvider && !isAdmin) {
+                throw new Error("Unauthorized: Only order participants or admins can request delivery.");
             }
+
 
             if (order.status !== "CONFIRMED") {
                 throw new Error(
@@ -144,9 +150,15 @@ export const updateDeliveryStatus = onCall(async (request) => {
             if (!routeDoc.exists) throw new Error("Delivery route not found");
             const route = routeDoc.data()!;
 
+            const orderRef = db.collection("orders").doc(route.orderId);
+            const orderDoc = await transaction.get(orderRef);
+            const order = orderDoc.exists ? orderDoc.data() : null;
+            const participants = order?.participants || {};
+
             const isAdmin = auth.token.admin === true;
             const isAssignedDriver = !!route.driverId && route.driverId === auth.uid;
-            const isBuyer = route.buyerId === auth.uid;
+            const isRequester = participants["REQUESTER"] === auth.uid;
+            const isProvider = participants["DELIVERY_PROVIDER"] === auth.uid;
 
             const allowedNext = ALLOWED_TRANSITIONS[route.status] || [];
             if (!allowedNext.includes(status)) {
@@ -154,9 +166,12 @@ export const updateDeliveryStatus = onCall(async (request) => {
             }
 
             if (status === "ASSIGNED") {
-                // A driver claims an unassigned request. Requires the 'DRIVER' role claim.
+                // A driver claims an unassigned request.
+                // Authorization: Must have DRIVER role claim, OR be the DELIVERY_PROVIDER business assigning to themselves/staff.
                 if (route.driverId) throw new Error("Route already has an assigned driver");
-                if (auth.token.role !== "DRIVER" && !isAdmin) throw new Error("Only a driver can accept a delivery");
+
+                const canAssign = auth.token.role === "DRIVER" || isProvider || isAdmin;
+                if (!canAssign) throw new Error("Unauthorized to assign/accept this delivery");
 
                 transaction.update(routeRef, {
                     driverId: driverId || auth.uid,
@@ -167,12 +182,15 @@ export const updateDeliveryStatus = onCall(async (request) => {
             }
 
             if (status === "CANCELLED") {
-                // Buyer can cancel only before a driver is assigned; the assigned driver/admin can cancel any time before completion.
-                if (!isBuyer && !isAssignedDriver && !isAdmin) throw new Error("Unauthorized");
-                if (isBuyer && route.status !== "REQUESTED") throw new Error("Buyer can only cancel before a driver is assigned");
+                // Requester can cancel only before a driver is assigned.
+                // Provider/Driver/Admin can cancel before completion.
+                if (!isRequester && !isAssignedDriver && !isProvider && !isAdmin) throw new Error("Unauthorized");
+                if (isRequester && route.status !== "REQUESTED") throw new Error("Requester can only cancel before assignment");
             } else {
-                if (!isAssignedDriver && !isAdmin) throw new Error("Only the assigned driver can update this delivery");
+                // Operational updates (PICKUP, IN_TRANSIT, DELIVERED)
+                if (!isAssignedDriver && !isAdmin) throw new Error("Only the assigned driver can update operational status");
             }
+
 
             transaction.update(routeRef, {
                 status,

@@ -10,7 +10,9 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import timber.log.Timber
 import javax.inject.Inject
+
 import javax.inject.Singleton
 
 
@@ -559,9 +561,14 @@ data class FirestoreOrder(
             sourceListingId = sourceListingId ?: "",
             listingSnapshot = listingSnapshot?.toDomain(),
             participants = participants ?: buildMap {
-                // Legacy mapping
+                // Legacy mapping: ensure canonical roles are populated for older documents
                 if (buyerId.isNotBlank()) put(OrderRole.REQUESTER.name, buyerId)
                 if (sellerId.isNotBlank()) put(OrderRole.SELLER.name, sellerId)
+                // If it's a service booking, listing author is the provider
+                if (type == "SERVICE_BOOKING" && sellerId.isNotBlank()) {
+                    put(OrderRole.SERVICE_PROVIDER.name, sellerId)
+                    put(OrderRole.LISTING_AUTHOR.name, sellerId)
+                }
             },
             payload = mapPayload(type, payload),
             items = items.map { it.toDomain() },
@@ -768,64 +775,68 @@ fun Order.toFirestore(): Map<String, Any?> = buildMap {
 
 private fun mapPayload(type: String?, data: Map<String, Any>?): OrderPayload? {
     if (data == null) return null
-    return when (runCatching { OrderType.valueOf(type ?: "") }.getOrNull()) {
-        OrderType.PRODUCT_PURCHASE -> OrderPayload.ProductPurchase(
-            variantId = data["variantId"] as? String,
-            quantity = (data["quantity"] as? Number)?.toInt() ?: 1,
-            unitPrice = (data["unitPriceMinorUnits"] as? Number)?.let { 
-                MoneyAmount(data["unitPriceCurrency"] as? String ?: "LSL", it.toLong())
-            } ?: MoneyAmount.ZERO,
-            buyerNotes = data["buyerNotes"] as? String
-        )
-        OrderType.FOOD_ORDER -> OrderPayload.FoodOrder(
-            items = (data["items"] as? List<Map<String, Any>>)?.map { 
-                FoodOrderItem(
-                    id = it["id"] as? String ?: "",
-                    title = it["title"] as? String ?: "",
-                    quantity = (it["quantity"] as? Number)?.toInt() ?: 1,
-                    addOns = (it["addOns"] as? List<String>) ?: emptyList()
-                )
-            } ?: emptyList(),
-            preparationNotes = data["preparationNotes"] as? String,
-            requestedDeliveryTime = (data["requestedDeliveryTime"] as? Number)?.toLong()
-        )
-        OrderType.SERVICE_BOOKING -> OrderPayload.ServiceBooking(
-            serviceId = data["serviceId"] as? String ?: "",
-            requestedDate = data["requestedDate"] as? String ?: "",
-            requestedTime = data["requestedTime"] as? String ?: "",
-            durationMinutes = (data["durationMinutes"] as? Number)?.toInt() ?: 0,
-            locationType = data["locationType"] as? String ?: "ON_SITE"
-        )
-        OrderType.BULK_PURCHASE -> OrderPayload.BulkPurchase(
-            quantity = (data["quantity"] as? Number)?.toDouble() ?: 0.0,
-            unitOfMeasure = data["unitOfMeasure"] as? String ?: "",
-            pricingTier = data["pricingTier"] as? String
-        )
-        OrderType.DELIVERY_REQUEST -> OrderPayload.DeliveryRequest(
-            pickupLocation = (data["pickupLocation"] as? Map<String, Any>)?.let { 
-                LocationSnapshot(
-                    lat = (it["lat"] as? Number)?.toDouble() ?: 0.0,
-                    lng = (it["lng"] as? Number)?.toDouble() ?: 0.0,
-                    addressSnapshot = it["addressSnapshot"] as? String ?: "",
-                    instructions = it["instructions"] as? String ?: ""
-                )
-            },
-            destinationLocation = (data["destinationLocation"] as? Map<String, Any>)?.let { 
-                LocationSnapshot(
-                    lat = (it["lat"] as? Number)?.toDouble() ?: 0.0,
-                    lng = (it["lng"] as? Number)?.toDouble() ?: 0.0,
-                    addressSnapshot = it["addressSnapshot"] as? String ?: "",
-                    instructions = it["instructions"] as? String ?: ""
-                )
-            },
-            packageDescription = data["packageDescription"] as? String ?: "",
-            recipientName = data["recipientName"] as? String ?: "",
-            recipientPhone = data["recipientPhone"] as? String ?: "",
-            recipientUid = data["recipientUid"] as? String,
-            instructions = data["instructions"] as? String ?: ""
-        )
-
-        else -> null
+    return try {
+        when (runCatching { OrderType.valueOf(type ?: "") }.getOrNull()) {
+            OrderType.PRODUCT_PURCHASE -> OrderPayload.ProductPurchase(
+                variantId = data["variantId"] as? String,
+                quantity = (data["quantity"] as? Number)?.toInt() ?: 1,
+                unitPrice = (data["unitPriceMinorUnits"] as? Number)?.let { 
+                    MoneyAmount(data["unitPriceCurrency"] as? String ?: "LSL", it.toLong())
+                } ?: MoneyAmount.ZERO,
+                buyerNotes = data["buyerNotes"] as? String
+            )
+            OrderType.FOOD_ORDER -> OrderPayload.FoodOrder(
+                items = (data["items"] as? List<Map<String, Any>>)?.map { 
+                    FoodOrderItem(
+                        id = it["id"] as? String ?: "",
+                        title = it["title"] as? String ?: "",
+                        quantity = (it["quantity"] as? Number)?.toInt() ?: 1,
+                        addOns = (it["addOns"] as? List<String>) ?: emptyList()
+                    )
+                } ?: emptyList(),
+                preparationNotes = data["preparationNotes"] as? String,
+                requestedDeliveryTime = (data["requestedDeliveryTime"] as? Number)?.toLong()
+            )
+            OrderType.SERVICE_BOOKING -> OrderPayload.ServiceBooking(
+                serviceId = data["serviceId"] as? String ?: "",
+                requestedDate = data["requestedDate"] as? String ?: "",
+                requestedTime = data["requestedTime"] as? String ?: "",
+                durationMinutes = (data["durationMinutes"] as? Number)?.toInt() ?: 0,
+                locationType = data["locationType"] as? String ?: "ON_SITE"
+            )
+            OrderType.BULK_PURCHASE -> OrderPayload.BulkPurchase(
+                quantity = (data["quantity"] as? Number)?.toDouble() ?: 0.0,
+                unitOfMeasure = data["unitOfMeasure"] as? String ?: "",
+                pricingTier = data["pricingTier"] as? String
+            )
+            OrderType.DELIVERY_REQUEST -> OrderPayload.DeliveryRequest(
+                pickupLocation = (data["pickupLocation"] as? Map<String, Any>)?.let { 
+                    LocationSnapshot(
+                        lat = (it["lat"] as? Number)?.toDouble() ?: 0.0,
+                        lng = (it["lng"] as? Number)?.toDouble() ?: 0.0,
+                        addressSnapshot = it["addressSnapshot"] as? String ?: "",
+                        instructions = it["instructions"] as? String ?: ""
+                    )
+                },
+                destinationLocation = (data["destinationLocation"] as? Map<String, Any>)?.let { 
+                    LocationSnapshot(
+                        lat = (it["lat"] as? Number)?.toDouble() ?: 0.0,
+                        lng = (it["lng"] as? Number)?.toDouble() ?: 0.0,
+                        addressSnapshot = it["addressSnapshot"] as? String ?: "",
+                        instructions = it["instructions"] as? String ?: ""
+                    )
+                },
+                packageDescription = data["packageDescription"] as? String ?: "",
+                recipientName = data["recipientName"] as? String ?: "",
+                recipientPhone = data["recipientPhone"] as? String ?: "",
+                recipientUid = data["recipientUid"] as? String,
+                instructions = data["instructions"] as? String ?: ""
+            )
+            else -> null
+        }
+    } catch (e: Exception) {
+        Timber.e(e, "Failed to map OrderPayload of type $type")
+        null
     }
 }
 

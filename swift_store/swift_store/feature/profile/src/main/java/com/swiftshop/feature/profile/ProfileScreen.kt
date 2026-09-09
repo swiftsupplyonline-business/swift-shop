@@ -29,6 +29,7 @@ import com.swiftshop.core.ui.components.*
 import com.swiftshop.core.ui.theme.SwiftShopColors
 import com.swiftshop.core.ui.theme.swiftColors
 import com.swiftshop.core.ui.navigation.Screen
+import com.swiftshop.feature.profile.components.WalletCard
 
 @Composable
 fun ProfileScreen(
@@ -141,7 +142,7 @@ private fun ProfileContent(
                 .padding(padding)
         ) {
 
-            // â”€â”€ Cover + Avatar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── Cover + Avatar ──────────────────────────────────────────────────
             item {
                 Box(modifier = Modifier.fillMaxWidth().height(220.dp)) {
                     AsyncImage(
@@ -201,7 +202,7 @@ private fun ProfileContent(
                 }
             }
 
-            // â”€â”€ Avatar + action buttons row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── Avatar + action buttons row ───────────────────────────────────
             item {
                 Box(
                     modifier = Modifier
@@ -218,7 +219,7 @@ private fun ProfileContent(
                             .offset(y = (-42).dp)
                     )
 
-                    // Action buttons â€” right side, vertically centered with avatar
+                    // Action buttons — right side, vertically centered with avatar
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -268,7 +269,7 @@ private fun ProfileContent(
                 }
             }
 
-            // â”€â”€ Quick action row (own profile) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── Quick action row (own profile) ─────────────────────────────
             if (isOwnProfile) {
                 item {
                     Row(
@@ -306,7 +307,7 @@ private fun ProfileContent(
                 }
             }
 
-            // â”€â”€ Name + Bio + Stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── Name + Bio + Stats ──────────────────────────────────────────
             item {
                 Column(
                     modifier = Modifier
@@ -381,21 +382,25 @@ private fun ProfileContent(
                 }
             }
 
-            // â”€â”€ Wallet Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── Wallet Card ──────────────────────────────────────────────────
             if (isOwnProfile) {
                 item {
                     Spacer(Modifier.height(8.dp))
+                    val balanceMinorUnits = (wallet as? WalletUiState.Loaded)?.wallet?.availableBalance?.minorUnits ?: 0L
                     WalletCard(
-                        tier = profile.tier,
-                        walletState = wallet,
-                        onWalletClick = onWalletClick,
-                        onUpgrade = onUpgradeTier,
+                        tierLabel = "${profile.tier.name} WALLET",
+                        avatarLetter = user.displayName.firstOrNull()?.toString()?.uppercase() ?: "U",
+                        balanceMinorUnits = balanceMinorUnits,
+                        currencyCode = "LSL",
+                        onDeposit = onWalletClick,
+                        onWithdraw = onWalletClick,
+                        onTransfer = onWalletClick,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
             }
 
-            // â”€â”€ Performance Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── Performance Card ──────────────────────────────────────────
             item {
                 Spacer(Modifier.height(8.dp))
                 PerformanceCard(
@@ -405,7 +410,7 @@ private fun ProfileContent(
                 )
             }
 
-            // â”€â”€ Tab Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── Tab Row ──────────────────────────────────────────────────
             stickyHeader {
                 Surface(shadowElevation = 4.dp) {
                     ScrollableTabRow(
@@ -441,7 +446,7 @@ private fun ProfileContent(
                 }
             }
 
-            // â”€â”€ Tab Content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── Tab Content ───────────────────────────────────────────────
             when (selectedTab) {
                 0 -> { // Listings
                     if (listings.isEmpty()) {
@@ -501,7 +506,7 @@ private fun ProfileContent(
                 }
             }
 
-            // â”€â”€ Sign Out â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── Sign Out ─────────────────────────────────────────────────
             if (isOwnProfile) {
                 item {
                     Spacer(Modifier.height(24.dp))
@@ -537,7 +542,7 @@ private fun ProfileContent(
     }
 }
 
-// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 @Composable
 private fun QuickActionButton(
@@ -590,155 +595,7 @@ private fun ProfileStat(value: String, label: String) {
     }
 }
 
-// â”€â”€â”€ Wallet Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-@Composable
-fun WalletCard(
-    tier: UserTier,
-    walletState: WalletUiState,
-    onWalletClick: () -> Unit,
-    onUpgrade: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val colors = MaterialTheme.swiftColors
-    val cardGradient = when (tier) {
-        UserTier.BASIC -> listOf(Color(0xFF1D6BF3), Color(0xFF0D1B3E))
-        UserTier.PREMIUM -> listOf(colors.premiumGradientStart, colors.premiumGradientEnd)
-        UserTier.ELITE -> listOf(colors.eliteObsidian, Color(0xFF1A1A2E))
-    }
-
-    var balanceVisible by remember { mutableStateOf(false) }
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .shadow(
-                elevation = 12.dp,
-                shape = RoundedCornerShape(24.dp),
-                ambientColor = cardGradient.first().copy(alpha = 0.3f),
-                spotColor = cardGradient.first().copy(alpha = 0.4f)
-            )
-            .clip(RoundedCornerShape(24.dp))
-            .background(Brush.linearGradient(cardGradient))
-            .clickable(onClick = onWalletClick)
-            .padding(20.dp)
-    ) {
-        // Elite border
-        if (tier == UserTier.ELITE) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .border(
-                        1.dp,
-                        Brush.linearGradient(
-                            listOf(colors.eliteGold, Color.Transparent, colors.eliteGold)
-                        ),
-                        RoundedCornerShape(24.dp)
-                    )
-            )
-        }
-
-        Column {
-            // â”€â”€ Tier label + badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "${tier.name} WALLET",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.65f),
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 1.5.sp
-                )
-                TierBadge(tier = tier, size = 34.dp)
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // â”€â”€ Balance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                when (val ws = walletState) {
-                    is WalletUiState.Loaded -> {
-                        Text(
-                            if (balanceVisible) ws.wallet.availableBalance.toDisplayString()
-                            else "â€¢â€¢â€¢â€¢  â€¢â€¢â€¢â€¢",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = if (tier == UserTier.ELITE) colors.eliteGold else Color.White
-                        )
-                    }
-                    is WalletUiState.Loading -> {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(22.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
-                    }
-                    else -> Text(
-                        "â€”",
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = Color.White
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.15f))
-                        .clickable { balanceVisible = !balanceVisible },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        if (balanceVisible) Icons.Default.Visibility
-                        else Icons.Default.VisibilityOff,
-                        null,
-                        tint = Color.White.copy(alpha = 0.8f),
-                        modifier = Modifier.size(15.dp)
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(20.dp))
-
-            // â”€â”€ Action chips â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                WalletChip("Deposit", Icons.Default.Add, onClick = onWalletClick)
-                WalletChip("Withdraw", Icons.Default.ArrowUpward, onClick = onWalletClick)
-                WalletChip("Transfer", Icons.Default.SwapHoriz, onClick = onWalletClick)
-            }
-        }
-    }
-}
-
-@Composable
-private fun WalletChip(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color.White.copy(alpha = 0.15f))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(icon, null, tint = Color.White, modifier = Modifier.size(13.dp))
-        Spacer(Modifier.width(5.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = Color.White,
-            fontWeight = FontWeight.Medium
-        )
-    }
-}
-
-// â”€â”€â”€ Performance Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Performance Card ──────────────────────────────────────────────────────────
 
 @Composable
 private fun PerformanceCard(
@@ -790,7 +647,7 @@ private fun PerformanceCard(
     }
 }
 
-// â”€â”€â”€ Shop List Item â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Shop List Item ──────────────────────────────────────────────────────────
 
 @Composable
 private fun ShopListItem(shop: Shop, onClick: () -> Unit) {
@@ -847,7 +704,7 @@ private fun ShopListItem(shop: Shop, onClick: () -> Unit) {
                         modifier = Modifier.size(12.dp)
                     )
                     Text(
-                        " ${shop.rating} Â· ${shop.listingCount} listings",
+                        " ${shop.rating} · ${shop.listingCount} listings",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -859,6 +716,4 @@ private fun ShopListItem(shop: Shop, onClick: () -> Unit) {
             )
         }
     }
-
-
 }

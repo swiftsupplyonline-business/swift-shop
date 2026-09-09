@@ -51,17 +51,12 @@ sealed interface TrackOrderUiState {
     data class Loaded(
         val order: Order,
         val route: DeliveryRoute?,
-        val viewerRole: TrackingRole,
+        val viewerRole: OrderRole,
         val mapMarkers: List<MapMarker>,
         val mapPolylines: List<MapPolyline>
     ) : TrackOrderUiState
 }
 
-/**
- * Role of the currently authenticated user in the context of this order.
- * Determines which UI elements and which map markers are shown.
- */
-enum class TrackingRole { BUYER, SELLER, DRIVER, ADMIN }
 
 // ─── ViewModel ───────────────────────────────────────────────────────────────
 
@@ -99,29 +94,28 @@ class TrackOrderViewModel @Inject constructor(
 
                 // Determine this user's role in the order using the authoritative participants map
                 val role = when {
-                    order.participants[OrderRole.REQUESTER.name] == user.uid -> TrackingRole.BUYER
-                    order.participants[OrderRole.SELLER.name] == user.uid -> TrackingRole.SELLER
-                    order.participants[OrderRole.SERVICE_PROVIDER.name] == user.uid -> TrackingRole.SELLER
-                    order.participants[OrderRole.DELIVERY_PROVIDER.name] == user.uid -> TrackingRole.DRIVER
-                    else -> TrackingRole.DRIVER // confirmed below once route loads
+                    order.participants[OrderRole.REQUESTER.name] == user.uid -> OrderRole.REQUESTER
+                    order.participants[OrderRole.SELLER.name] == user.uid -> OrderRole.SELLER
+                    order.participants[OrderRole.SERVICE_PROVIDER.name] == user.uid -> OrderRole.SERVICE_PROVIDER
+                    order.participants[OrderRole.DELIVERY_PROVIDER.name] == user.uid -> OrderRole.DELIVERY_PROVIDER
+                    user.isAdmin -> OrderRole.ADMIN
+                    else -> OrderRole.REQUESTER
                 }
 
-
-
                 // Observe live delivery route if one exists
-                val deliveryRole = when (role) {
-                    TrackingRole.SELLER -> DeliveryRole.SELLER
-                    TrackingRole.DRIVER -> DeliveryRole.DRIVER
+                val deliveryRoleForQuery = when (role) {
+                    OrderRole.SELLER, OrderRole.SERVICE_PROVIDER -> DeliveryRole.SELLER
+                    OrderRole.DELIVERY_PROVIDER -> DeliveryRole.DRIVER
                     else -> DeliveryRole.BUYER
                 }
 
-                observeRoutesByOrder(orderId, user.uid, deliveryRole)
+                observeRoutesByOrder(orderId, user.uid, deliveryRoleForQuery)
                     .map { routes ->
                         val route = selectActiveRoute(routes)
 
                         // Resolve effective role — could be driver
                         val effectiveRole = when {
-                            route != null && route.driverId == user.uid -> TrackingRole.DRIVER
+                            route != null && route.driverId == user.uid -> OrderRole.DELIVERY_PROVIDER
                             else -> role
                         }
 
@@ -136,6 +130,7 @@ class TrackOrderViewModel @Inject constructor(
                             mapPolylines = polylines
                         )
                     }
+
                     .catch {
                         // Route collection may not exist yet (pre-dispatch) — that's OK
                         val markers = buildMarkersFromOrder(order)
@@ -159,7 +154,7 @@ class TrackOrderViewModel @Inject constructor(
     private fun handlePublisherLifecycle(state: TrackOrderUiState) {
         if (state is TrackOrderUiState.Loaded) {
             val route = state.route
-            val isDriver = state.viewerRole == TrackingRole.DRIVER
+            val isDriver = state.viewerRole == OrderRole.DELIVERY_PROVIDER
             val isActive = route?.status in listOf(
                 DeliveryStatus.ASSIGNED, 
                 DeliveryStatus.PICKUP, 
@@ -201,7 +196,7 @@ class TrackOrderViewModel @Inject constructor(
     private fun buildMarkers(
         order: Order,
         route: DeliveryRoute?,
-        role: TrackingRole
+        role: OrderRole
     ): List<MapMarker> {
         val markers = mutableListOf<MapMarker>()
 
@@ -213,7 +208,7 @@ class TrackOrderViewModel @Inject constructor(
                 MapMarker(
                     id = "shop_pin",
                     position = shopGeo,
-                    title = if (role == TrackingRole.DRIVER) "📦 Pickup Here" else "🏪 Shop",
+                    title = if (role == OrderRole.DELIVERY_PROVIDER) "📦 Pickup Here" else "🏪 Shop",
                     snippet = "Pickup location",
                     entityType = SwiftEntity.SHOP
                 )
@@ -225,8 +220,8 @@ class TrackOrderViewModel @Inject constructor(
             ?: route?.dropoffLocation?.takeIf { it.isValid() }
         if (buyerGeo != null && buyerGeo.isValid()) {
             val buyerLabel = when (role) {
-                TrackingRole.BUYER -> "📍 Your Location"
-                TrackingRole.DRIVER -> "🏠 Deliver Here"
+                OrderRole.REQUESTER -> "📍 Your Location"
+                OrderRole.DELIVERY_PROVIDER -> "🏠 Deliver Here"
                 else -> "🏠 Buyer Location"
             }
             markers.add(
@@ -258,7 +253,7 @@ class TrackOrderViewModel @Inject constructor(
     }
 
     private fun buildMarkersFromOrder(order: Order): List<MapMarker> =
-        buildMarkers(order, null, TrackingRole.BUYER)
+        buildMarkers(order, null, OrderRole.REQUESTER)
 
     private fun buildPolylines(order: Order, route: DeliveryRoute?): List<MapPolyline> {
         val points = mutableListOf<GeoPoint>()
@@ -298,7 +293,7 @@ fun TrackOrderScreen(
 
     LaunchedEffect(uiState) {
         val state = uiState
-        if (state is TrackOrderUiState.Loaded && state.viewerRole == TrackingRole.DRIVER) {
+        if (state is TrackOrderUiState.Loaded && state.viewerRole == OrderRole.DELIVERY_PROVIDER) {
             if (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
                 permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
             }
@@ -537,12 +532,14 @@ private fun TrackOrderContent(
 // ─── Role Banner ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun RoleBanner(role: TrackingRole) {
+private fun RoleBanner(role: OrderRole) {
     val (label, color, icon) = when (role) {
-        TrackingRole.BUYER -> Triple("Tracking your order", SwiftShopColors.BrandBlue, Icons.Default.ShoppingBag)
-        TrackingRole.SELLER -> Triple("Seller view", SwiftShopColors.ElectricBlue, Icons.Default.Storefront)
-        TrackingRole.DRIVER -> Triple("Driver view — active delivery", SwiftShopColors.Success, Icons.Default.DirectionsBike)
-        TrackingRole.ADMIN -> Triple("Admin view", SwiftShopColors.Warning, Icons.Default.AdminPanelSettings)
+        OrderRole.REQUESTER -> Triple("Tracking your order", SwiftShopColors.BrandBlue, Icons.Default.ShoppingBag)
+        OrderRole.SELLER -> Triple("Seller view", SwiftShopColors.ElectricBlue, Icons.Default.Storefront)
+        OrderRole.SERVICE_PROVIDER -> Triple("Provider view", SwiftShopColors.ElectricBlue, Icons.Default.Storefront)
+        OrderRole.DELIVERY_PROVIDER -> Triple("Driver view — active delivery", SwiftShopColors.Success, Icons.Default.DirectionsBike)
+        OrderRole.ADMIN -> Triple("Admin view", SwiftShopColors.Warning, Icons.Default.AdminPanelSettings)
+        else -> Triple("Order view", SwiftShopColors.BrandBlue, Icons.Default.Receipt)
     }
     Row(
         modifier = Modifier
@@ -561,7 +558,7 @@ private fun RoleBanner(role: TrackingRole) {
 
 @Composable
 private fun MapLegend(
-    role: TrackingRole,
+    role: OrderRole,
     hasDriver: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -573,11 +570,11 @@ private fun MapLegend(
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         LegendItem(
-            label = if (role == TrackingRole.DRIVER) "Pickup" else "Shop",
+            label = if (role == OrderRole.DELIVERY_PROVIDER) "Pickup" else "Shop",
             color = SwiftShopColors.BrandBlue
         )
         LegendItem(
-            label = if (role == TrackingRole.DRIVER) "Deliver to" else "Your location",
+            label = if (role == OrderRole.DELIVERY_PROVIDER) "Deliver to" else "Your location",
             color = SwiftShopColors.ElectricBlue
         )
         if (hasDriver) {
@@ -585,6 +582,7 @@ private fun MapLegend(
         }
     }
 }
+
 
 @Composable
 private fun LegendItem(label: String, color: Color) {

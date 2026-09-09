@@ -129,24 +129,24 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
     let finalTotal = 0;
 
     try {
-        let deliveryFeeFromListing \u003d 0;
-        let deliveryListingSnapshot \u003d null;
+        let deliveryFeeFromListing = 0;
+        let deliveryListingSnapshot = null;
 
         if (deliveryListingId !== "none") {
-            const deliveryListingDoc \u003d await db.collection("listings").doc(deliveryListingId).get();
+            const deliveryListingDoc = await db.collection("listings").doc(deliveryListingId).get();
             if (!deliveryListingDoc.exists) {
                 throw new HttpsError("not-found", `Delivery listing ${deliveryListingId} not found`);
             }
-            const deliveryListingData \u003d deliveryListingDoc.data()!;
-            if (deliveryListingData.listingType !== "DELIVER" \u0026\u0026 deliveryListingData.listingType !== "DELIVERY_SERVICE") {
+            const deliveryListingData = deliveryListingDoc.data()!;
+            if (deliveryListingData.listingType !== "DELIVER" && deliveryListingData.listingType !== "DELIVERY_SERVICE") {
                 throw new HttpsError("invalid-argument", "The provided listing is not a delivery listing");
             }
             if (!deliveryListingData.isAvailable) {
                 throw new HttpsError("failed-precondition", "The selected delivery option is no longer available");
             }
-            deliveryFeeFromListing \u003d deliveryListingData.priceMinorUnits || 0;
+            deliveryFeeFromListing = deliveryListingData.priceMinorUnits || 0;
 
-            deliveryListingSnapshot \u003d {
+            deliveryListingSnapshot = {
                 listingId: deliveryListingId,
                 providerId: deliveryListingData.sellerId || "",
                 providerName: deliveryListingData.providerName || "",
@@ -156,7 +156,6 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 estimatedMinutes: deliveryListingData.estimatedMinutes || 0
             };
         }
-
 
         // STEP 1: Atomic Inventory Reservation & Order Record Creation
         const result = await db.runTransaction(async (transaction) => {
@@ -168,15 +167,36 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 return { orderId: idempotencyDoc.data()?.orderId, total: 0, items: [], alreadyExists: true };
             }
 
+            // 1a. Pre-read Listings to determine OrderType and validate consistency
+            const listingRefs = items.map(item => db.collection("listings").doc(item.listingId));
+            const listingSnaps = [];
+            for (const ref of listingRefs) {
+                const snap = await transaction.get(ref);
+                if (!snap.exists) throw new Error(`Listing ${ref.id} not found`);
+                listingSnaps.push(snap);
+            }
+
+            const listingDataList = listingSnaps.map(snap => snap.data()!);
+            const types = listingDataList.map(l => MAP_LISTING_TO_ORDER_TYPE[l.listingType] || "PRODUCT_PURCHASE");
+            const uniqueTypes = [...new Set(types)];
+
+            if (uniqueTypes.length > 1) {
+                throw new Error(`Mixed order types detected: ${uniqueTypes.join(", ")}. Orders must contain listings of compatible types only.`);
+            }
+            const orderType = uniqueTypes[0];
+
+            // 1b. Reject incompatible multi-item types (e.g. Services can't be in a cart with other things)
+            if (orderType === "SERVICE_BOOKING" && items.length > 1) {
+                throw new Error("Service bookings must be initiated individually.");
+            }
+
             let subtotal = 0;
             const newOrderId = db.collection("orders").doc().id;
             const validatedItems = [];
             let shopId = "";
             let sellerId = "";
 
-            // 1b. Wallet Read (must occur before any transaction writes — Firestore
-            // transactions require all reads before any write in the same transaction).
-            // Only relevant for SWIFT_WALLET; skipped entirely for MOPAY.
+            // 1c. Wallet Read
             const isWalletPayment = paymentMethod === "SWIFT_WALLET";
             const walletRef = db.collection("wallets").doc(auth.uid);
             const walletDoc = isWalletPayment ? await transaction.get(walletRef) : null;
@@ -186,18 +206,11 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
             const walletAvailableBefore = isWalletPayment ? (walletDoc!.data()!.availableBalanceMinorUnits || 0) : 0;
             const walletCurrency = isWalletPayment ? (walletDoc!.data()!.currency || "LSL") : "LSL";
 
-            // 2. Authoritative Price & Inventory Check (READ ALL FIRST)
-            const listingSnaps = [];
-            for (const item of items) {
-                const listingRef = db.collection("listings").doc(item.listingId);
-                const listingDoc = await transaction.get(listingRef);
-                if (!listingDoc.exists) throw new Error(`Listing ${item.listingId} not found`);
-                listingSnaps.push({ ref: listingRef, doc: listingDoc, item });
-            }
+            // 2. Validate Items, Shop Consistency, and Inventory
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const listing = listingDataList[i];
 
-            // 3. VALIDATE ALL READS
-            for (const { doc, item } of listingSnaps) {
-                const listing = doc.data()!;
                 if (!listing.isAvailable) throw new Error(`Listing ${item.listingId} is not available`);
 
                 if (!shopId) {
@@ -209,21 +222,17 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
 
                 const requestedQty = item.quantity || 1;
 
-                // CANONICAL INVENTORY VALIDATION: Require totalQuantity and reservedQuantity
+                // CANONICAL INVENTORY VALIDATION
                 if (listing.totalQuantity === undefined || listing.reservedQuantity === undefined) {
-                    throw new HttpsError("failed-precondition", `Listing ${item.listingId} requires inventory reconciliation before participating in reservations.`);
+                    throw new HttpsError("failed-precondition", `Listing ${item.listingId} requires inventory reconciliation.`);
                 }
 
-                const total = listing.totalQuantity;
-                const reserved = listing.reservedQuantity;
-                const available = total - reserved;
-
+                const available = listing.totalQuantity - listing.reservedQuantity;
                 if (available < requestedQty) {
                     throw new Error(`Insufficient stock for ${listing.title}. Requested: ${requestedQty}, Available: ${available}`);
                 }
 
-                const itemTotal = listing.priceMinorUnits * requestedQty;
-                subtotal += itemTotal;
+                subtotal += listing.priceMinorUnits * requestedQty;
 
                 validatedItems.push({
                     listingId: item.listingId,
@@ -234,15 +243,14 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 });
             }
 
-            // 4. PERFORM ALL WRITES (Atomic Reservation)
+            // 3. PERFORM ALL WRITES (Atomic Reservation)
             const now = admin.firestore.Timestamp.now();
-            const expiresAt = admin.firestore.Timestamp.fromMillis(now.toMillis() + 15 * 60 * 1000); // 15 mins
+            const expiresAt = admin.firestore.Timestamp.fromMillis(now.toMillis() + 15 * 60 * 1000);
 
-            for (const { ref, doc, item } of listingSnaps) {
-                const listing = doc.data()!;
-                const currentReserved = listing.reservedQuantity; // Guaranteed by validation above
-                const currentTotal = listing.totalQuantity;      // Guaranteed by validation above
-                const requestedQty = item.quantity || 1;
+            for (let i = 0; i < listingSnaps.length; i++) {
+                const snap = listingSnaps[i];
+                const requestedQty = items[i].quantity || 1;
+                const listing = snap.data()!;
 
                 const reservationId = db.collection("reservations").doc().id;
                 transaction.set(db.collection("reservations").doc(reservationId), {
@@ -251,63 +259,47 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                     buyerId: auth.uid,
                     sellerId: listing.sellerId,
                     shopId: listing.shopId,
-                    listingId: item.listingId,
+                    listingId: snap.id,
                     quantity: requestedQty,
                     status: "ACTIVE",
                     createdAt: now,
                     expiresAt: expiresAt
                 });
 
-                const newReserved = currentReserved + requestedQty;
-                transaction.update(ref, {
+                const newReserved = listing.reservedQuantity + requestedQty;
+                transaction.update(snap.ref, {
                     reservedQuantity: newReserved,
-                    availableQuantity: currentTotal - newReserved,
-                    // Mirror update
-                    stockQuantity: currentTotal - newReserved,
+                    availableQuantity: listing.totalQuantity - newReserved,
+                    stockQuantity: listing.totalQuantity - newReserved, // Compatibility mirror
                     updatedAt: now
                 });
             }
 
-            // Delivery fee is authoritative from the delivery listing validated above.
+            // Delivery fee calculations
             const deliveryFee = deliveryFeeFromListing;
             const platformFee = Math.floor((subtotal * 15) / 1000);
             const total = subtotal + deliveryFee + platformFee;
 
-            // 2b. Wallet Balance Gate & Atomic Debit (SWIFT_WALLET only).
             if (isWalletPayment) {
-                if (walletCurrency !== "LSL") {
-                    throw new Error(`Wallet currency mismatch: expected LSL, wallet is ${walletCurrency}.`);
-                }
-                if (walletAvailableBefore < total) {
-                    throw new Error(`Insufficient wallet balance. Required: ${total}, Available: ${walletAvailableBefore}.`);
-                }
+                if (walletCurrency !== "LSL") throw new Error(`Wallet currency mismatch: ${walletCurrency}.`);
+                if (walletAvailableBefore < total) throw new Error("Insufficient wallet balance.");
             }
 
             const orderStatus = isWalletPayment ? "CONFIRMED" : "RESERVED";
 
-            const orderType = MAP_LISTING_TO_ORDER_TYPE[listingSnaps[0]?.doc.data()?.listingType] || "PRODUCT_PURCHASE";
-
-            // Determine Participants based on OrderType
             const participants: Record<string, string> = {
                 "REQUESTER": auth.uid,
                 "LISTING_AUTHOR": sellerId
             };
-
             if (orderType === "PRODUCT_PURCHASE" || orderType === "FOOD_ORDER" || orderType === "BULK_PURCHASE") {
                 participants["SELLER"] = sellerId;
             } else if (orderType === "SERVICE_BOOKING") {
                 participants["SERVICE_PROVIDER"] = sellerId;
             } else if (orderType === "DELIVERY_REQUEST") {
-                // For a direct delivery request, the listing author is the provider
                 participants["DELIVERY_PROVIDER"] = sellerId;
             }
+            if (recipientUid) participants["RECIPIENT"] = recipientUid;
 
-            if (recipientUid) {
-                participants["RECIPIENT"] = recipientUid;
-            }
-
-
-            // Source origin from Shop document
             const shopDoc = await transaction.get(db.collection("shops").doc(shopId));
             const shopData = shopDoc.exists ? shopDoc.data() : null;
             const originLocationSnapshot = shopData ? {
@@ -316,16 +308,61 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 addressSnapshot: shopData.locationAddress || ""
             } : null;
 
+            // ── Payload Allowlisting ──────────────────────────────────────
+            const clientPayload = request.data.payload || {};
+            let payload: any = null;
+
+            switch (orderType) {
+                case "PRODUCT_PURCHASE":
+                    payload = {
+                        quantity: validatedItems.reduce((acc, i) => acc + i.quantity, 0),
+                        unitPriceMinorUnits: validatedItems[0]?.unitPriceMinorUnits || 0,
+                        buyerNotes: clientPayload.buyerNotes || ""
+                    };
+                    break;
+                case "FOOD_ORDER":
+                    payload = {
+                        items: validatedItems.map(i => ({ id: i.listingId, title: i.title, quantity: i.quantity, addOns: clientPayload.items?.find((cp: any) => cp.id === i.listingId)?.addOns || [] })),
+                        preparationNotes: clientPayload.preparationNotes || ""
+                    };
+                    break;
+                case "SERVICE_BOOKING":
+                    payload = {
+                        serviceId: validatedItems[0].listingId,
+                        requestedDate: clientPayload.requestedDate || "",
+                        requestedTime: clientPayload.requestedTime || "",
+                        durationMinutes: listingDataList[0].durationMinutes || 0,
+                        locationType: clientPayload.locationType || "ON_SITE"
+                    };
+                    break;
+                case "BULK_PURCHASE":
+                    payload = {
+                        quantity: validatedItems.reduce((acc, i) => acc + i.quantity, 0),
+                        unitOfMeasure: listingDataList[0].unitOfMeasure || "unit",
+                        pricingTier: clientPayload.pricingTier || null
+                    };
+                    break;
+                case "DELIVERY_REQUEST":
+                    payload = {
+                        packageDescription: clientPayload.packageDescription || "",
+                        recipientName: clientPayload.recipientName || "",
+                        recipientPhone: clientPayload.recipientPhone || "",
+                        instructions: clientPayload.instructions || ""
+                    };
+                    break;
+            }
+
             const orderDoc: Record<string, unknown> = {
                 id: newOrderId,
                 buyerId: auth.uid,
                 sellerId: sellerId,
                 shopId: shopId,
                 type: orderType,
-                sourceListingId: listingSnaps[0]?.item.listingId || "",
-                listingSnapshot: captureListingSnapshot(listingSnaps[0]?.doc.data()),
+                sourceListingId: validatedItems[0]?.listingId || "",
+                listingSnapshot: captureListingSnapshot(listingDataList[0]),
                 participants: participants,
                 items: validatedItems,
+                payload: payload,
                 subtotalMinorUnits: subtotal,
                 deliveryFeeMinorUnits: deliveryFee,
                 platformFeeMinorUnits: platformFee,
@@ -353,101 +390,30 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 updatedAt: now
             };
 
-            // Initialize Type-Specific Payload (Default)
-            let payload: any = null;
-            switch (orderType) {
-                case "PRODUCT_PURCHASE":
-                    payload = {
-                        quantity: validatedItems.reduce((acc, i) => acc + i.quantity, 0),
-                        unitPriceMinorUnits: validatedItems[0]?.unitPriceMinorUnits || 0,
-                        buyerNotes: ""
-                    };
-                    break;
-                case "FOOD_ORDER":
-                    payload = {
-                        items: validatedItems.map(i => ({ id: i.listingId, title: i.title, quantity: i.quantity, addOns: [] })),
-                        preparationNotes: ""
-                    };
-                    break;
-                case "SERVICE_BOOKING":
-                    payload = {
-                        serviceId: listingSnaps[0]?.item.listingId || "",
-                        requestedDate: "",
-                        requestedTime: "",
-                        durationMinutes: listingSnaps[0]?.doc.data()?.durationMinutes || 0
-                    };
-                    break;
-                case "BULK_PURCHASE":
-                    payload = {
-                        quantity: validatedItems.reduce((acc, i) => acc + i.quantity, 0),
-                        unitOfMeasure: listingSnaps[0]?.doc.data()?.unitOfMeasure || "unit"
-                    };
-                    break;
-                case "DELIVERY_REQUEST":
-                    payload = {
-                        packageDescription: "",
-                        recipientName: "",
-                        recipientPhone: ""
-                    };
-                    break;
-            }
-
-            // Merge with client-provided payload if available
-            if (request.data.payload) {
-                payload = { ...payload, ...request.data.payload };
-            }
-            orderDoc.payload = payload;
-
             transaction.set(db.collection("orders").doc(newOrderId), orderDoc);
-
-
             transaction.set(idempotencyRef, {
                 orderId: newOrderId,
                 userId: auth.uid,
-                createdAt: admin.firestore.FieldValue.serverTimestamp()
+                createdAt: now
             });
 
-            // 2c. Atomic Wallet Debit + Double-Entry Ledger (SWIFT_WALLET only).
-            // Mirrors the debit/ledger convention already used in finance.ts and in
-            // verifyMopayPayment's escrow entry (system_order_escrow as credit account).
             if (isWalletPayment) {
                 const walletTxnId = db.collection("walletTransactions").doc().id;
                 const ledgerId = db.collection("ledgerEntries").doc().id;
                 const newAvailable = walletAvailableBefore - total;
-
-                transaction.update(walletRef, {
-                    availableBalanceMinorUnits: newAvailable,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                });
-
+                transaction.update(walletRef, { availableBalanceMinorUnits: newAvailable, updatedAt: now });
                 transaction.set(db.collection("walletTransactions").doc(walletTxnId), {
-                    transactionId: walletTxnId,
-                    userId: auth.uid,
-                    type: "PURCHASE",
-                    amountMinorUnits: total,
-                    feeMinorUnits: 0,
-                    currency: "LSL",
-                    status: "COMPLETE",
-                    description: `Order ${newOrderId} at Swift Shop (Swift Wallet)`,
-                    orderId: newOrderId,
-                    idempotencyKey: idempotencyKey,
-                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    transactionId: walletTxnId, userId: auth.uid, type: "PURCHASE", amountMinorUnits: total, feeMinorUnits: 0,
+                    currency: "LSL", status: "COMPLETE", description: `Order ${newOrderId} (Swift Wallet)`, orderId: newOrderId,
+                    idempotencyKey, createdAt: now, updatedAt: now
                 });
-
                 transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
-                    id: ledgerId,
-                    transactionId: walletTxnId,
-                    debitAccount: `user_${auth.uid}`,
-                    creditAccount: "system_order_escrow",
-                    amountMinorUnits: total,
-                    currency: "LSL",
-                    reference: `ORDER_CONFIRM_WALLET_${newOrderId}`,
-                    timestamp: admin.firestore.FieldValue.serverTimestamp()
+                    id: ledgerId, transactionId: walletTxnId, debitAccount: `user_${auth.uid}`, creditAccount: "system_order_escrow",
+                    amountMinorUnits: total, currency: "LSL", reference: `ORDER_CONFIRM_WALLET_${newOrderId}`, timestamp: now
                 });
             }
 
-            return { orderId: newOrderId, total, items: validatedItems, alreadyExists: false };
+            return { orderId: newOrderId, total, alreadyExists: false };
         });
 
         orderId = result.orderId;
@@ -485,19 +451,18 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
 
                 // STEP 3: Compensating Transaction (Release Stock on Gateway Failure)
                 await db.runTransaction(async (transaction) => {
-                    for (const item of result.items) {
+                    for (const item of items) {
                         const listingRef = db.collection("listings").doc(item.listingId);
                         const listingDoc = await transaction.get(listingRef);
                         if (listingDoc.exists) {
                             const listing = listingDoc.data()!;
-
-                            // Strictly use canonical fields for hold release
                             const currentTotal = listing.totalQuantity || 0;
                             const currentReserved = listing.reservedQuantity || 0;
-                            const newReserved = Math.max(0, currentReserved - item.quantity);
+                            const newReserved = Math.max(0, currentReserved - (item.quantity || 1));
 
                             transaction.update(listingRef, {
                                 reservedQuantity: newReserved,
+                                availableQuantity: currentTotal - newReserved,
                                 stockQuantity: currentTotal - newReserved,
                                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
                             });
@@ -516,10 +481,6 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 };
             }
         }
-
-        // SWIFT_WALLET path: balance was checked, debited, and the order was
-        // set to CONFIRMED with a ledger entry — all atomically inside the
-        // Step 1 transaction above (see 2b/2c). Nothing further to do here.
         return { orderId };
 
     } catch (error: any) {
@@ -556,8 +517,8 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
 
         // 2. State Gating: Only PENDING or RESERVED orders can be verified
         if (order.status !== "PENDING" && order.status !== "RESERVED") {
-            console.warn(`Attempted to verify non-PENDING/RESERVED order ${order.id} with status ${order.status}`);
-            return { status: order.status, orderId: order.id, message: "Order is no longer awaiting payment." };
+            console.warn(`Attempted to verify order ${order.id} in state ${order.status}`);
+            return { status: order.status, orderId: order.id };
         }
 
         // 3. Authoritative Gateway Verification
@@ -565,9 +526,7 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
         if (!mopaySession) throw new Error("Could not verify session with MoPay.");
 
         // 4. Validation
-        if (mopaySession.reference !== order.id) {
-            throw new Error("Session reference mismatch.");
-        }
+        if (mopaySession.reference !== order.id) throw new Error("Session reference mismatch.");
 
         const mopayAmountMinor = Math.round(mopaySession.amount * 100);
         if (mopayAmountMinor !== order.totalMinorUnits) {
@@ -585,7 +544,7 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                     return { status: "ERROR", message: `Cannot confirm order in state ${freshOrder.status}` };
                 }
 
-                const isService = freshOrder.fulfillmentType === "SERVICE";
+                const isService = freshOrder.type === "SERVICE_BOOKING";
                 const now = admin.firestore.Timestamp.now();
                 const nowMs = now.toMillis();
 
@@ -594,7 +553,6 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                 const reservationSnaps = [];
 
                 if (!isService) {
-                    // Physical items: Fetch reservations and listings
                     const resQuery = await db.collection("reservations").where("orderId", "==", order.id).get();
                     for (const resDoc of resQuery.docs) {
                         const reservation = resDoc.data();
@@ -607,18 +565,16 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
 
                 // 2. VALIDATION & STATE CHECKS
                 if (isService) {
-                    const shopId = freshOrder.shopId;
                     const slotId = freshOrder.slotId;
                     if (!slotId) throw new Error("Service order missing slotId");
 
-                    const slotRef = db.collection("availability").doc(shopId).collection("slots").doc(slotId);
+                    const slotRef = db.collection("availability").doc(freshOrder.shopId).collection("slots").doc(slotId);
                     const slotSnap = await transaction.get(slotRef);
 
                     if (!slotSnap.exists) throw new Error("Associated slot not found");
                     const slot = slotSnap.data()!;
 
-                    const expiresAt = slot.expiresAt || 0;
-                    if (expiresAt < nowMs) {
+                    if ((slot.expiresAt || 0) < nowMs) {
                         transaction.update(orderDoc.ref, {
                             status: "CANCELLED",
                             paymentStatus: "SUCCESS",
@@ -637,17 +593,9 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
 
                     const appointmentRef = db.collection("appointments").doc(freshOrder.id);
                     transaction.set(appointmentRef, {
-                        id: freshOrder.id,
-                        orderId: freshOrder.id,
-                        buyerId: freshOrder.buyerId,
-                        sellerId: freshOrder.sellerId,
-                        shopId: freshOrder.shopId,
-                        listingId: freshOrder.items[0]?.listingId,
-                        listingTitle: freshOrder.items[0]?.title,
-                        appointmentStartTime: freshOrder.appointmentStartTime,
-                        status: "SCHEDULED",
-                        createdAt: now,
-                        updatedAt: now
+                        id: freshOrder.id, orderId: freshOrder.id, buyerId: freshOrder.buyerId, sellerId: freshOrder.sellerId,
+                        shopId: freshOrder.shopId, listingId: freshOrder.items[0]?.listingId, listingTitle: freshOrder.items[0]?.title,
+                        appointmentStartTime: freshOrder.appointmentStartTime, status: "SCHEDULED", createdAt: now, updatedAt: now
                     });
                 } else {
                     // Physical: Check reservation expirations
@@ -656,16 +604,12 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                             return { status: "RECONCILIATION_REQUIRED", reason: `RESERVATION_${res.data.status}` };
                         }
                         if (res.data.expiresAt.toMillis() < nowMs) {
-                             // Transition to EXPIRED and fail
                              for (const r of reservationSnaps) {
                                  transaction.update(r.ref, { status: "EXPIRED", updatedAt: now });
-                                 // Release inventory
                                  const l = listingSnaps.find(ls => ls.ref.id === r.data.listingId)!;
                                  const lData = l.snap.data()!;
-                                 // Strictly use canonical fields (No fallback)
                                  const currentReserved = lData.reservedQuantity || 0;
                                  const total = lData.totalQuantity || 0;
-
                                  const newReserved = Math.max(0, currentReserved - r.data.quantity);
                                  transaction.update(l.ref, {
                                      reservedQuantity: newReserved,
@@ -684,18 +628,13 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                         transaction.update(res.ref, { status: "COMMITTED", committedAt: now, updatedAt: now });
                         const l = listingSnaps.find(ls => ls.ref.id === res.data.listingId)!;
                         const lData = l.snap.data()!;
-
-                        // Strictly use canonical fields
                         const currentTotal = lData.totalQuantity || 0;
                         const currentReserved = lData.reservedQuantity || 0;
-
                         const newTotal = Math.max(0, currentTotal - res.data.quantity);
                         const newReserved = Math.max(0, currentReserved - res.data.quantity);
                         transaction.update(l.ref, {
-                            totalQuantity: newTotal,
-                            reservedQuantity: newReserved,
-                            availableQuantity: newTotal - newReserved,
-                            stockQuantity: newTotal - newReserved, // Mirror update
+                            totalQuantity: newTotal, reservedQuantity: newReserved,
+                            availableQuantity: newTotal - newReserved, stockQuantity: newTotal - newReserved,
                             updatedAt: now
                         });
                     }
@@ -704,46 +643,25 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                 // 3. COMMON WRITES (Ledger + Order)
                 const ledgerId = db.collection("ledgerEntries").doc().id;
                 transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
-                    id: ledgerId,
-                    transactionId: mopaySession.transactionId || `MOPAY_${sessionId}`,
-                    debitAccount: "system_mopay_clearing",
-                    creditAccount: "system_order_escrow",
-                    amountMinorUnits: order.totalMinorUnits,
-                    currency: "LSL",
-                    reference: `ORDER_CONFIRM_MOPAY_${order.id}`,
-                    involvedAccounts: ["system_mopay_clearing", "system_order_escrow"],
-                    timestamp: now
+                    id: ledgerId, transactionId: mopaySession.transactionId || `MOPAY_${sessionId}`,
+                    debitAccount: "system_mopay_clearing", creditAccount: "system_order_escrow",
+                    amountMinorUnits: order.totalMinorUnits, currency: "LSL",
+                    reference: `ORDER_CONFIRM_MOPAY_${order.id}`, timestamp: now
                 });
 
                 const updates: Record<string, any> = {
-                    status: "CONFIRMED",
-                    paymentStatus: "PAID",
-                    inventoryStatus: "COMMITTED",
-                    settlementStatus: "ESCROW_HOLD",
-                    gatewayTransactionId: mopaySession.transactionId,
-                    updatedAt: now
+                    status: "CONFIRMED", paymentStatus: "PAID", inventoryStatus: "COMMITTED",
+                    settlementStatus: "ESCROW_HOLD", gatewayTransactionId: mopaySession.transactionId, updatedAt: now
                 };
 
-                // Type-Specific Initial Fulfillment Status
                 switch (freshOrder.type) {
-                    case "FOOD_ORDER":
-                        updates.fulfillmentStatus = "PREPARING";
-                        break;
-                    case "SERVICE_BOOKING":
-                        updates.fulfillmentStatus = "READY"; // Service provider is notified
-                        break;
+                    case "FOOD_ORDER": updates.fulfillmentStatus = "PREPARING"; break;
+                    case "SERVICE_BOOKING": updates.fulfillmentStatus = "READY"; break;
                     case "PRODUCT_PURCHASE":
-                    case "BULK_PURCHASE":
-                        updates.fulfillmentStatus = "PREPARING";
-                        break;
-                    case "DELIVERY_REQUEST":
-                        updates.fulfillmentStatus = "PENDING"; // Driver assignment needed
-                        break;
+                    case "BULK_PURCHASE": updates.fulfillmentStatus = "PREPARING"; break;
+                    case "DELIVERY_REQUEST": updates.fulfillmentStatus = "PENDING"; break;
                 }
-
                 transaction.update(orderDoc.ref, updates);
-
-
                 return { status: "SUCCESS" };
             });
 
@@ -752,60 +670,58 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
             }
             return { status: "SUCCESS", orderId: order.id };
         } else {
-            // STEP 7: IDEMPOTENT INVENTORY RELEASE
-            if (mopaySession.transactionStatus === "CANCELLED" || mopaySession.transactionStatus === "FAILED") {
+            // STEP 7: Terminal Failure OR Hold
+            const isTerminalFailure = mopaySession.transactionStatus === "CANCELLED" || mopaySession.transactionStatus === "FAILED";
+
+            if (isTerminalFailure) {
                 await db.runTransaction(async (transaction) => {
                     const freshOrderDoc = await transaction.get(orderDoc.ref);
                     const freshOrder = freshOrderDoc.data()!;
-
                     if (freshOrder.status !== "PENDING" && freshOrder.status !== "RESERVED") return;
 
-                    const resQuery = await db.collection("reservations").where("orderId", "==", order.id).get();
-                    const listingSnaps = [];
-                    const reservationSnaps = [];
-
-                    for (const resDoc of resQuery.docs) {
-                        const reservation = resDoc.data();
-                        if (reservation.status !== "ACTIVE") continue;
-                        const listingRef = db.collection("listings").doc(reservation.listingId);
-                        const listingSnap = await transaction.get(listingRef);
-                        reservationSnaps.push({ ref: resDoc.ref, data: reservation });
-                        listingSnaps.push({ ref: listingRef, snap: listingSnap });
-                    }
-
                     const now = admin.firestore.Timestamp.now();
-                    for (const res of reservationSnaps) {
-                        transaction.update(res.ref, { status: "RELEASED", releasedAt: now, updatedAt: now });
-                        const l = listingSnaps.find(ls => ls.ref.id === res.data.listingId)!;
-                        const lData = l.snap.data()!;
-                        const currentTotal = lData.totalQuantity || 0;
-                        const currentReserved = lData.reservedQuantity || 0;
+                    const isService = freshOrder.type === "SERVICE_BOOKING";
 
-                        const newReserved = Math.max(0, currentReserved - res.data.quantity);
-                        transaction.update(l.ref, {
-                            reservedQuantity: newReserved,
-                            availableQuantity: currentTotal - newReserved,
-                            stockQuantity: currentTotal - newReserved,
-                            updatedAt: now
+                    if (isService && freshOrder.slotId) {
+                        const slotRef = db.collection("availability").doc(freshOrder.shopId).collection("slots").doc(freshOrder.slotId);
+                        transaction.update(slotRef, {
+                            status: "AVAILABLE", reservedBy: null, expiresAt: null, orderId: null, updatedAt: now
                         });
+                    } else {
+                        const resQuery = await db.collection("reservations").where("orderId", "==", order.id).get();
+                        for (const resDoc of resQuery.docs) {
+                            const reservation = resDoc.data();
+                            if (reservation.status !== "ACTIVE") continue;
+                            const listingRef = db.collection("listings").doc(reservation.listingId);
+                            const listingSnap = await transaction.get(listingRef);
+                            transaction.update(resDoc.ref, { status: "RELEASED", releasedAt: now, updatedAt: now });
+                            if (listingSnap.exists) {
+                                const lData = listingSnap.data()!;
+                                const newReserved = Math.max(0, (lData.reservedQuantity || 0) - reservation.quantity);
+                                transaction.update(listingRef, {
+                                    reservedQuantity: newReserved,
+                                    availableQuantity: (lData.totalQuantity || 0) - newReserved,
+                                    stockQuantity: (lData.totalQuantity || 0) - newReserved,
+                                    updatedAt: now
+                                });
+                            }
+                        }
                     }
-
                     transaction.update(orderDoc.ref, {
                         status: mopaySession.transactionStatus === "CANCELLED" ? "CANCELLED" : "FAILED",
-                        paymentStatus: mopaySession.transactionStatus,
-                        updatedAt: now
+                        paymentStatus: mopaySession.transactionStatus, updatedAt: now
                     });
                 });
+            } else if (mopaySession.transactionStatus === "PENDING") {
+                await orderDoc.ref.update({ paymentStatus: "PENDING", updatedAt: admin.firestore.Timestamp.now() });
             } else {
                 await orderDoc.ref.update({
-                    paymentStatus: mopaySession.transactionStatus,
+                    status: "HOLD", paymentStatus: "UNKNOWN", paymentStatusRaw: mopaySession.transactionStatus,
                     updatedAt: admin.firestore.Timestamp.now()
                 });
             }
-
             return { status: mopaySession.transactionStatus, orderId: order.id };
         }
-
     } catch (error: any) {
         console.error("Payment verification failed:", error);
         throw new HttpsError("failed-precondition", error.message);
@@ -831,7 +747,6 @@ export const updateOrderStatus = onCall(async (request) => {
             if (!orderDoc.exists) throw new Error("Order not found");
             const order = orderDoc.data()!;
 
-            // Authorization
             const isAdmin = auth.token.admin === true;
             const isSeller = order.sellerId === auth.uid;
             const isBuyer = order.buyerId === auth.uid;
@@ -867,7 +782,6 @@ export const cancelOrder = onCall(async (request) => {
 
     try {
         await db.runTransaction(async (transaction) => {
-            // 1. Idempotency Check
             if (idempotencyKey) {
                 const idempotencyRef = db.collection("idempotencyKeys").doc(idempotencyKey);
                 const idempotencyDoc = await transaction.get(idempotencyRef);
@@ -883,12 +797,8 @@ export const cancelOrder = onCall(async (request) => {
                 throw new Error("Unauthorized");
             }
 
-            // IDEMPOTENCY: Check if already cancelled
-            if (order.status === "CANCELLED" || order.status === "REFUNDED") {
-                return; // Already processed
-            }
+            if (order.status === "CANCELLED" || order.status === "REFUNDED") return;
 
-            // Refund logic for SWIFT_WALLET payment
             if (order.paymentMethod === "SWIFT_WALLET" && order.status === "CONFIRMED") {
                 const walletRef = db.collection("wallets").doc(order.buyerId);
                 const walletDoc = await transaction.get(walletRef);
@@ -898,23 +808,16 @@ export const cancelOrder = onCall(async (request) => {
                         availableBalanceMinorUnits: currentBalance + order.totalMinorUnits,
                         updatedAt: admin.firestore.FieldValue.serverTimestamp()
                     });
-
-                    // Ledger Entry
                     const ledgerId = db.collection("ledgerEntries").doc().id;
                     transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
-                        id: ledgerId,
-                        debitAccount: "system_order_escrow",
-                        creditAccount: `user_${order.buyerId}`,
-                        amountMinorUnits: order.totalMinorUnits,
-                        currency: "LSL",
-                        reference: `ORDER_REFUND_${orderId}`,
+                        id: ledgerId, debitAccount: "system_order_escrow", creditAccount: `user_${order.buyerId}`,
+                        amountMinorUnits: order.totalMinorUnits, currency: "LSL", reference: `ORDER_REFUND_${orderId}`,
                         timestamp: admin.firestore.FieldValue.serverTimestamp()
                     });
                 }
             }
 
-            // INVENTORY RESTORATION (READ ALL BEFORE WRITE)
-            const isService = order.fulfillmentType === "SERVICE";
+            const isService = order.type === "SERVICE_BOOKING";
             const reservationSnaps = [];
             const listingSnaps = [];
             let slotRef = null;
@@ -933,51 +836,30 @@ export const cancelOrder = onCall(async (request) => {
                 }
             }
 
-            // APPLY RESTORATION (ALL WRITES AFTER ALL READS)
             const now = admin.firestore.Timestamp.now();
-
             if (isService && slotRef) {
                 transaction.update(slotRef, {
-                    status: "AVAILABLE",
-                    reservedBy: null,
-                    expiresAt: null,
-                    orderId: null,
-                    updatedAt: now
+                    status: "AVAILABLE", reservedBy: null, expiresAt: null, orderId: null, updatedAt: now
                 });
             } else {
                 for (const { ref, data } of reservationSnaps) {
                     transaction.update(ref, { status: "RELEASED", releasedAt: now, updatedAt: now });
-                    const l = listingSnaps.find(ls \u003d\u003e ls.ref.id === data.listingId)!;
+                    const l = listingSnaps.find(ls => ls.ref.id === data.listingId)!;
                     const lData = l.snap.data()!;
-
-                    const currentTotal = lData.totalQuantity || 0;
-                    const currentReserved = lData.reservedQuantity || 0;
-
-                    const newReserved = Math.max(0, currentReserved - data.quantity);
+                    const newReserved = Math.max(0, (lData.reservedQuantity || 0) - data.quantity);
                     transaction.update(l.ref, {
                         reservedQuantity: newReserved,
-                        availableQuantity: currentTotal - newReserved,
-                        stockQuantity: currentTotal - newReserved,
+                        availableQuantity: (lData.totalQuantity || 0) - newReserved,
+                        stockQuantity: (lData.totalQuantity || 0) - newReserved,
                         updatedAt: now
                     });
                 }
             }
 
-
-            transaction.update(orderRef, {
-                status: "CANCELLED",
-                cancelReason: reason || "User requested",
-                updatedAt: now
-            });
-
+            transaction.update(orderRef, { status: "CANCELLED", cancelReason: reason || "User requested", updatedAt: now });
             if (idempotencyKey) {
                 const idempotencyRef = db.collection("idempotencyKeys").doc(idempotencyKey);
-                transaction.set(idempotencyRef, {
-                    orderId: orderId,
-                    userId: auth.uid,
-                    action: "CANCEL_ORDER",
-                    createdAt: admin.firestore.FieldValue.serverTimestamp()
-                });
+                transaction.set(idempotencyRef, { orderId, userId: auth.uid, action: "CANCEL_ORDER", createdAt: now });
             }
         });
         return { success: true };
@@ -1000,7 +882,6 @@ export const confirmMopayPayment = onCall(async (request) => {
 
     try {
         await db.runTransaction(async (transaction) => {
-            // 1. Idempotency Check
             if (idempotencyKey) {
                 const idempotencyRef = db.collection("idempotencyKeys").doc(idempotencyKey);
                 const idempotencyDoc = await transaction.get(idempotencyRef);
@@ -1012,63 +893,44 @@ export const confirmMopayPayment = onCall(async (request) => {
             if (!orderDoc.exists) throw new Error("Order not found");
             const order = orderDoc.data()!;
 
-            if (order.status === "CONFIRMED") return; // Already confirmed
+            if (order.status === "CONFIRMED") return;
             if (order.status !== "PENDING" && order.status !== "RESERVED") {
                 throw new Error(`Order is in state ${order.status} and cannot be confirmed.`);
             }
 
-            const isService = order.fulfillmentType === "SERVICE";
+            const isService = order.type === "SERVICE_BOOKING";
             const now = admin.firestore.Timestamp.now();
 
-            // 2. AUTHORITATIVE INVENTORY COMMITMENT
             if (isService) {
-                const shopId = order.shopId;
                 const slotId = order.slotId;
                 if (slotId) {
-                    const slotRef = db.collection("availability").doc(shopId).collection("slots").doc(slotId);
+                    const slotRef = db.collection("availability").doc(order.shopId).collection("slots").doc(slotId);
                     const slotSnap = await transaction.get(slotRef);
                     if (slotSnap.exists && slotSnap.data()?.status === "RESERVED") {
                         transaction.update(slotRef, { status: "BOOKED", updatedAt: now });
-
                         const appointmentRef = db.collection("appointments").doc(orderId);
                         transaction.set(appointmentRef, {
-                            id: orderId,
-                            orderId: orderId,
-                            buyerId: order.buyerId,
-                            sellerId: order.sellerId,
-                            shopId: order.shopId,
-                            listingId: order.items[0]?.listingId,
-                            listingTitle: order.items[0]?.title,
-                            appointmentStartTime: order.appointmentStartTime,
-                            status: "SCHEDULED",
-                            createdAt: now,
-                            updatedAt: now
+                            id: orderId, orderId, buyerId: order.buyerId, sellerId: order.sellerId, shopId: order.shopId,
+                            listingId: order.items[0]?.listingId, listingTitle: order.items[0]?.title,
+                            appointmentStartTime: order.appointmentStartTime, status: "SCHEDULED", createdAt: now, updatedAt: now
                         });
                     }
                 }
             } else {
-                // Physical items: Commit reservations
                 const resQuery = await db.collection("reservations").where("orderId", "==", orderId).get();
                 for (const resDoc of resQuery.docs) {
                     const resData = resDoc.data();
                     if (resData.status === "ACTIVE") {
                         transaction.update(resDoc.ref, { status: "COMMITTED", committedAt: now, updatedAt: now });
-
                         const listingRef = db.collection("listings").doc(resData.listingId);
                         const lSnap = await transaction.get(listingRef);
                         if (lSnap.exists) {
                             const lData = lSnap.data()!;
-                            const currentTotal = lData.totalQuantity || 0;
-                            const currentReserved = lData.reservedQuantity || 0;
-
-                            const newTotal = Math.max(0, currentTotal - resData.quantity);
-                            const newReserved = Math.max(0, currentReserved - resData.quantity);
-
+                            const newTotal = Math.max(0, (lData.totalQuantity || 0) - resData.quantity);
+                            const newReserved = Math.max(0, (lData.reservedQuantity || 0) - resData.quantity);
                             transaction.update(listingRef, {
-                                totalQuantity: newTotal,
-                                reservedQuantity: newReserved,
-                                availableQuantity: newTotal - newReserved,
-                                stockQuantity: newTotal - newReserved, // Mirror update
+                                totalQuantity: newTotal, reservedQuantity: newReserved,
+                                availableQuantity: newTotal - newReserved, stockQuantity: newTotal - newReserved,
                                 updatedAt: now
                             });
                         }
@@ -1076,36 +938,16 @@ export const confirmMopayPayment = onCall(async (request) => {
                 }
             }
 
-            // 3. LEDGER & ORDER UPDATE
             const ledgerId = db.collection("ledgerEntries").doc().id;
             transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
-                id: ledgerId,
-                transactionId: paymentId,
-                debitAccount: "system_mopay_clearing",
-                creditAccount: "system_order_escrow",
-                amountMinorUnits: order.totalMinorUnits,
-                currency: "LSL",
-                reference: `ORDER_CONFIRM_MANUAL_${orderId}`,
-                involvedAccounts: ["system_mopay_clearing", "system_order_escrow"],
-                timestamp: now
+                id: ledgerId, transactionId: paymentId, debitAccount: "system_mopay_clearing", creditAccount: "system_order_escrow",
+                amountMinorUnits: order.totalMinorUnits, currency: "LSL", reference: `ORDER_CONFIRM_MANUAL_${orderId}`, timestamp: now
             });
 
-            transaction.update(orderRef, {
-                status: "CONFIRMED",
-                paymentId,
-                paymentStatus: "SUCCESS",
-                updatedAt: now
-            });
-
-            // 4. Record Idempotency
+            transaction.update(orderRef, { status: "CONFIRMED", paymentId, paymentStatus: "SUCCESS", updatedAt: now });
             if (idempotencyKey) {
                 const idempotencyRef = db.collection("idempotencyKeys").doc(idempotencyKey);
-                transaction.set(idempotencyRef, {
-                    orderId: orderId,
-                    userId: auth.uid,
-                    action: "CONFIRM_PAYMENT",
-                    createdAt: now
-                });
+                transaction.set(idempotencyRef, { orderId, userId: auth.uid, action: "CONFIRM_PAYMENT", createdAt: now });
             }
         });
         return { success: true };
@@ -1142,13 +984,6 @@ export const initiateSubscription = onCall(async (request) => {
 
 /**
  * Executes the atomic reservation of a slot and the creation of a service booking.
- *
- * Contract Phase 13D:
- * - Transactional atomicity.
- * - Idempotency.
- * - Buyer identity enforcement.
- * - Slot validation.
- * - No financial side effects.
  */
 export const initiateServiceBooking = onCall({ secrets: [MOPAY_API_KEY] }, async (request) => {
     const auth = request.auth;
@@ -1165,24 +1000,21 @@ export const initiateServiceBooking = onCall({ secrets: [MOPAY_API_KEY] }, async
 
     try {
         const result = await db.runTransaction(async (transaction) => {
-            // 1. Idempotency Check
             const idempotencyRef = db.collection("bookingIdempotency").doc(idempotencyKey);
             const idempotencyDoc = await transaction.get(idempotencyRef);
             if (idempotencyDoc.exists) {
                 const data = idempotencyDoc.data()!;
-                // Security check: Ensure retry belongs to the same user
                 if (data.buyerId !== auth.uid) throw new Error("Idempotency key collision");
                 return { orderId: data.orderId, alreadyExists: true };
             }
 
-            // 2. Authoritative Listing Read
             const listingRef = db.collection("listings").doc(listingId);
             const listingSnap = await transaction.get(listingRef);
             if (!listingSnap.exists) throw new Error("Listing not found");
             const listing = listingSnap.data()!;
 
-            if (listing.listingType !== "SET_APPOINTMENT") {
-                throw new Error("Listing is not a service appointment");
+            if (listing.listingType !== "SET_APPOINTMENT" && listing.listingType !== "BOOKABLE_SERVICE") {
+                throw new Error("Listing is not a bookable service");
             }
 
             const shopId = listing.shopId;
@@ -1190,81 +1022,41 @@ export const initiateServiceBooking = onCall({ secrets: [MOPAY_API_KEY] }, async
             const currency = listing.priceCurrency || "LSL";
             const title = listing.title || "Service";
 
-            // 3. Authoritative Slot Read & Expiration Check
             const slotRef = db.collection("availability").doc(shopId).collection("slots").doc(slotId);
             const slotSnap = await transaction.get(slotRef);
             if (!slotSnap.exists) throw new Error("Slot not found");
             const slot = slotSnap.data()!;
 
-            const slotStatus = slot.status;
-            const expiresAt = slot.expiresAt || 0; // ms
-            const startTime = slot.startTime || 0;
-
-            const isAvailable = slotStatus === "AVAILABLE" || (slotStatus === "RESERVED" && expiresAt < nowMs);
+            const isAvailable = slot.status === "AVAILABLE" || (slot.status === "RESERVED" && (slot.expiresAt || 0) < nowMs);
             if (!isAvailable) throw new Error("Slot is no longer available");
 
-            // 4. Create Order (PENDING)
             const orderId = db.collection("orders").doc().id;
+            const startTime = slot.startTime || 0;
             const startDate = new Date(startTime);
+            const clientPayload = request.data.payload || {};
+
             const orderData = {
-                id: orderId,
-                buyerId: auth.uid,
-                sellerId: listing.sellerId,
-                shopId: shopId,
+                id: orderId, buyerId: auth.uid, sellerId: listing.sellerId, shopId: shopId,
                 type: "SERVICE_BOOKING",
-                participants: {
-                    "REQUESTER": auth.uid,
-                    "LISTING_AUTHOR": listing.sellerId,
-                    "SERVICE_PROVIDER": listing.sellerId
-                },
-                status: "PENDING",
-                fulfillmentType: "SERVICE",
-                slotId: slotId,
-                appointmentStartTime: startTime,
-                totalMinorUnits: priceMinorUnits,
-                currency: currency,
-                idempotencyKey: idempotencyKey,
-                paymentMethod: paymentMethod || "MOPAY",
-                provider: provider || null,
-                phoneNumber: phoneNumber,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                items: [{
-                    listingId: listingId,
-                    title: title,
-                    quantity: 1,
-                    unitPriceMinorUnits: priceMinorUnits,
-                    unitPriceCurrency: currency
-                }],
+                participants: { "REQUESTER": auth.uid, "LISTING_AUTHOR": listing.sellerId, "SERVICE_PROVIDER": listing.sellerId },
+                status: "PENDING", fulfillmentType: "SERVICE", slotId: slotId, appointmentStartTime: startTime,
+                totalMinorUnits: priceMinorUnits, currency: currency, idempotencyKey,
+                paymentMethod: paymentMethod || "MOPAY", provider: provider || null, phoneNumber,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                items: [{ listingId, title, quantity: 1, unitPriceMinorUnits: priceMinorUnits, unitPriceCurrency: currency }],
                 payload: {
-                    serviceId: listingId,
-                    requestedDate: startDate.toISOString().split("T")[0],
+                    serviceId: listingId, requestedDate: startDate.toISOString().split("T")[0],
                     requestedTime: startDate.toISOString().split("T")[1].substring(0, 5),
-                    durationMinutes: listing.durationMinutes || 0,
-                    locationType: "ON_SITE"
+                    durationMinutes: listing.durationMinutes || 0, locationType: clientPayload.locationType || "ON_SITE"
                 }
             };
 
-
             transaction.set(db.collection("orders").doc(orderId), orderData);
-
-            // 5. Reserve Slot
             transaction.update(slotRef, {
-                status: "RESERVED",
-                reservedBy: auth.uid,
-                expiresAt: nowMs + (15 * 60 * 1000), // 15 mins from server time
-                orderId: orderId,
+                status: "RESERVED", reservedBy: auth.uid, expiresAt: nowMs + (15 * 60 * 1000), orderId,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
-
-            // 6. Record Idempotency
-            transaction.set(idempotencyRef, {
-                orderId: orderId,
-                buyerId: auth.uid,
-                listingId: listingId,
-                slotId: slotId,
-                createdAt: admin.firestore.FieldValue.serverTimestamp()
-            });
+            transaction.set(idempotencyRef, { orderId, buyerId: auth.uid, listingId, slotId, createdAt: serverNow });
 
             return { orderId, total: priceMinorUnits, title, shopId, alreadyExists: false };
         });
@@ -1272,64 +1064,30 @@ export const initiateServiceBooking = onCall({ secrets: [MOPAY_API_KEY] }, async
         const { orderId, total, title, shopId, alreadyExists } = result;
         if (alreadyExists) return { orderId };
 
-        // STEP 2: MoPay Initiation (Outside transaction)
         if (paymentMethod === "MOPAY" && orderId) {
             const mopayRequest = {
-                amount: (total / 100).toFixed(2),
-                reference: orderId,
-                redirectUrl: "swiftshop://checkout/verify",
-                description: `Booking: ${title}`,
-                customerEmail: auth.token.email,
-                customerName: auth.token.name || auth.uid,
+                amount: (total / 100).toFixed(2), reference: orderId, redirectUrl: "swiftshop://checkout/verify",
+                description: `Booking: ${title}`, customerEmail: auth.token.email, customerName: auth.token.name || auth.uid,
             };
-
             const mopayResponse = await MopayClient.initiatePaymentSession(mopayRequest);
-
             if (mopayResponse.success && mopayResponse.sessionId) {
                 await db.collection("orders").doc(orderId).update({
-                    mopaySessionId: mopayResponse.sessionId,
-                    paymentUrl: mopayResponse.paymentUrl,
+                    mopaySessionId: mopayResponse.sessionId, paymentUrl: mopayResponse.paymentUrl,
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 });
-
-                return {
-                    orderId,
-                    paymentUrl: mopayResponse.paymentUrl,
-                    mopaySessionId: mopayResponse.sessionId
-                };
+                return { orderId, paymentUrl: mopayResponse.paymentUrl, mopaySessionId: mopayResponse.sessionId };
             } else {
-                console.error("Booking MoPay Session Creation Failed:", mopayResponse.message);
-
-                // STEP 3: Compensating Transaction (Release Slot on Gateway Failure)
                 await db.runTransaction(async (transaction) => {
-                    const orderRef = db.collection("orders").doc(orderId);
                     const slotRef = db.collection("availability").doc(shopId).collection("slots").doc(slotId);
-
                     const slotSnap = await transaction.get(slotRef);
                     if (slotSnap.exists && slotSnap.data()?.orderId === orderId) {
-                        transaction.update(slotRef, {
-                            status: "AVAILABLE",
-                            reservedBy: null,
-                            expiresAt: null,
-                            orderId: null,
-                            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                        });
+                        transaction.update(slotRef, { status: "AVAILABLE", reservedBy: null, expiresAt: null, orderId: null, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
                     }
-
-                    transaction.update(orderRef, {
-                        status: "FAILED",
-                        error: mopayResponse.message || "Failed to initiate payment gateway",
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                    });
+                    transaction.update(db.collection("orders").doc(orderId), { status: "FAILED", error: mopayResponse.message || "Gateway failure", updatedAt: admin.firestore.FieldValue.serverTimestamp() });
                 });
-
-                return {
-                    orderId,
-                    error: mopayResponse.message || "Failed to initiate payment gateway"
-                };
+                return { orderId, error: mopayResponse.message || "Gateway failure" };
             }
         }
-
         return { orderId };
     } catch (error: any) {
         console.error("Booking initiation failed:", error);
@@ -1365,44 +1123,23 @@ export const createListing = onCall(async (request) => {
             const activeListingCount = profileDoc.data()!.activeListingCount || 0;
 
             const listingId = db.collection("listings").doc().id;
-            const isAvailable = listing.isAvailable !== false; // Default to true
+            const isAvailable = listing.isAvailable !== false;
 
-            // AUTHORITATIVE INVENTORY INITIALIZATION
-            // The client provides 'requestedQuantity' (formerly stockQuantity).
-            // The server establishes the canonical reservation contract.
             const requestedQty = parseInt(listing.stockQuantity || listing.totalQuantity || "0");
             const initialQuantity = isNaN(requestedQty) ? 0 : Math.max(0, requestedQty);
 
             const newListing = {
-                ...listing,
-                id: listingId,
-                sellerId: uid,
-                isAvailable,
-                // Canonical Inventory Contract
-                totalQuantity: initialQuantity,
-                reservedQuantity: 0,
-                availableQuantity: initialQuantity,
-                // Compatibility Mirror
-                stockQuantity: initialQuantity,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                ...listing, id: listingId, sellerId: uid, isAvailable,
+                totalQuantity: initialQuantity, reservedQuantity: 0, availableQuantity: initialQuantity, stockQuantity: initialQuantity,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp()
             };
 
             transaction.set(db.collection("listings").doc(listingId), newListing);
-
-            // Update counters
-            transaction.update(shopRef, {
-                listingCount: (shop.listingCount || 0) + 1,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
+            transaction.update(shopRef, { listingCount: (shop.listingCount || 0) + 1, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
 
             if (isAvailable) {
-                transaction.update(profileRef, {
-                    activeListingCount: activeListingCount + 1,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                });
+                transaction.update(profileRef, { activeListingCount: activeListingCount + 1, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
             }
-
             return listingId;
         });
     } catch (error: any) {
@@ -1427,30 +1164,19 @@ export const deleteListing = onCall(async (request) => {
             if (!listingDoc.exists) throw new Error("Listing not found");
             const listing = listingDoc.data()!;
 
-            if (listing.sellerId !== auth.uid && !auth.token.admin) {
-                throw new Error("Unauthorized");
-            }
+            if (listing.sellerId !== auth.uid && !auth.token.admin) throw new Error("Unauthorized");
 
             const shopRef = db.collection("shops").doc(listing.shopId);
             const shopDoc = await transaction.get(shopRef);
-
             const profileRef = db.collection("profiles").doc(listing.sellerId);
             const profileDoc = await transaction.get(profileRef);
 
             transaction.delete(listingRef);
-
             if (shopDoc.exists) {
-                transaction.update(shopRef, {
-                    listingCount: Math.max(0, (shopDoc.data()!.listingCount || 0) - 1),
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                });
+                transaction.update(shopRef, { listingCount: Math.max(0, (shopDoc.data()!.listingCount || 0) - 1), updatedAt: admin.firestore.FieldValue.serverTimestamp() });
             }
-
             if (profileDoc.exists && listing.isAvailable) {
-                transaction.update(profileRef, {
-                    activeListingCount: Math.max(0, (profileDoc.data()!.activeListingCount || 0) - 1),
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                });
+                transaction.update(profileRef, { activeListingCount: Math.max(0, (profileDoc.data()!.activeListingCount || 0) - 1), updatedAt: admin.firestore.FieldValue.serverTimestamp() });
             }
         });
         return { success: true };
@@ -1461,18 +1187,6 @@ export const deleteListing = onCall(async (request) => {
 
 /**
  * Deletes a shop and cascades to all of its listings.
- *
- * NOTE ON ATOMICITY: Firestore transactions cap at 500 writes. A shop's
- * listing count is unbounded over time, so this cannot safely be one
- * runTransaction() the way deleteListing() is. Listing deletes are done in
- * batches (each batch atomic; the overall cascade is not atomic across
- * batches). The shop doc delete + profile counter update happen in a final
- * transaction after all listing batches have committed.
- *
- * KNOWN GAP (not handled here): Storage media for the shop (logoUrl,
- * coverUrl) and its listings (imageUrls, videoUrl) is not deleted. This is
- * a deliberate scope decision, not an oversight -- flagged for a separate
- * pass.
  */
 export const deleteShop = onCall(async (request) => {
     const auth = request.auth;
@@ -1489,14 +1203,9 @@ export const deleteShop = onCall(async (request) => {
         if (!shopDoc.exists) throw new HttpsError("not-found", "Shop not found");
         const shop = shopDoc.data()!;
 
-        if (shop.ownerId !== auth.uid && !auth.token.admin) {
-            throw new HttpsError("permission-denied", "Not authorized to delete this shop");
-        }
+        if (shop.ownerId !== auth.uid && !auth.token.admin) throw new HttpsError("permission-denied", "Unauthorized");
 
-        const listingsSnapshot = await db.collection("listings")
-            .where("shopId", "==", shopId)
-            .get();
-
+        const listingsSnapshot = await db.collection("listings").where("shopId", "==", shopId).get();
         let activeListingsDeleted = 0;
         const listingDocs = listingsSnapshot.docs;
         const BATCH_SIZE = 400;
@@ -1505,8 +1214,7 @@ export const deleteShop = onCall(async (request) => {
             const chunk = listingDocs.slice(i, i + BATCH_SIZE);
             const batch = db.batch();
             for (const doc of chunk) {
-                const listing = doc.data();
-                if (listing.isAvailable) activeListingsDeleted++;
+                if (doc.data().isAvailable) activeListingsDeleted++;
                 batch.delete(doc.ref);
             }
             await batch.commit();
@@ -1515,20 +1223,15 @@ export const deleteShop = onCall(async (request) => {
         await db.runTransaction(async (transaction) => {
             const profileRef = db.collection("profiles").doc(shop.ownerId);
             const profileDoc = await transaction.get(profileRef);
-
             transaction.delete(shopRef);
-
             if (profileDoc.exists) {
-                const currentShopCount = profileDoc.data()!.shopCount || 0;
-                const currentActiveCount = profileDoc.data()!.activeListingCount || 0;
                 transaction.update(profileRef, {
-                    shopCount: Math.max(0, currentShopCount - 1),
-                    activeListingCount: Math.max(0, currentActiveCount - activeListingsDeleted),
+                    shopCount: Math.max(0, (profileDoc.data()!.shopCount || 0) - 1),
+                    activeListingCount: Math.max(0, (profileDoc.data()!.activeListingCount || 0) - activeListingsDeleted),
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 });
             }
         });
-
         return { success: true, listingsDeleted: listingDocs.length };
     } catch (error: any) {
         if (error instanceof HttpsError) throw error;
@@ -1545,36 +1248,26 @@ export const createShop = onCall(async (request) => {
 
     const uid = auth.uid;
     const shop = request.data;
-
     const db = admin.firestore();
 
     try {
         return await db.runTransaction(async (transaction) => {
             const userDoc = await transaction.get(db.collection("users").doc(uid));
             if (!userDoc.exists) throw new Error("User not found");
-            const user = userDoc.data()!;
-            const tier = user.tier || "BASIC";
+            const tier = userDoc.data()!.tier || "BASIC";
 
             const profileRef = db.collection("profiles").doc(uid);
             const profileDoc = await transaction.get(profileRef);
             if (!profileDoc.exists) throw new Error("Profile not found");
 
-            // ── IDEMPOTENCY CHECK ──────────────────────────────────────────────────
-            // If the client-provided shop ID exists and is owned by the user, return it.
             if (shop.id) {
-                const existingRef = db.collection("shops").doc(shop.id);
-                const existingDoc = await transaction.get(existingRef);
+                const existingDoc = await transaction.get(db.collection("shops").doc(shop.id));
                 if (existingDoc.exists) {
-                    if (existingDoc.data()!.ownerId === uid) {
-                        console.log(`Idempotent creation for shop ${shop.id}`);
-                        return shop.id;
-                    }
+                    if (existingDoc.data()!.ownerId === uid) return shop.id;
                     throw new Error("Shop ID already taken");
                 }
             }
 
-            // ── AUTHORITATIVE TIER ENFORCEMENT ──────────────────────────────────────
-            // We use transaction.get(query) to ensure a concurrency-safe count.
             const shopsQuery = db.collection("shops").where("ownerId", "==", uid);
             const shopsSnapshot = await transaction.get(shopsQuery);
             const realShopCount = shopsSnapshot.size;
@@ -1583,29 +1276,14 @@ export const createShop = onCall(async (request) => {
             if (tier === "PREMIUM") maxShops = 3;
             if (tier === "ELITE") maxShops = -1;
 
-            if (maxShops !== -1 && realShopCount >= maxShops) {
-                throw new Error(`Shop limit reached for ${tier} tier (${realShopCount}/${maxShops}).`);
-            }
+            if (maxShops !== -1 && realShopCount >= maxShops) throw new Error(`Shop limit reached for ${tier} tier.`);
 
             const shopId = shop.id || db.collection("shops").doc().id;
             const now = admin.firestore.FieldValue.serverTimestamp();
-
-            const newShop = {
-                ...shop,
-                id: shopId,
-                ownerId: uid,
-                isVerified: false, // Server authoritative
-                createdAt: now,
-                updatedAt: now
-            };
+            const newShop = { ...shop, id: shopId, ownerId: uid, isVerified: false, createdAt: now, updatedAt: now };
 
             transaction.set(db.collection("shops").doc(shopId), newShop);
-
-            // Sync denormalized counter
-            transaction.update(profileRef, {
-                shopCount: realShopCount + 1,
-                updatedAt: now
-            });
+            transaction.update(profileRef, { shopCount: realShopCount + 1, updatedAt: now });
 
             return shopId;
         });
@@ -1622,7 +1300,7 @@ export const updateListing = onCall(async (request) => {
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
     const { listingId, updates } = request.data;
-    if (!listingId || !updates) throw new HttpsError("invalid-argument", "Missing listingId or updates");
+    if (!listingId || !updates) throw new HttpsError("invalid-argument", "Missing data");
 
     const db = admin.firestore();
 
@@ -1633,20 +1311,13 @@ export const updateListing = onCall(async (request) => {
             if (!listingDoc.exists) throw new Error("Listing not found");
             const listing = listingDoc.data()!;
 
-            // 1. Authoritative Ownership Verification
-            if (listing.sellerId !== auth.uid && !auth.token.admin) {
-                throw new Error("Unauthorized: You do not own this listing");
-            }
+            if (listing.sellerId !== auth.uid && !auth.token.admin) throw new Error("Unauthorized");
 
-            // 2. Authoritative Shop Ownership Verification
             const shopRef = db.collection("shops").doc(listing.shopId);
             const shopDoc = await transaction.get(shopRef);
             if (!shopDoc.exists) throw new Error("Parent shop not found");
-            if (shopDoc.data()?.ownerId !== auth.uid && !auth.token.admin) {
-                throw new Error("Unauthorized: You do not own the parent shop");
-            }
+            if (shopDoc.data()?.ownerId !== auth.uid && !auth.token.admin) throw new Error("Unauthorized");
 
-            // 3. Allowed Field Filtering (Prevent forgery of system/engagement fields)
             const allowedFields = [
                 "title", "description", "category", "priceMinorUnits", "priceCurrency",
                 "imageUrls", "videoUrl", "tags", "isAvailable", "isSponsored",
@@ -1655,30 +1326,21 @@ export const updateListing = onCall(async (request) => {
 
             const filteredUpdates: Record<string, any> = {};
             for (const key of Object.keys(updates)) {
-                if (allowedFields.includes(key)) {
-                    filteredUpdates[key] = updates[key];
-                }
+                if (allowedFields.includes(key)) filteredUpdates[key] = updates[key];
             }
 
-            // 4. Inventory Invariant Enforcement
             const currentReserved = listing.reservedQuantity || 0;
             const newTotalRequested = filteredUpdates.totalQuantity;
 
             if (newTotalRequested !== undefined) {
                 const newTotal = parseInt(newTotalRequested);
                 if (isNaN(newTotal) || newTotal < 0) throw new Error("Invalid totalQuantity");
-
-                if (newTotal < currentReserved) {
-                    throw new Error(`Cannot reduce stock to ${newTotal} as ${currentReserved} units are already reserved.`);
-                }
-
-                // Maintain consistency
+                if (newTotal < currentReserved) throw new Error(`Cannot reduce stock below ${currentReserved} reserved units.`);
                 filteredUpdates.totalQuantity = newTotal;
                 filteredUpdates.availableQuantity = newTotal - currentReserved;
-                filteredUpdates.stockQuantity = newTotal - currentReserved; // Mirror
+                filteredUpdates.stockQuantity = newTotal - currentReserved;
             }
 
-            // 5. Active Listing Counter Management
             const oldAvailable = listing.isAvailable !== false;
             const newAvailable = filteredUpdates.isAvailable !== undefined ? filteredUpdates.isAvailable : oldAvailable;
 
@@ -1690,10 +1352,7 @@ export const updateListing = onCall(async (request) => {
                 const profileDoc = await transaction.get(profileRef);
                 if (profileDoc.exists) {
                     const currentCount = profileDoc.data()!.activeListingCount || 0;
-                    transaction.update(profileRef, {
-                        activeListingCount: newAvailable ? currentCount + 1 : Math.max(0, currentCount - 1),
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                    });
+                    transaction.update(profileRef, { activeListingCount: newAvailable ? currentCount + 1 : Math.max(0, currentCount - 1), updatedAt: admin.firestore.FieldValue.serverTimestamp() });
                 }
             }
         });

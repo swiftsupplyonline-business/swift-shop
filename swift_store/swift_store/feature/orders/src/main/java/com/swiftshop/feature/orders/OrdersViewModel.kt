@@ -124,8 +124,15 @@ class OrdersViewModel @Inject constructor(
 
 
     fun setRole(role: OrderRole) {
-        _currentRole.value = role
+        val currentAvailable = availableRoles.value
+        if (role in currentAvailable) {
+            _currentRole.value = role
+        } else {
+            // Unauthorized role requested, fallback to default safe role
+            _currentRole.value = OrderRole.REQUESTER
+        }
     }
+
 
     fun load() {
         refreshTrigger.tryEmit(Unit)

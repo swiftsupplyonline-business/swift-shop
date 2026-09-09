@@ -22,6 +22,8 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.Manifest
+import android.os.Build
 import com.swiftshop.core.ui.components.ErrorState
 import com.swiftshop.core.ui.components.LoadingState
 import com.swiftshop.core.ui.components.SwiftPrimaryButton
@@ -123,6 +125,8 @@ private fun ManageShopContent(
         )
     }
 
+    var pendingPickerIsLogo by remember { mutableStateOf(false) }
+
     val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { onLogoSelect(it) }
     }
@@ -130,6 +134,24 @@ private fun ManageShopContent(
         uri?.let { onCoverSelect(it) }
     }
 
+    val mediaPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+        Manifest.permission.READ_MEDIA_IMAGES
+    else
+        Manifest.permission.READ_EXTERNAL_STORAGE
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            if (pendingPickerIsLogo) logoPicker.launch("image/*")
+            else coverPicker.launch("image/*")
+        }
+    }
+
+    val launchPickerWithPermission: (Boolean) -> Unit = { isLogo ->
+        pendingPickerIsLogo = isLogo
+        permissionLauncher.launch(mediaPermission)
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -148,7 +170,7 @@ private fun ManageShopContent(
                 .height(150.dp)
                 .clip(MaterialTheme.shapes.medium)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                .clickable { coverPicker.launch("image/*") }
+                .clickable { launchPickerWithPermission(false) }
         ) {
             if (coverUrl.isNotBlank()) {
                 AsyncImage(
@@ -184,7 +206,7 @@ private fun ManageShopContent(
                     .size(80.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primaryContainer)
-                    .clickable { logoPicker.launch("image/*") },
+                    .clickable { launchPickerWithPermission(true) },
                 contentAlignment = Alignment.Center
             ) {
                 if (logoUrl.isNotBlank()) {

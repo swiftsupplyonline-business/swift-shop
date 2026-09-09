@@ -152,7 +152,9 @@ private fun OrderStatusBadge(status: OrderStatus) {
         OrderStatus.DELIVERED -> "Delivered" to SwiftShopColors.Success
         OrderStatus.CANCELLED -> "Cancelled" to SwiftShopColors.Error
         OrderStatus.REFUNDED -> "Refunded" to SwiftShopColors.Warning
+        OrderStatus.HOLD -> "On Hold" to SwiftShopColors.Warning
     }
+
     androidx.compose.foundation.layout.Box(
         modifier = Modifier
             .clip(MaterialTheme.shapes.small)
@@ -283,6 +285,7 @@ fun OrderDetailScreen(
                                             OrderStatus.CONFIRMED -> "Scheduled"
                                             OrderStatus.PENDING -> "Payment Pending"
                                             OrderStatus.CANCELLED -> "Cancelled"
+                                            OrderStatus.HOLD -> "On Hold"
                                             else -> order.status.name.lowercase().replaceFirstChar { it.uppercase() }
                                         }
                                         Text("Status: $statusLabel", style = MaterialTheme.typography.labelLarge,
@@ -429,9 +432,9 @@ fun OrderDetailScreen(
 private fun OrderProgressBar(status: OrderStatus) {
     val steps = listOf("Pending", "Confirmed", "Processing", "Dispatched", "Delivered")
     val statusIndex = when (status) {
-        OrderStatus.PENDING -> 0
+        OrderStatus.PENDING, OrderStatus.RESERVED, OrderStatus.PAYMENT_PENDING -> 0
         OrderStatus.CONFIRMED -> 1
-        OrderStatus.PROCESSING, OrderStatus.READY -> 2
+        OrderStatus.PROCESSING, OrderStatus.READY, OrderStatus.HOLD -> 2
         OrderStatus.DISPATCHED -> 3
         OrderStatus.DELIVERED -> 4
         else -> -1
