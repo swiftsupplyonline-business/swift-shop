@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.swiftshop.core.ui.components.SwiftCard
+import com.swiftshop.core.ui.components.swiftGlowBorder
 
 @Composable
 fun SettingsScreen(navController: NavController) {
@@ -195,7 +196,11 @@ private fun SettingsToggleItem(
             Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         },
         trailingContent = {
-            Switch(checked = checked, onCheckedChange = onCheckedChange)
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                modifier = if (checked) Modifier.swiftGlowBorder(shape = MaterialTheme.shapes.extraLarge) else Modifier
+            )
         },
         modifier = Modifier.clickable { onCheckedChange(!checked) }
     )

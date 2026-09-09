@@ -12,13 +12,16 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import android.graphics.Color
-
+import android.graphics.drawable.Drawable
+import androidx.savedstate.SavedStateRegistryOwner
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -35,6 +38,26 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+
+/**
+ * Typed marker presentation enum.
+ */
+enum class MapMarkerType {
+    SHOP, PRODUCT, SERVICE, FORM, DELIVERY, USER_DROP_PIN, SELLER, BUYER, DELIVERY_PROVIDER
+}
+
+/**
+ * Resolves appropriate icon for marker type.
+ */
+fun markerIconForType(type: MapMarkerType, context: android.content.Context): Drawable? {
+    val resId = when (type) {
+        MapMarkerType.SHOP -> android.R.drawable.ic_menu_myplaces
+        MapMarkerType.DELIVERY, MapMarkerType.DELIVERY_PROVIDER -> android.R.drawable.ic_menu_directions
+        MapMarkerType.BUYER -> android.R.drawable.ic_menu_view
+        else -> android.R.drawable.ic_dialog_map
+    }
+    return context.getDrawable(resId)
+}
 
 /**
  * State for [SwiftMapView]. Preserves camera position across recompositions.
@@ -82,12 +105,41 @@ fun SwiftMapView(
     polylines: List<MapPolyline> = emptyList(),
     showCenterPin: Boolean = false,
     onMapMoved: (GeoPoint) -> Unit = {},
-    onMarkerClick: (MapMarker) -> Unit = {}
+    onMarkerClick: (MapMarker) -> Unit = {},
+    currentUserProfileImageUrl: String? = null
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val savedStateRegistryOwner = context as? SavedStateRegistryOwner
+    
     val mapView = remember { MapView(context) }
     val lifecycleObserver = rememberMapLifecycleObserver(mapView)
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val lifecycle = lifecycleOwner.lifecycle
+
+    var profileMarkerDrawable by remember { mutableStateOf<Drawable?>(null) }
+
+    // Async capture of the profile pin
+    if (currentUserProfileImageUrl != null && savedStateRegistryOwner != null) {
+        Box(modifier = Modifier.size(0.dp).alpha(0f)) {
+            MapProfilePin(
+                imageUrl = currentUserProfileImageUrl,
+                isCurrentUser = true,
+                onImageLoaded = {
+                    val pinSize = 48.dp
+                    val widthPx = with(density) { pinSize.roundToPx() }
+                    val heightPx = with(density) { (pinSize + 8.dp).roundToPx() }
+                    profileMarkerDrawable = ComposeBitmapUtil.composableToDrawable(
+                        context, lifecycleOwner, savedStateRegistryOwner,
+                        widthPx, heightPx
+                    ) {
+                        MapProfilePin(imageUrl = currentUserProfileImageUrl, pinSize = pinSize, isCurrentUser = true)
+                    }
+                    mapView.invalidate()
+                }
+            )
+        }
+    }
 
     DisposableEffect(lifecycle) {
         lifecycle.addObserver(lifecycleObserver)
@@ -158,17 +210,32 @@ fun SwiftMapView(
                             onMarkerClick(m)
                             true
                         }
-                        // Default icon logic
+                        // Typed icon logic (Phase 13)
                         m.entityType?.let { type ->
-                            icon = context.getDrawable(when(type) {
-                                SwiftEntity.SHOP -> android.R.drawable.ic_menu_myplaces
-                                SwiftEntity.PROVIDER -> android.R.drawable.ic_menu_directions
-                                SwiftEntity.BUYER -> android.R.drawable.ic_menu_view
-                                else -> android.R.drawable.ic_dialog_map
-                            })
+                            icon = markerIconForType(when(type) {
+                                SwiftEntity.SHOP -> MapMarkerType.SHOP
+                                SwiftEntity.PRODUCT -> MapMarkerType.PRODUCT
+                                SwiftEntity.SERVICE -> MapMarkerType.SERVICE
+                                SwiftEntity.FORM -> MapMarkerType.FORM
+                                SwiftEntity.DELIVERY -> MapMarkerType.DELIVERY
+                                SwiftEntity.PIN -> MapMarkerType.USER_DROP_PIN
+                                SwiftEntity.SELLER -> MapMarkerType.SELLER
+                                SwiftEntity.BUYER -> MapMarkerType.BUYER
+                                SwiftEntity.PROVIDER -> MapMarkerType.DELIVERY_PROVIDER
+                            }, context)
                         }
                     }
                     view.overlays.add(marker)
+                }
+
+                // Current User Profile Marker
+                if (profileMarkerDrawable != null) {
+                    val userMarker = Marker(view).apply {
+                        position = OsmGeoPoint(state.center.lat, state.center.lng)
+                        icon = profileMarkerDrawable
+                        setAnchor(0.5f, 1.0f) // Phase 12 requirement
+                    }
+                    view.overlays.add(userMarker)
                 }
 
                 polylines.forEach { p ->
@@ -255,6 +322,7 @@ fun DropYourPinComponent(
     markers: List<MapMarker> = emptyList(),
     mapHeight: Dp = 360.dp,
     isConfirmed: Boolean = false,
+    currentUserProfileImageUrl: String? = null,
     onLocationConfirmed: (GeoPoint) -> Unit
 ) {
     val mapState = rememberMapState(initialCenter = initialLocation ?: GeoPoint(-29.3167, 27.4833))
@@ -302,7 +370,8 @@ fun DropYourPinComponent(
                 markers = markers + listOfNotNull(confirmedMarker),
                 showCenterPin = true,
                 modifier = Modifier.fillMaxSize(),
-                onMapMoved = { currentSelection = it }
+                onMapMoved = { currentSelection = it },
+                currentUserProfileImageUrl = currentUserProfileImageUrl
             )
 
             // GPS Action Button

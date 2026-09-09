@@ -266,7 +266,9 @@ fun SwiftPrimaryButton(
     Button(
         onClick = onClick,
         enabled = enabled && !isLoading,
-        modifier = modifier.height(52.dp),
+        modifier = modifier
+            .height(52.dp)
+            .swiftGlowShadow(shape = MaterialTheme.shapes.medium),
         shape = MaterialTheme.shapes.medium,
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.primary

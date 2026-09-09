@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.KeyboardType
@@ -424,6 +425,9 @@ private fun CheckoutStepIndicator(currentStep: CheckoutStep) {
             Box(
                 modifier = Modifier
                     .size(28.dp)
+                    .let { m ->
+                        if (index == currentIndex) m.swiftGlowCircle(width = 3.dp) else m
+                    }
                     .clip(MaterialTheme.shapes.small)
                     .background(
                         if (index <= currentIndex) MaterialTheme.colorScheme.primary
@@ -552,6 +556,8 @@ private fun AddressStep(
     onAddressUpdate: (DeliveryAddress) -> Unit,
     onLocationConfirmed: (GeoPoint) -> Unit
 ) {
+    var focusedField by remember { mutableStateOf<String?>(null) }
+    
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -568,7 +574,10 @@ private fun AddressStep(
                     value = address.label,
                     onValueChange = { onAddressUpdate(address.copy(label = it)) },
                     label = { Text("Address Label (e.g. Home, Office)") },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { if(it.isFocused) focusedField = "label" else if(focusedField == "label") focusedField = null }
+                        .let { if(focusedField == "label") it.swiftGlowBorder(shape = MaterialTheme.shapes.medium) else it },
                     shape = MaterialTheme.shapes.medium,
                     singleLine = true
                 )
@@ -576,14 +585,20 @@ private fun AddressStep(
                     value = address.streetHint,
                     onValueChange = { onAddressUpdate(address.copy(streetHint = it)) },
                     label = { Text("Street / Landmark Hint") },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { if(it.isFocused) focusedField = "street" else if(focusedField == "street") focusedField = null }
+                        .let { if(focusedField == "street") it.swiftGlowBorder(shape = MaterialTheme.shapes.medium) else it },
                     shape = MaterialTheme.shapes.medium
                 )
                 OutlinedTextField(
                     value = address.city,
                     onValueChange = { onAddressUpdate(address.copy(city = it)) },
                     label = { Text("City") },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { if(it.isFocused) focusedField = "city" else if(focusedField == "city") focusedField = null }
+                        .let { if(focusedField == "city") it.swiftGlowBorder(shape = MaterialTheme.shapes.medium) else it },
                     shape = MaterialTheme.shapes.medium,
                     singleLine = true
                 )
@@ -591,7 +606,10 @@ private fun AddressStep(
                     value = address.district,
                     onValueChange = { onAddressUpdate(address.copy(district = it)) },
                     label = { Text("District") },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { if(it.isFocused) focusedField = "district" else if(focusedField == "district") focusedField = null }
+                        .let { if(focusedField == "district") it.swiftGlowBorder(shape = MaterialTheme.shapes.medium) else it },
                     shape = MaterialTheme.shapes.medium, singleLine = true
                 )
             }
@@ -619,7 +637,10 @@ private fun AddressStep(
             value = address.streetHint, // Using streetHint for instructions context for now
             onValueChange = { onAddressUpdate(address.copy(streetHint = it)) },
             label = { Text("e.g. Gate number, house color...") },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { if(it.isFocused) focusedField = "instructions" else if(focusedField == "instructions") focusedField = null }
+                .let { if(focusedField == "instructions") it.swiftGlowBorder(shape = MaterialTheme.shapes.medium) else it },
             shape = MaterialTheme.shapes.medium,
             minLines = 2
         )
@@ -639,6 +660,8 @@ private fun PaymentStep(
     buyerNotes: String,
     onNotesChange: (String) -> Unit
 ) {
+    var focusedField by remember { mutableStateOf<String?>(null) }
+    
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -703,7 +726,10 @@ private fun PaymentStep(
                     keyboardType = KeyboardType.Phone
                 ),
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { if(it.isFocused) focusedField = "phone" else if(focusedField == "phone") focusedField = null }
+                    .let { if(focusedField == "phone") it.swiftGlowBorder(shape = MaterialTheme.shapes.medium) else it },
                 shape = MaterialTheme.shapes.medium
             )
         }
@@ -715,7 +741,10 @@ private fun PaymentStep(
             value = buyerNotes,
             onValueChange = onNotesChange,
             label = { Text("Instructions for seller or driver...") },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { if(it.isFocused) focusedField = "notes" else if(focusedField == "notes") focusedField = null }
+                .let { if(focusedField == "notes") it.swiftGlowBorder(shape = MaterialTheme.shapes.medium) else it },
             shape = MaterialTheme.shapes.medium,
             minLines = 3
         )

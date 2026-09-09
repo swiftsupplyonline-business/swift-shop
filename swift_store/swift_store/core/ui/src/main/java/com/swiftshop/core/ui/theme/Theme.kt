@@ -39,6 +39,18 @@ object SwiftShopColors {
     val SurfaceDark = Color(0xFF0F172A)
     val CardLight = Color(0xFFF8FAFC)
     val CardDark = Color(0xFF1E293B)
+
+    // Swift Glow Palette
+    val SwiftBlue = Color(0xFF1A73E8)
+    val SwiftBlueLight = Color(0xFF4A9FFF)
+    val SwiftGlowSubtle = Color(0x1A1A73E8)
+    val SwiftGlowActive = Color(0x331A73E8)
+    val SwiftGlowSelected = Color(0x4D1A73E8)
+    val SwiftGlowEmphasis = Color(0x661A73E8)
+    val SwiftGlowDarkSubtle = Color(0x1A4A9FFF)
+    val SwiftGlowDarkActive = Color(0x334A9FFF)
+    val SwiftGlowDarkSelected = Color(0x4D4A9FFF)
+    val SwiftGlowDarkEmphasis = Color(0x664A9FFF)
 }
 
 private val LightColorScheme = lightColorScheme(
@@ -85,6 +97,35 @@ private val DarkColorScheme = darkColorScheme(
 
 // ─── Extended Theme ───────────────────────────────────────────────────────────
 
+data class SwiftGlowTokens(
+    val subtle: Color,
+    val active: Color,
+    val selected: Color,
+    val emphasis: Color,
+    val ring: Color,
+    val shadow: Color
+)
+
+val LightGlowTokens = SwiftGlowTokens(
+    subtle = SwiftShopColors.SwiftGlowSubtle,
+    active = SwiftShopColors.SwiftGlowActive,
+    selected = SwiftShopColors.SwiftGlowSelected,
+    emphasis = SwiftShopColors.SwiftGlowEmphasis,
+    ring = SwiftShopColors.SwiftBlue,
+    shadow = SwiftShopColors.SwiftGlowActive
+)
+
+val DarkGlowTokens = SwiftGlowTokens(
+    subtle = SwiftShopColors.SwiftGlowDarkSubtle,
+    active = SwiftShopColors.SwiftGlowDarkActive,
+    selected = SwiftShopColors.SwiftGlowDarkSelected,
+    emphasis = SwiftShopColors.SwiftGlowDarkEmphasis,
+    ring = SwiftShopColors.SwiftBlueLight,
+    shadow = SwiftShopColors.SwiftGlowDarkActive
+)
+
+val LocalSwiftGlow = staticCompositionLocalOf { LightGlowTokens }
+
 data class SwiftShopExtendedColors(
     val brandBlue: Color,
     val electricBlue: Color,
@@ -123,9 +164,11 @@ fun SwiftShopTheme(
     content: @Composable () -> Unit
 ) {
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val glowTokens = if (darkTheme) DarkGlowTokens else LightGlowTokens
 
     CompositionLocalProvider(
-        LocalSwiftShopColors provides LocalSwiftShopColors.current
+        LocalSwiftShopColors provides LocalSwiftShopColors.current,
+        LocalSwiftGlow provides glowTokens
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
@@ -139,3 +182,6 @@ fun SwiftShopTheme(
 // Convenience accessor
 val MaterialTheme.swiftColors: SwiftShopExtendedColors
     @Composable get() = LocalSwiftShopColors.current
+
+val MaterialTheme.glow: SwiftGlowTokens
+    @Composable get() = LocalSwiftGlow.current
