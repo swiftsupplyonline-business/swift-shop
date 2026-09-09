@@ -27,4 +27,6 @@ dependencies {
 
     // Maps
     implementation(libs.osmdroid.android)
+    implementation(libs.timber)
 }
+

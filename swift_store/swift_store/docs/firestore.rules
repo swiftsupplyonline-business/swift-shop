@@ -62,7 +62,8 @@ service cloud.firestore {
       allow update: if isSignedIn() && isActive()
         && resource.data.ownerId == request.auth.uid
         && !request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny(['ownerId', 'isVerified']);
+            .hasAny(['ownerId', 'isVerified', 'listingCount']);
+
       allow delete: if isAdmin();
     }
 
@@ -72,13 +73,15 @@ service cloud.firestore {
       // Created and deleted via Cloud Function only to enforce tier limits
       allow create: if false;
       allow update: if isSignedIn()
-        && resource.data.sellerId == request.auth.uid
-        && !request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny(['sellerId', 'isSponsored', 'commitmentCount',
-                     'reservedQuantity', 'availableQuantity', 'stockQuantity'])
-        && (request.resource.data.get('totalQuantity', 0) >= resource.data.get('reservedQuantity', 0));
+        && ( (resource.data.sellerId == request.auth.uid
+              && !request.resource.data.diff(resource.data).affectedKeys()
+                  .hasAny(['sellerId', 'isSponsored', 'commitmentCount',
+                           'reservedQuantity', 'availableQuantity', 'stockQuantity'])
+              && (request.resource.data.get('totalQuantity', 0) >= resource.data.get('reservedQuantity', 0)))
+            || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['bookmarkCount'])) );
       allow delete: if false;
     }
+
 
     // ── Reservations ───────────────────────────────────────────────────────
     match /reservations/{resId} {
@@ -96,11 +99,13 @@ service cloud.firestore {
       allow create: if isSignedIn() && isActive()
         && request.resource.data.authorId == request.auth.uid;
       allow update: if isSignedIn() && isActive()
-        && (resource.data.authorId == request.auth.uid
-            // Allow like/bookmark count updates from any authenticated user via Cloud Function
-            || request.resource.data.diff(resource.data).affectedKeys()
-                .hasOnly(['likeCount', 'commentCount', 'reshareCount', 'bookmarkCount']));
+        && ( (resource.data.authorId == request.auth.uid
+              && !request.resource.data.diff(resource.data).affectedKeys()
+                  .hasAny(['authorId', 'likeCount', 'commentCount', 'reshareCount', 'bookmarkCount', 'rankingScore']))
+            || (request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['likeCount', 'commentCount', 'reshareCount', 'bookmarkCount'])) );
       allow delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
+
 
       // Likes subcollection
       match /likes/{uid} {
@@ -121,11 +126,13 @@ service cloud.firestore {
     // ── Orders ─────────────────────────────────────────────────────────────
     match /orders/{orderId} {
       allow read: if isSignedIn()
-        && (resource.data.buyerId == request.auth.uid
+        && (resource.data.participants.values().hasAny([request.auth.uid])
+            || resource.data.buyerId == request.auth.uid
             || resource.data.sellerId == request.auth.uid
             || isAdmin());
       // Orders created server-side only (Cloud Function)
       allow create: if false;
+
       // Status updates via Cloud Function only
       allow update: if false;
       allow delete: if false;

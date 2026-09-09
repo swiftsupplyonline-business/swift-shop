@@ -71,7 +71,9 @@ interface CommerceRepository {
     fun getShopListings(shopId: String, page: Int, pageSize: Int): Flow<List<Listing>>
     suspend fun getListing(listingId: String): Result<Listing>
     suspend fun getUserListings(userId: String): Result<List<Listing>>
+    fun observeUserListings(userId: String): Flow<List<Listing>>
     suspend fun searchListings(query: String): Result<List<Listing>>
+
     suspend fun searchShops(query: String): Result<List<Shop>>
     suspend fun createListing(listing: Listing): Result<String>
     suspend fun updateListing(listing: Listing): Result<Unit>
@@ -107,8 +109,10 @@ interface CommerceRepository {
         provider: String?,
         phoneNumber: String,
         idempotencyKey: String,
+        recipientUid: String? = null,
         payload: OrderPayload? = null
     ): Result<OrderInitiation>
+
 
     suspend fun initiateBooking(
         buyerId: String,
@@ -207,6 +211,7 @@ class PlaceOrderUseCase(private val repository: CommerceRepository) {
         provider: String?,
         phoneNumber: String,
         idempotencyKey: String,
+        recipientUid: String? = null,
         payload: OrderPayload? = null
     ): Result<OrderInitiation> {
         if (items.isEmpty()) return Result.failure(IllegalArgumentException("Cart is empty"))
@@ -214,9 +219,10 @@ class PlaceOrderUseCase(private val repository: CommerceRepository) {
         if (deliveryListingId.isBlank()) return Result.failure(IllegalArgumentException("A delivery option must be selected"))
         // Server-side validates deliveryListingId and reads the canonical price from the listing.
         // The client must never pass a fee amount — the backend is the only financial authority.
-        return repository.placeOrder(items, address, deliveryListingId, paymentMethod, provider, phoneNumber, idempotencyKey, payload)
+        return repository.placeOrder(items, address, deliveryListingId, paymentMethod, provider, phoneNumber, idempotencyKey, recipientUid, payload)
     }
 }
+
 
 
 class VerifyMopayPaymentUseCase(private val repository: CommerceRepository) {

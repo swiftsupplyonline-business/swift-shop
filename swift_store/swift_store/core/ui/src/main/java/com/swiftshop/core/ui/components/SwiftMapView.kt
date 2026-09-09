@@ -262,9 +262,28 @@ fun DropYourPinComponent(
     var snappedMarker by remember { mutableStateOf<MapMarker?>(null) }
     
     // FIX 3: Persistent confirmed marker
-    var confirmedMarker by remember { mutableStateOf<MapMarker?>(null) }
+    var localConfirmedGeo by remember(isConfirmed, initialLocation) { 
+        mutableStateOf(
+            if (isConfirmed && initialLocation != null && initialLocation.isValid()) {
+                initialLocation
+            } else null
+        )
+    }
+    
+    val confirmedMarker = remember(localConfirmedGeo) {
+        localConfirmedGeo?.let {
+            MapMarker(
+                id = "confirmed_pin",
+                position = it,
+                title = "Confirmed Location",
+                entityType = SwiftEntity.PIN
+            )
+        }
+    }
+
 
     LaunchedEffect(mapState.center) {
+
         val near = markers.find { 
             calculateDistanceMeters(it.position, mapState.center) <= DEFAULT_PLACE_SNAP_RADIUS_METERS 
         }
@@ -331,16 +350,12 @@ fun DropYourPinComponent(
                     text = if (isConfirmed) "✓ Location Confirmed" else "Confirm Location",
                     onClick = { 
                         onLocationConfirmed(currentSelection)
-                        confirmedMarker = MapMarker(
-                            id = "confirmed_pin",
-                            position = currentSelection,
-                            title = "Confirmed Location",
-                            entityType = SwiftEntity.PIN
-                        )
+                        localConfirmedGeo = currentSelection
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !isConfirmed // Optional: disable if confirmed or let it re-confirm
+                    enabled = !isConfirmed || currentSelection != localConfirmedGeo
                 )
+
 
             }
         }

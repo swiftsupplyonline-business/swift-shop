@@ -6,9 +6,13 @@ import androidx.lifecycle.viewModelScope
 import com.swiftshop.core.model.Order
 import com.swiftshop.core.model.OrderRole
 import com.swiftshop.core.model.OrderStatus
+import com.swiftshop.core.model.ListingType
+
 import com.swiftshop.domain.auth.ObserveCurrentUserUseCase
 import com.swiftshop.domain.commerce.CommerceRepository
+import com.swiftshop.domain.profile.ObserveProfileUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -33,8 +37,11 @@ sealed interface OrderDetailState {
 class OrdersViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val observeCurrentUser: ObserveCurrentUserUseCase,
-    private val commerceRepository: CommerceRepository
+    private val commerceRepository: CommerceRepository,
+    private val observeProfile: ObserveProfileUseCase
 ) : ViewModel() {
+
+
 
     private val orderId: String? = savedStateHandle["orderId"]
 
@@ -49,19 +56,52 @@ class OrdersViewModel @Inject constructor(
     private val _detailState = MutableStateFlow<OrderDetailState>(OrderDetailState.Loading)
     val detailState: StateFlow<OrderDetailState> = _detailState.asStateFlow()
 
-    val availableRoles = flow {
-        observeCurrentUser().filterNotNull().collect { _ ->
-            // In a real app, we might check user claims or profile to see which roles they actually hold.
-            // For now, we expose the canonical set relevant to the marketplace.
-            emit(listOf(
+    val availableRoles = observeCurrentUser().filterNotNull().flatMapLatest { user ->
+        combine(
+            observeProfile(user.uid),
+            commerceRepository.observeUserListings(user.uid),
+            // Observe if user is a RECIPIENT on any order
+            commerceRepository.observeOrdersByRole(user.uid, OrderRole.RECIPIENT).map { it.isNotEmpty() }
+        ) { profile, listings, hasReceivedOrders ->
+            val roles = mutableListOf(OrderRole.REQUESTER)
+            
+            // SELLER: owns at least one shop
+            if (profile.shopCount > 0) roles.add(OrderRole.SELLER)
+            
+            // SERVICE_PROVIDER: has at least one bookable service listing
+            if (listings.any { it.listingType in listOf(
+                    com.swiftshop.core.model.ListingType.BOOKABLE_SERVICE,
+                    com.swiftshop.core.model.ListingType.SET_APPOINTMENT,
+                    com.swiftshop.core.model.ListingType.SERVICE
+                ) }) {
+                roles.add(OrderRole.SERVICE_PROVIDER)
+            }
+            
+            // DELIVERY_PROVIDER: has at least one delivery service listing
+            if (listings.any { it.listingType in listOf(
+                    com.swiftshop.core.model.ListingType.DELIVERY_SERVICE,
+                    com.swiftshop.core.model.ListingType.DELIVER
+                ) }) {
+                roles.add(OrderRole.DELIVERY_PROVIDER)
+            }
 
-                OrderRole.REQUESTER,
-                OrderRole.SELLER,
-                OrderRole.SERVICE_PROVIDER,
-                OrderRole.DELIVERY_PROVIDER
-            ))
+            // RECIPIENT: has at least one order sent to them
+            if (hasReceivedOrders) {
+                roles.add(OrderRole.RECIPIENT)
+            }
+
+            // ADMIN: authoritative check
+            if (user.isAdmin) {
+                roles.add(OrderRole.ADMIN)
+            }
+
+            roles.distinct()
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), listOf(OrderRole.REQUESTER))
+
+
+
+
 
     init {
         // Automatically reload when role changes or manual refresh triggered

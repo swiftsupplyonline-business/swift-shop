@@ -64,8 +64,10 @@ data class User(
     val displayName: String = "",
     val photoUrl: String = "",
     val tier: UserTier = UserTier.BASIC,
+    val isAdmin: Boolean = false,
     val isVerified: Boolean = false,
     val accountStatus: UserAccountStatus = UserAccountStatus.ACTIVE,
+
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
 ) : Parcelable
@@ -406,8 +408,10 @@ sealed class OrderPayload : Parcelable {
         val packageDescription: String = "",
         val recipientName: String = "",
         val recipientPhone: String = "",
+        val recipientUid: String? = null,
         val instructions: String = ""
     ) : OrderPayload()
+
 }
 
 @Serializable
@@ -444,7 +448,9 @@ data class Order(
     val deliveryAddress: DeliveryAddress = DeliveryAddress(),
     val selectedDeliveryListingId: String = "",
     val deliveryListingSnapshot: DeliveryListingSnapshot? = null,
+    val recipientUid: String? = null,
     val paymentId: String = "",
+
     val paymentUrl: String? = null,
     val mopaySessionId: String? = null,
     val slotId: String? = null,

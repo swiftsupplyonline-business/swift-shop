@@ -80,6 +80,9 @@ class OfflineFirstCommerceRepository @Inject constructor(
     override suspend fun getUserListings(userId: String): Result<List<Listing>> = 
         remote.getUserListings(userId)
 
+    override fun observeUserListings(userId: String) = remote.observeUserListings(userId)
+
+
     override suspend fun searchListings(query: String): Result<List<Listing>> = 
         remote.searchListings(query)
 
@@ -118,8 +121,10 @@ class OfflineFirstCommerceRepository @Inject constructor(
         provider: String?,
         phoneNumber: String,
         idempotencyKey: String,
+        recipientUid: String?,
         payload: com.swiftshop.core.model.OrderPayload?
-    ) = remote.placeOrder(items, address, deliveryListingId, paymentMethod, provider, phoneNumber, idempotencyKey, payload)
+    ) = remote.placeOrder(items, address, deliveryListingId, paymentMethod, provider, phoneNumber, idempotencyKey, recipientUid, payload)
+
 
 
     override suspend fun verifyMopayPayment(sessionId: String) = remote.verifyMopayPayment(sessionId)

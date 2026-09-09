@@ -87,6 +87,17 @@ class FirebaseCommerceRepository @Inject constructor(
             .toObjects(FirestoreListing::class.java).map { it.toDomain() }
     }
 
+    override fun observeUserListings(userId: String): Flow<List<Listing>> = callbackFlow {
+        val subscription = firestore.collection("listings")
+            .whereEqualTo("sellerId", userId)
+            .addSnapshotListener { snapshot, _ ->
+                val list = snapshot?.toObjects(FirestoreListing::class.java)?.map { it.toDomain() } ?: emptyList()
+                trySend(list)
+            }
+        awaitClose { subscription.remove() }
+    }
+
+
     override suspend fun searchListings(query: String): Result<List<Listing>> = runCatching {
         firestore.collection("listings")
             .whereGreaterThanOrEqualTo("title", query)
@@ -209,6 +220,7 @@ class FirebaseCommerceRepository @Inject constructor(
         provider: String?,
         phoneNumber: String,
         idempotencyKey: String,
+        recipientUid: String?,
         payload: OrderPayload?
     ): Result<OrderInitiation> = runCatching {
         val data = buildMap {
@@ -219,8 +231,10 @@ class FirebaseCommerceRepository @Inject constructor(
             put("provider", provider)
             put("phoneNumber", phoneNumber)
             put("idempotencyKey", idempotencyKey)
+            recipientUid?.let { put("recipientUid", it) }
             payload?.let { put("payload", it.toFirestore()) }
         }
+
         val result = functions.getHttpsCallable("createOrder").call(data).await()
         val resMap = result.data as Map<String, Any>
 
@@ -523,7 +537,9 @@ data class FirestoreOrder(
     val deliveryAddress: FirestoreDeliveryAddress? = null,
     val selectedDeliveryListingId: String = "",
     val deliveryListingSnapshot: FirestoreDeliveryListingSnapshot? = null,
+    val recipientUid: String? = null,
     val paymentId: String = "",
+
     val slotId: String? = null,
     val fulfillmentType: String? = null,
     val appointmentStartTime: Long? = null,
@@ -591,7 +607,9 @@ data class FirestoreOrder(
             deliveryAddress = deliveryAddress?.toDomain() ?: DeliveryAddress(),
             selectedDeliveryListingId = selectedDeliveryListingId,
             deliveryListingSnapshot = deliveryListingSnapshot?.toDomain(),
+            recipientUid = recipientUid,
             paymentId = paymentId,
+
             slotId = slotId,
             fulfillmentType = fulfillmentType,
             appointmentStartTime = appointmentStartTime,
@@ -736,7 +754,9 @@ fun Order.toFirestore(): Map<String, Any?> = buildMap {
         "deliveryAddress" to deliveryAddress.toFirestore(),
         "selectedDeliveryListingId" to selectedDeliveryListingId,
         "deliveryListingSnapshot" to deliveryListingSnapshot?.toFirestore(),
+        "recipientUid" to recipientUid,
         "originLocationSnapshot" to originLocationSnapshot?.toFirestore(),
+
         "destinationLocationSnapshot" to destinationLocationSnapshot?.toFirestore(),
         "createdAt" to createdAt,
         "updatedAt" to updatedAt
@@ -801,8 +821,10 @@ private fun mapPayload(type: String?, data: Map<String, Any>?): OrderPayload? {
             packageDescription = data["packageDescription"] as? String ?: "",
             recipientName = data["recipientName"] as? String ?: "",
             recipientPhone = data["recipientPhone"] as? String ?: "",
+            recipientUid = data["recipientUid"] as? String,
             instructions = data["instructions"] as? String ?: ""
         )
+
         else -> null
     }
 }
@@ -840,9 +862,11 @@ internal fun OrderPayload.toFirestore(): Map<String, Any?> = when (this) {
         put("packageDescription", packageDescription)
         put("recipientName", recipientName)
         put("recipientPhone", recipientPhone)
+        recipientUid?.let { put("recipientUid", it) }
         put("instructions", instructions)
     }
 }
+
 
 
 

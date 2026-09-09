@@ -13,6 +13,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import timber.log.Timber
 
 /**
  * Reusable video player component for Reels and Listings.
@@ -31,13 +32,14 @@ fun SwiftVideoPlayer(
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
             repeatMode = Player.REPEAT_MODE_ALL
-            playWhenReady = true
+            playWhenReady = isActive
         }
     }
 
     // Manage Media Source
     LaunchedEffect(url) {
         if (url.isNotBlank()) {
+            Timber.d("Preparing video: $url")
             val mediaItem = MediaItem.fromUri(url)
             exoPlayer.setMediaItem(mediaItem)
             exoPlayer.prepare()
@@ -46,6 +48,8 @@ fun SwiftVideoPlayer(
 
     // Sync playback with visibility (Active state in Pager)
     LaunchedEffect(isActive) {
+        Timber.d("Video isActive change: $isActive for $url")
+        exoPlayer.playWhenReady = isActive
         if (isActive) {
             exoPlayer.play()
         } else {
@@ -53,12 +57,21 @@ fun SwiftVideoPlayer(
         }
     }
 
-    // Clean up
-    DisposableEffect(Unit) {
+
+    // Error Listener
+    DisposableEffect(exoPlayer) {
+        val listener = object : Player.Listener {
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                Timber.e(error, "ExoPlayer Error for URL: $url")
+            }
+        }
+        exoPlayer.addListener(listener)
         onDispose {
+            exoPlayer.removeListener(listener)
             exoPlayer.release()
         }
     }
+
 
     // UI View
     AndroidView(

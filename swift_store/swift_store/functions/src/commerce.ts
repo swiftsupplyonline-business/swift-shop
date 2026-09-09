@@ -115,10 +115,11 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { items, deliveryAddress, deliveryListingId, paymentMethod, provider, idempotencyKey } = request.data;
+    const { items, deliveryAddress, deliveryListingId, paymentMethod, provider, idempotencyKey, recipientUid } = request.data;
     if (!items || !Array.isArray(items) || !idempotencyKey) {
         throw new HttpsError("invalid-argument", "Missing items or idempotencyKey");
     }
+
     if (!deliveryListingId) {
         throw new HttpsError("invalid-argument", "deliveryListingId is required");
     }
@@ -300,6 +301,11 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 // For a direct delivery request, the listing author is the provider
                 participants["DELIVERY_PROVIDER"] = sellerId;
             }
+
+            if (recipientUid) {
+                participants["RECIPIENT"] = recipientUid;
+            }
+
 
             // Source origin from Shop document
             const shopDoc = await transaction.get(db.collection("shops").doc(shopId));

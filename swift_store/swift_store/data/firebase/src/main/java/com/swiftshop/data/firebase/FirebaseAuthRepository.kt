@@ -154,8 +154,10 @@ data class FirestoreUser(
     val displayName: String = "",
     val photoUrl: String = "",
     val tier: String = "BASIC",
+    val isAdmin: Boolean = false,
     val isVerified: Boolean = false,
     val accountStatus: String = "ACTIVE",
+
     val createdAt: Any? = null,
     val updatedAt: Any? = null
 ) {
@@ -166,7 +168,9 @@ data class FirestoreUser(
         displayName = displayName,
         photoUrl = photoUrl,
         tier = runCatching { UserTier.valueOf(tier) }.getOrDefault(UserTier.BASIC),
+        isAdmin = isAdmin,
         isVerified = isVerified,
+
         accountStatus = runCatching { UserAccountStatus.valueOf(accountStatus) }.getOrDefault(UserAccountStatus.ACTIVE),
         createdAt = tsToLong(createdAt),
         updatedAt = tsToLong(updatedAt)
@@ -181,7 +185,9 @@ fun User.toFirestore() = mapOf(
     "displayName" to displayName,
     "photoUrl" to photoUrl,
     "tier" to tier.name,
+    "isAdmin" to isAdmin,
     "isVerified" to isVerified,
+
     "accountStatus" to accountStatus.name,
     "createdAt" to createdAt,
     "updatedAt" to updatedAt
