@@ -309,6 +309,8 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
             } : null;
 
             // ── Payload Allowlisting ──────────────────────────────────────
+            // STRICT CONTRACT: The server constructs the payload based on OrderType.
+            // Client input is only accepted for explicitly permitted "intent" fields.
             const clientPayload = request.data.payload || {};
             let payload: any = null;
 
@@ -317,40 +319,51 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                     payload = {
                         quantity: validatedItems.reduce((acc, i) => acc + i.quantity, 0),
                         unitPriceMinorUnits: validatedItems[0]?.unitPriceMinorUnits || 0,
-                        buyerNotes: clientPayload.buyerNotes || ""
+                        buyerNotes: String(clientPayload.buyerNotes || "").substring(0, 500)
                     };
                     break;
                 case "FOOD_ORDER":
                     payload = {
-                        items: validatedItems.map(i => ({ id: i.listingId, title: i.title, quantity: i.quantity, addOns: clientPayload.items?.find((cp: any) => cp.id === i.listingId)?.addOns || [] })),
-                        preparationNotes: clientPayload.preparationNotes || ""
+                        items: validatedItems.map(i => ({
+                            id: i.listingId,
+                            title: i.title,
+                            quantity: i.quantity,
+                            // Only allow client to provide add-ons if they exist in the validated schema
+                            addOns: Array.isArray(clientPayload.items?.find((cp: any) => cp.id === i.listingId)?.addOns)
+                                ? clientPayload.items.find((cp: any) => cp.id === i.listingId).addOns
+                                : []
+                        })),
+                        preparationNotes: String(clientPayload.preparationNotes || "").substring(0, 500)
                     };
                     break;
                 case "SERVICE_BOOKING":
                     payload = {
                         serviceId: validatedItems[0].listingId,
-                        requestedDate: clientPayload.requestedDate || "",
-                        requestedTime: clientPayload.requestedTime || "",
+                        requestedDate: String(clientPayload.requestedDate || ""),
+                        requestedTime: String(clientPayload.requestedTime || ""),
                         durationMinutes: listingDataList[0].durationMinutes || 0,
-                        locationType: clientPayload.locationType || "ON_SITE"
+                        locationType: ["ON_SITE", "REMOTE", "BUYER_LOCATION"].includes(clientPayload.locationType)
+                            ? clientPayload.locationType
+                            : "ON_SITE"
                     };
                     break;
                 case "BULK_PURCHASE":
                     payload = {
                         quantity: validatedItems.reduce((acc, i) => acc + i.quantity, 0),
                         unitOfMeasure: listingDataList[0].unitOfMeasure || "unit",
-                        pricingTier: clientPayload.pricingTier || null
+                        pricingTier: String(clientPayload.pricingTier || "STANDARD")
                     };
                     break;
                 case "DELIVERY_REQUEST":
                     payload = {
-                        packageDescription: clientPayload.packageDescription || "",
-                        recipientName: clientPayload.recipientName || "",
-                        recipientPhone: clientPayload.recipientPhone || "",
-                        instructions: clientPayload.instructions || ""
+                        packageDescription: String(clientPayload.packageDescription || "").substring(0, 200),
+                        recipientName: String(clientPayload.recipientName || "").substring(0, 100),
+                        recipientPhone: String(clientPayload.recipientPhone || "").substring(0, 20),
+                        instructions: String(clientPayload.instructions || "").substring(0, 500)
                     };
                     break;
             }
+
 
             const orderDoc: Record<string, unknown> = {
                 id: newOrderId,
@@ -713,13 +726,22 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                     });
                 });
             } else if (mopaySession.transactionStatus === "PENDING") {
-                await orderDoc.ref.update({ paymentStatus: "PENDING", updatedAt: admin.firestore.Timestamp.now() });
-            } else {
+                // Stay RESERVED, wait for next attempt
                 await orderDoc.ref.update({
-                    status: "HOLD", paymentStatus: "UNKNOWN", paymentStatusRaw: mopaySession.transactionStatus,
+                    paymentStatus: "PENDING",
+                    updatedAt: admin.firestore.Timestamp.now()
+                });
+            } else {
+                // UNKNOWN or ambiguous status -> Moving to HOLD to prevent accidental release
+                console.warn(`Ambiguous MoPay status ${mopaySession.transactionStatus} for order ${order.id}. Transitioning to HOLD.`);
+                await orderDoc.ref.update({
+                    status: "HOLD",
+                    paymentStatus: "UNKNOWN",
+                    paymentStatusRaw: mopaySession.transactionStatus,
                     updatedAt: admin.firestore.Timestamp.now()
                 });
             }
+
             return { status: mopaySession.transactionStatus, orderId: order.id };
         }
     } catch (error: any) {

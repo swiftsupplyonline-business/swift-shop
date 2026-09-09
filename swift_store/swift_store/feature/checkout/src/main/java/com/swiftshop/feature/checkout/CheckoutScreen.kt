@@ -24,7 +24,11 @@ import com.swiftshop.core.ui.navigation.Screen
 import com.swiftshop.domain.commerce.CartItem
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.launch
+
 
 
 
@@ -42,6 +46,7 @@ fun CheckoutScreen(
     val confirmedLocation by viewModel.confirmedLocationSnapshot.collectAsState()
     
     val uriHandler = LocalUriHandler.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -52,6 +57,19 @@ fun CheckoutScreen(
             uriHandler.openUri(state.paymentUrl)
         }
     }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.verifyPaymentOnReturn()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
 
     // Load delivery listings when buyer enters the delivery step.
     LaunchedEffect(currentStep) {

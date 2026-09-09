@@ -129,6 +129,8 @@ class CreateShopViewModel @Inject constructor(
     }
 
     fun submit() {
+        if (_uiState.value is CreateShopUiState.Loading) return // Duplicate submit protection
+
         viewModelScope.launch {
             if (_name.value.isBlank()) {
                 _uiState.value = CreateShopUiState.Error("Shop name is required")
@@ -156,9 +158,21 @@ class CreateShopViewModel @Inject constructor(
             )
 
             createShop(newShop).fold(
-                onSuccess = { _uiState.value = CreateShopUiState.Success },
+                onSuccess = {
+                    // VISIBILITY GATING: Wait until the shop is observable in the user's shops list
+                    repository.getUserShops(user.uid)
+                        .map { list -> list.any { s -> s.id == _shopId } }
+                        .filter { it }
+                        .first()
+
+                    _uiState.value = CreateShopUiState.Success
+
+
+
+                },
                 onFailure = { _uiState.value = CreateShopUiState.Error(it.message ?: "Failed to create shop") }
             )
         }
     }
+
 }

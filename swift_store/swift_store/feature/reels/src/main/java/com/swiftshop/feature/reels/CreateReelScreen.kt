@@ -31,7 +31,10 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+
 import javax.inject.Inject
 
 sealed interface CreateReelState {
@@ -44,8 +47,10 @@ sealed interface CreateReelState {
 @HiltViewModel
 class CreateReelViewModel @Inject constructor(
     private val createPost: com.swiftshop.domain.feed.CreatePostUseCase,
-    private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase
+    private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase,
+    private val feedRepository: com.swiftshop.domain.feed.FeedRepository
 ) : ViewModel() {
+
     private val _state = MutableStateFlow<CreateReelState>(CreateReelState.Idle)
     val state = _state.asStateFlow()
 
@@ -77,6 +82,8 @@ class CreateReelViewModel @Inject constructor(
     fun removeTag(tag: String) { _tags.value = _tags.value - tag }
 
     fun publish(onSuccess: () -> Unit) {
+        if (_state.value is CreateReelState.Loading) return // Duplicate submit protection
+
         viewModelScope.launch {
             if (_videoUri.value == null) {
                 _state.value = CreateReelState.Error("Select a video first")
@@ -100,14 +107,24 @@ class CreateReelViewModel @Inject constructor(
                 caption = _caption.value,
                 mediaUris = listOfNotNull(_videoUri.value),
                 hashtags = _tags.value
-            ).onSuccess {
+            ).onSuccess { newPostId ->
+                // VISIBILITY GATING: Wait until the reel is observable in the uploader's list
+                feedRepository.getUserReels(user.uid)
+                    .map { list -> list.any { reel -> reel.id == newPostId } }
+                    .filter { exists -> exists }
+                    .first()
+
                 _state.value = CreateReelState.Success
+
+
+
                 onSuccess()
             }.onFailure {
                 _state.value = CreateReelState.Error(it.message ?: "Failed to publish reel")
             }
         }
     }
+
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

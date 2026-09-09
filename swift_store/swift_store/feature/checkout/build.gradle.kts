@@ -20,7 +20,9 @@ android {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:ui"))
+    implementation(project(":core:datastore"))
     implementation(project(":domain:auth"))
+
     implementation(project(":domain:commerce"))
     implementation(project(":domain:wallet"))
     implementation(project(":domain:feed"))

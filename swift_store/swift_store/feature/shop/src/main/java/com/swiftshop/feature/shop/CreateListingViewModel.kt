@@ -270,6 +270,8 @@ class CreateListingViewModel @Inject constructor(
     }
 
     fun submit() {
+        if (_uiState.value is CreateListingUiState.Loading) return // Prevent duplicate
+
         viewModelScope.launch {
             _uiState.value = CreateListingUiState.Loading
             val user = observeCurrentUser().first()
@@ -286,20 +288,36 @@ class CreateListingViewModel @Inject constructor(
             val price = MoneyAmount.fromMajorUnits(_priceMajor.value.toDoubleOrNull() ?: 0.0)
             val stock = _stockQuantity.value.toIntOrNull() ?: 0
             val deliveryDays = _deliveryEstimateDays.value.toIntOrNull() ?: 0
-            createListing(
-                title = _title.value,
-                description = _description.value,
-                category = _category.value,
-                price = price,
-                stockQuantity = stock,
-                imageUris = _imageUris.value,
-                sellerId = uid,
-                shopId = shopId,
-                listingType = _listingType.value,
-                customFields = _customFields.value,
-                deliveryEstimateDays = deliveryDays
-            ).onSuccess {
+            
+            repository.createListing(
+                Listing(
+                    shopId = shopId,
+                    sellerId = uid,
+                    title = _title.value,
+                    description = _description.value,
+                    category = _category.value,
+                    price = price,
+                    totalQuantity = stock,
+                    availableQuantity = stock,
+                    stockQuantity = stock,
+                    listingType = _listingType.value,
+                    customFields = _customFields.value,
+                    deliveryEstimateDays = deliveryDays,
+                    createdAt = System.currentTimeMillis()
+                )
+            ).onSuccess { newListingId ->
+                // VISIBILITY GATING: Wait until the listing is actually observable 
+                // in the shop's stream before claiming success.
+                repository.getShopListings(shopId, 0, 50)
+                    .map { list -> list.any { l -> l.id == newListingId } }
+                    .filter { it }
+                    .first()
+
                 _uiState.value = CreateListingUiState.Success
+
+
+
+                
                 // Learn from this successful creation
                 viewModelScope.launch {
                     contextEngine.recordUserChoice("category", _category.value, WorkflowContext(categoryId = _category.value))
@@ -310,6 +328,7 @@ class CreateListingViewModel @Inject constructor(
             }
         }
     }
+
 
     fun seedTestData(onSuccess: () -> Unit) {
         viewModelScope.launch {

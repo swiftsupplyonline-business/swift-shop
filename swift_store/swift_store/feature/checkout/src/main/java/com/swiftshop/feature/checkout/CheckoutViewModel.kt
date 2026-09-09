@@ -7,7 +7,9 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.swiftshop.core.model.*
+import com.swiftshop.core.datastore.PreferenceManager
 import com.swiftshop.domain.auth.ObserveCurrentUserUseCase
+
 import com.swiftshop.domain.commerce.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -49,8 +51,11 @@ class CheckoutViewModel @Inject constructor(
     private val clearCartUseCase: ClearCartUseCase,
     private val getDeliveryListings: GetDeliveryListingsUseCase,
     private val discoverShops: DiscoverShopsUseCase,
-    private val getOrder: GetOrderUseCase
+    private val getOrder: GetOrderUseCase,
+    private val preferenceManager: PreferenceManager
 ) : ViewModel() {
+
+
 
     private val _uiState = MutableStateFlow<CheckoutUiState>(CheckoutUiState.Loading)
     val uiState: StateFlow<CheckoutUiState> = _uiState.asStateFlow()
@@ -311,6 +316,11 @@ class CheckoutViewModel @Inject constructor(
 
                     clearCartUseCase(currentUserId)
                     if (initiation.paymentUrl != null && initiation.mopaySessionId != null) {
+                        // Persist payment context locally before launching browser
+                        viewModelScope.launch {
+                            preferenceManager.setActivePaymentOrderId(initiation.orderId)
+                        }
+
                         _uiState.value = CheckoutUiState.AwaitingPayment(
                             initiation.orderId,
                             initiation.paymentUrl!!,
@@ -318,6 +328,7 @@ class CheckoutViewModel @Inject constructor(
                         )
                         _currentStep.value = CheckoutStep.VERIFICATION
                     } else {
+
                         _uiState.value = CheckoutUiState.OrderPlaced(initiation.orderId)
                         _currentStep.value = CheckoutStep.CONFIRMATION
                     }
@@ -332,6 +343,7 @@ class CheckoutViewModel @Inject constructor(
         val orderId = when (currentState) {
             is CheckoutUiState.AwaitingPayment -> currentState.orderId
             is CheckoutUiState.OrderPlaced -> currentState.orderId
+            is CheckoutUiState.VerifyingPayment -> currentState.orderId
             else -> return
         }
 
@@ -339,13 +351,45 @@ class CheckoutViewModel @Inject constructor(
             _uiState.value = CheckoutUiState.VerifyingPayment(orderId)
             verifyMopayPayment(sessionId).fold(
                 onSuccess = {
+                    preferenceManager.setActivePaymentOrderId(null)
                     _uiState.value = CheckoutUiState.OrderPlaced(orderId)
                     _currentStep.value = CheckoutStep.CONFIRMATION
                 },
                 onFailure = {
-                    _uiState.value = CheckoutUiState.Error(it.message ?: "Verification failed")
+                    // Check if it's a terminal failure or just unknown
+                    val message = it.message ?: "Verification failed"
+                    if (message.contains("CANCELLED") || message.contains("FAILED")) {
+                        preferenceManager.setActivePaymentOrderId(null)
+                    }
+                    _uiState.value = CheckoutUiState.Error(message)
                 }
             )
         }
     }
+
+    private var isVerifyingOnReturn = false
+
+    fun verifyPaymentOnReturn() {
+        if (isVerifyingOnReturn) return
+        
+        viewModelScope.launch {
+            val activeOrderId = preferenceManager.activePaymentOrderId.first() ?: return@launch
+            isVerifyingOnReturn = true
+            
+            // Re-fetch order to get the latest sessionId from server
+            getOrder(activeOrderId).onSuccess { order ->
+                val sid = order.mopaySessionId
+                if (sid != null && (order.status == OrderStatus.PENDING || order.status == OrderStatus.RESERVED)) {
+                    verifyPayment(sid)
+                } else if (order.status == OrderStatus.CONFIRMED || order.status == OrderStatus.CANCELLED) {
+                    preferenceManager.setActivePaymentOrderId(null)
+                    rehydrateOrder(activeOrderId)
+                }
+            }
+
+            
+            isVerifyingOnReturn = false
+        }
+    }
 }
+

@@ -122,7 +122,10 @@ class EditListingViewModel @Inject constructor(
     }
 
     fun submit() {
+        if (_uiState.value is EditListingUiState.Loading) return // Duplicate submit protection
+
         viewModelScope.launch {
+
             val user = observeCurrentUser().first()
             if (user == null) {
                 _uiState.value = EditListingUiState.Error("User not signed in")
@@ -149,9 +152,20 @@ class EditListingViewModel @Inject constructor(
                 deliveryEstimateDays = delivery,
                 isAvailable = _isAvailable.value
             ).fold(
-                onSuccess = { _uiState.value = EditListingUiState.Success },
+                onSuccess = {
+                    // VISIBILITY GATING: Wait until the update is observable in the user's listings
+                    viewModelScope.launch {
+                        repository.observeUserListings(user.uid)
+                            .filter { listings -> listings.any { it.id == listingId } }
+                            .first()
+                        
+                        _uiState.value = EditListingUiState.Success
+                    }
+                },
                 onFailure = { _uiState.value = EditListingUiState.Error(it.message ?: "Update failed") }
             )
+
+
         }
     }
 }

@@ -38,6 +38,10 @@ import javax.inject.Inject
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
+
 
 sealed interface CreatePostState {
     data object Idle : CreatePostState
@@ -49,8 +53,10 @@ sealed interface CreatePostState {
 @HiltViewModel
 class CreatePostViewModel @Inject constructor(
     private val createPost: com.swiftshop.domain.feed.CreatePostUseCase,
-    private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase
+    private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase,
+    private val feedRepository: com.swiftshop.domain.feed.FeedRepository
 ) : ViewModel() {
+
     private val _state = MutableStateFlow<CreatePostState>(CreatePostState.Idle)
     val state = _state.asStateFlow()
 
@@ -82,6 +88,8 @@ class CreatePostViewModel @Inject constructor(
     fun removeTag(tag: String) { _tags.value = _tags.value - tag }
 
     fun publish(onSuccess: () -> Unit) {
+        if (_state.value is CreatePostState.Loading) return // Duplicate submit protection
+
         viewModelScope.launch {
             if (_imageUris.value.isEmpty()) {
                 _state.value = CreatePostState.Error("Add at least one image")
@@ -105,14 +113,24 @@ class CreatePostViewModel @Inject constructor(
                 caption = _caption.value,
                 mediaUris = _imageUris.value,
                 hashtags = _tags.value
-            ).onSuccess {
+            ).onSuccess { newPostId ->
+                // VISIBILITY GATING: Wait until the post is observable in the uploader's feed
+                feedRepository.getUserPosts(user.uid)
+                    .map { list -> list.any { p -> p.id == newPostId } }
+                    .filter { it }
+                    .first()
+
                 _state.value = CreatePostState.Success
+
+
+
                 onSuccess()
             }.onFailure {
                 _state.value = CreatePostState.Error(it.message ?: "Failed to publish post")
             }
         }
     }
+
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

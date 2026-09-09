@@ -253,7 +253,18 @@ fun SwiftShopNavHost(
         }
 
         composable(
+            route = Screen.EditListing.route,
+            arguments = listOf(navArgument("listingId") { type = NavType.StringType })
+        ) {
+            com.swiftshop.feature.shop.EditListingScreen(
+                onBack = { navController.popBackStack() },
+                onUpdated = { navController.popBackStack() }
+            )
+        }
+
+        composable(
             route = Screen.UserProfile.route,
+
             arguments = listOf(navArgument("uid") { type = NavType.StringType })
         ) { ProfileScreen(navController = navController) }
     }
