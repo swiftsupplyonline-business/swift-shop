@@ -30,6 +30,16 @@ sealed interface DeliveryRequestActionState {
     data class Error(val message: String) : DeliveryRequestActionState
 }
 
+/**
+ * RequestDeliveryViewModel handles the state and logic for initiating a delivery route.
+ *
+ * DESIGN PRINCIPLE: Immutable Logistical Contract
+ * Request Delivery occurs after the order is paid (CONFIRMED). The destination and
+ * delivery offering were already selected and snapshotted at checkout.
+ *
+ * Therefore, this ViewModel consumes those immutable snapshots for route initiation
+ * rather than allowing them to be edited, which would require repricing and re-payment.
+ */
 @HiltViewModel
 class RequestDeliveryViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -75,6 +85,16 @@ class RequestDeliveryViewModel @Inject constructor(
             }
             val shop = shopResult.getOrThrow()
 
+            // DESIGN GATE: Enforce authoritative origin snapshot
+            val origin = order.originLocationSnapshot
+            if (origin == null || !origin.toGeoPoint().isValid()) {
+                _uiState.value = RequestDeliveryUiState.Error(
+                    "This shop has no confirmed pickup location. " +
+                    "The seller must set their shop location before delivery can be requested."
+                )
+                return@launch
+            }
+
             val deliveryListingsResult = getDeliveryListings()
             val deliveryListings = deliveryListingsResult.getOrDefault(emptyList())
 
@@ -90,11 +110,6 @@ class RequestDeliveryViewModel @Inject constructor(
                 _selectedListing.value = it
             }
         }
-    }
-
-    fun onDestinationSelected(location: GeoPoint) {
-        // UI can display the selection, but the backend will use the snapshot
-        _destination.value = location
     }
 
     fun onListingSelected(listing: DeliveryListing) {

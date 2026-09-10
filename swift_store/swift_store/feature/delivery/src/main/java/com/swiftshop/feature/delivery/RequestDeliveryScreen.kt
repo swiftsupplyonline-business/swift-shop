@@ -76,7 +76,6 @@ fun RequestDeliveryScreen(
                     selectedListing = selectedListing,
                     actionState = actionState,
                     padding = padding,
-                    onDestinationSelect = viewModel::onDestinationSelected,
                     onListingSelect = viewModel::onListingSelected,
                     onSubmit = viewModel::submitRequest
                 )
@@ -94,7 +93,6 @@ private fun RequestDeliveryContent(
     selectedListing: DeliveryListing?,
     actionState: DeliveryRequestActionState,
     padding: PaddingValues,
-    onDestinationSelect: (GeoPoint) -> Unit, // Reserved for future use if allowed
     onListingSelect: (DeliveryListing) -> Unit,
     onSubmit: () -> Unit
 ) {
@@ -111,6 +109,7 @@ private fun RequestDeliveryContent(
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(horizontal = 16.dp)
         )
+        val origin = order.originLocationSnapshot
         SwiftCard(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
             Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Surface(
@@ -125,7 +124,11 @@ private fun RequestDeliveryContent(
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(shop.name, style = MaterialTheme.typography.titleSmall)
-                    Text(shop.locationAddress, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        origin?.addressSnapshot ?: shop.locationAddress,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -136,14 +139,16 @@ private fun RequestDeliveryContent(
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(horizontal = 16.dp)
         )
-        val shopMarker = remember(shop) {
-            MapMarker(
-                id = "shop_origin",
-                position = shop.location,
-                title = shop.name,
-                snippet = "Pickup Location",
-                entityType = SwiftEntity.SHOP
-            )
+        val shopMarker = remember(order) {
+            order.originLocationSnapshot?.let {
+                MapMarker(
+                    id = "shop_origin",
+                    position = it.toGeoPoint(),
+                    title = shop.name,
+                    snippet = "Pickup Location",
+                    entityType = SwiftEntity.SHOP
+                )
+            }
         }
         val purchasedDest = remember(order) {
             order.destinationLocationSnapshot?.let {
@@ -189,10 +194,19 @@ private fun RequestDeliveryContent(
             )
             listings.forEach { listing ->
                 val isPurchased = listing.id == order.selectedDeliveryListingId
+                val displayPrice = if (isPurchased) {
+                    order.deliveryListingSnapshot?.let { 
+                        MoneyAmount(it.currency, it.priceMinorUnits) 
+                    } ?: listing.price
+                } else {
+                    listing.price
+                }
+
                 DeliveryOptionCard(
                     listing = listing,
                     isSelected = selectedListing?.id == listing.id,
                     isPurchased = isPurchased,
+                    displayPrice = displayPrice,
                     onSelect = { if (isPurchased) onListingSelect(listing) },
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
@@ -217,6 +231,7 @@ private fun DeliveryOptionCard(
     listing: DeliveryListing,
     isSelected: Boolean,
     isPurchased: Boolean,
+    displayPrice: MoneyAmount,
     onSelect: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -255,7 +270,7 @@ private fun DeliveryOptionCard(
                 Text(listing.providerName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(
-                listing.price.toDisplayString(),
+                displayPrice.toDisplayString(),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary
             )

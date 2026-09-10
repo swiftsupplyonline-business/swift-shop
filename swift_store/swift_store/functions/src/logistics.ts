@@ -39,6 +39,13 @@ export const requestDelivery = onCall(async (request) => {
                 throw new Error("Unauthorized: Only order participants or admins can request delivery.");
             }
 
+            // ── Idempotent: one active route per order ──────────────────────
+            // This check must occur BEFORE the status gate so that valid retries
+            // return the existing route even after the order status has
+            // transitioned to PROCESSING.
+            if (order.deliveryRouteId) {
+                return order.deliveryRouteId as string;
+            }
 
             if (order.status !== "CONFIRMED") {
                 throw new Error(
