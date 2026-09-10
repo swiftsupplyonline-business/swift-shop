@@ -24,7 +24,12 @@ service cloud.firestore {
     match /users/{uid} {
       // P0: Private Account Data - restricted to Owner/Admin
       allow read: if isOwner(uid) || isAdmin();
-      allow create: if isOwner(uid);
+      allow create: if isOwner(uid)
+        // P0-B: Prevent forgery of privileged fields on creation
+        && request.resource.data.get('tier', 'BASIC') == 'BASIC'
+        && request.resource.data.get('isAdmin', false) == false
+        && request.resource.data.get('accountStatus', 'ACTIVE') == 'ACTIVE'
+        && request.resource.data.get('isVerified', false) == false;
       allow update: if isOwner(uid)
         // Prevent self-promotion to Admin, bypassing Active check, or forging Tier
         && !request.resource.data.diff(resource.data).affectedKeys()
@@ -227,6 +232,12 @@ service cloud.firestore {
     match /entitlements/{entitlementId} {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow write: if false;  // Server only
+    }
+
+    // ── Merchant Usage ──────────────────────────────────────────────────────
+    match /merchantUsage/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if false; // Server only
     }
 
     // ── Audit Logs ─────────────────────────────────────────────────────────

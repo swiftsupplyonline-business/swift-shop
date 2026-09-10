@@ -319,6 +319,27 @@ class FirebaseCommerceRepository @Inject constructor(
         val data = mapOf("orderId" to orderId, "reason" to reason)
         functions.getHttpsCallable("cancelOrder").call(data).await()
     }
+
+    override fun observeMerchantUsage(userId: String): Flow<MerchantUsage?> = callbackFlow {
+        val subscription = firestore.collection("merchantUsage").document(userId)
+            .addSnapshotListener { snapshot, _ ->
+                val usage = snapshot?.toObject(FirestoreMerchantUsage::class.java)?.toDomain()
+                trySend(usage)
+            }
+        awaitClose { subscription.remove() }
+    }
+
+    override fun observeSubscription(userId: String): Flow<Subscription?> = callbackFlow {
+        val subscription = firestore.collection("subscriptions")
+            .whereEqualTo("userId", userId)
+            .whereEqualTo("isActive", true)
+            .limit(1)
+            .addSnapshotListener { snapshot, _ ->
+                val sub = snapshot?.toObjects(FirestoreSubscription::class.java)?.firstOrNull()?.toDomain()
+                trySend(sub)
+            }
+        awaitClose { subscription.remove() }
+    }
 }
 
 // --- DTOs & Mappers ---------------------------------------------------------
@@ -638,7 +659,6 @@ data class FirestoreOrder(
             appointmentStartTime = appointmentStartTime,
             originLocationSnapshot = originLocationSnapshot?.toDomain(),
             destinationLocationSnapshot = destinationLocationSnapshot?.toDomain(),
-            notes = "",
             createdAt = tsToLong(createdAt),
             updatedAt = tsToLong(updatedAt)
         )
@@ -933,3 +953,54 @@ fun PaymentRequest.toFirestore() = mapOf(
     "orderId" to orderId, "amount" to amount.toFirestore(), "method" to method.name,
     "phoneNumber" to phoneNumber, "idempotencyKey" to idempotencyKey
 )
+
+data class FirestoreMerchantUsage(
+    val userId: String = "",
+    val periodStart: Long = 0L,
+    val periodEnd: Long = 0L,
+    val internalPromotionsUsed: Int = 0,
+    val externalPromotionsUsed: Int = 0,
+    val updatedAt: Any? = null
+) {
+    fun toDomain() = MerchantUsage(
+        userId = userId,
+        periodStart = periodStart,
+        periodEnd = periodEnd,
+        internalPromotionsUsed = internalPromotionsUsed,
+        externalPromotionsUsed = externalPromotionsUsed,
+        updatedAt = tsToLong(updatedAt)
+    )
+}
+
+data class FirestoreSubscription(
+    val id: String = "",
+    val userId: String = "",
+    val tier: String = "BASIC",
+    val monthlyFeeMinorUnits: Long = 0L,
+    val monthlyFeeCurrency: String = "LSL",
+    val status: String = "PENDING",
+    @get:PropertyName("isActive") @set:PropertyName("isActive") var isActive: Boolean = false,
+    val provider: String = "MOPAY",
+    val gatewayTransactionId: String? = null,
+    val paymentReference: String? = null,
+    val startedAt: Long = 0L,
+    val renewsAt: Long = 0L,
+    val cancelledAt: Long = 0L,
+    val updatedAt: Any? = null
+) {
+    fun toDomain() = Subscription(
+        id = id,
+        userId = userId,
+        tier = runCatching { UserTier.valueOf(tier) }.getOrDefault(UserTier.BASIC),
+        monthlyFee = MoneyAmount(monthlyFeeCurrency, monthlyFeeMinorUnits),
+        status = runCatching { SubscriptionStatus.valueOf(status) }.getOrDefault(SubscriptionStatus.PENDING),
+        isActive = isActive,
+        provider = provider,
+        gatewayTransactionId = gatewayTransactionId,
+        paymentReference = paymentReference,
+        startedAt = startedAt,
+        renewsAt = renewsAt,
+        cancelledAt = cancelledAt,
+        updatedAt = tsToLong(updatedAt)
+    )
+}

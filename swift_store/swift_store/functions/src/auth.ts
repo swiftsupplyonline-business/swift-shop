@@ -1,5 +1,6 @@
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
+import { getCurrentWeeklyPeriod } from "./entitlements";
 
 /**
  * Triggered when a new user document is created in Firestore.
@@ -49,6 +50,21 @@ export const provisionNewUser = onDocumentCreated({
                     totalDeliveries: 0,
                     reputationScore: 0,
                     createdAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+            }
+
+            const usageRef = db.collection("merchantUsage").doc(uid);
+            const usageDoc = await transaction.get(usageRef);
+            if (!usageDoc.exists) {
+                console.log(`Provisioning initial merchant usage for user ${uid}.`);
+                const period = getCurrentWeeklyPeriod();
+                transaction.set(usageRef, {
+                    userId: uid,
+                    periodStart: period.start,
+                    periodEnd: period.end,
+                    internalPromotionsUsed: 0,
+                    externalPromotionsUsed: 0,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 });
             }
         });

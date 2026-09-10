@@ -65,9 +65,9 @@ data class MoneyAmount(
 // ── Tier ──────────────────────────────────────────────────────────────────────────
 
 enum class UserTier {
-    BASIC,   // Free: 1 shop, unlimited listings
-    PREMIUM, // M99/mo: 3 shops, unlimited listings
-    ELITE    // M499/mo: unlimited shops, max exposure
+    BASIC,   // Free: 3 shops, 10 listings/shop
+    PREMIUM, // M99/mo: 5 shops, 50 total listings
+    ELITE    // M499/mo: unlimited shops, unlimited listings
 }
 
 // ── Account Status ───────────────────────────────────────────────────────────────
@@ -744,6 +744,8 @@ data class LocationSnapshot(
     fun toGeoPoint(): GeoPoint = GeoPoint(lat, lng)
 }
 
+// ── Merchant Entitlements ─────────────────────────────────────────────────────────
+
 // ── Advertising ──────────────────────────────────────────────────────────────────
 
 enum class CampaignStatus { DRAFT, ACTIVE, PAUSED, COMPLETED, REJECTED }
@@ -774,7 +776,58 @@ data class AdTargeting(
     val ageRange: String = ""
 ) : Parcelable
 
+// ── Merchant Entitlements ─────────────────────────────────────────────────────────
+
+enum class ExposureLevel {
+    STANDARD,
+    ENHANCED,
+    MAXIMUM
+}
+
+enum class AnalyticsLevel {
+    BASIC,
+    ADVANCED,
+    FULL
+}
+
+@Serializable
+@Parcelize
+data class MerchantEntitlement(
+    val tier: UserTier = UserTier.BASIC,
+    val maxShops: Int = 3,
+    val includedListingsPerShop: Int = 10, // Only for BASIC
+    val totalIncludedListings: Int = 10,   // For PREMIUM/ELITE (or per-shop fallback)
+    val additionalListingFee: MoneyAmount = MoneyAmount("LSL", 500L),
+    val monthlyFee: MoneyAmount = MoneyAmount.ZERO,
+    val internalPromotionAllowance: Int = 1, // per week
+    val internalPromotionUnlimited: Boolean = false,
+    val externalPromotionAllowance: Int = 0, // per week
+    val externalPromotionUnlimited: Boolean = false,
+    val exposureLevel: ExposureLevel = ExposureLevel.STANDARD,
+    val salesAnalyticsLevel: AnalyticsLevel = AnalyticsLevel.BASIC,
+    val advertAnalyticsEnabled: Boolean = false
+) : Parcelable
+
+@Serializable
+@Parcelize
+data class MerchantUsage(
+    val userId: String = "",
+    val periodStart: Long = 0L,
+    val periodEnd: Long = 0L,
+    val internalPromotionsUsed: Int = 0,
+    val externalPromotionsUsed: Int = 0,
+    val updatedAt: Long = 0L
+) : Parcelable
+
 // ── Subscription ─────────────────────────────────────────────────────────────────
+
+enum class SubscriptionStatus {
+    PENDING,
+    ACTIVE,
+    PAST_DUE,
+    CANCELED,
+    EXPIRED
+}
 
 @Serializable
 @Parcelize
@@ -783,10 +836,15 @@ data class Subscription(
     val userId: String = "",
     val tier: UserTier = UserTier.BASIC,
     val monthlyFee: MoneyAmount = MoneyAmount.ZERO,
+    val status: SubscriptionStatus = SubscriptionStatus.PENDING,
     val isActive: Boolean = false,
+    val provider: String = "MOPAY",
+    val gatewayTransactionId: String? = null,
+    val paymentReference: String? = null,
     val startedAt: Long = 0L,
     val renewsAt: Long = 0L,
-    val cancelledAt: Long = 0L
+    val cancelledAt: Long = 0L,
+    val updatedAt: Long = 0L
 ) : Parcelable
 
 // ── UI State Wrapper ─────────────────────────────────────────────────────────────

@@ -2,15 +2,25 @@
 
 import com.swiftshop.core.model.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 
 // â”€â”€â”€ Entitlement Rules (driven by data, not hard-coded) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 data class TierEntitlement(
     val tier: UserTier,
-    val maxShops: Int,          // -1 = unlimited
-    val freeListings: Int,      // per shop
+    val maxShops: Int,                        // -1 = unlimited
+    val includedListingsPerShop: Int,         // used for BASIC
+    val totalIncludedListings: Int,           // used for PREMIUM
     val additionalListingFeeMinorUnits: Long,
-    val monthlyFeeMinorUnits: Long
+    val monthlyFeeMinorUnits: Long,
+    val internalPromotionAllowance: Int,      // per week
+    val internalPromotionUnlimited: Boolean,
+    val externalPromotionAllowance: Int,      // per week
+    val externalPromotionUnlimited: Boolean,
+    val exposureLevel: ExposureLevel,
+    val salesAnalyticsLevel: AnalyticsLevel,
+    val advertAnalyticsEnabled: Boolean
 )
 
 data class OrderSummary(
@@ -28,24 +38,48 @@ object TierEntitlements {
     // Hard-coded here only as defaults.
     val BASIC = TierEntitlement(
         tier = UserTier.BASIC,
-        maxShops = 1,
-        freeListings = 3,
+        maxShops = 3,
+        includedListingsPerShop = 10,
+        totalIncludedListings = 10,
         additionalListingFeeMinorUnits = 500L, // M5.00
-        monthlyFeeMinorUnits = 0L
+        monthlyFeeMinorUnits = 0L,
+        internalPromotionAllowance = 1,
+        internalPromotionUnlimited = false,
+        externalPromotionAllowance = 0,
+        externalPromotionUnlimited = false,
+        exposureLevel = ExposureLevel.STANDARD,
+        salesAnalyticsLevel = AnalyticsLevel.BASIC,
+        advertAnalyticsEnabled = false
     )
     val PREMIUM = TierEntitlement(
         tier = UserTier.PREMIUM,
-        maxShops = 3,
-        freeListings = Int.MAX_VALUE,
-        additionalListingFeeMinorUnits = 0L,
-        monthlyFeeMinorUnits = 9900L  // M99.00
+        maxShops = 5,
+        includedListingsPerShop = 50, 
+        totalIncludedListings = 50,
+        additionalListingFeeMinorUnits = 500L, // M5.00
+        monthlyFeeMinorUnits = 9900L,  // M99.00
+        internalPromotionAllowance = -1,
+        internalPromotionUnlimited = true,
+        externalPromotionAllowance = 10,
+        externalPromotionUnlimited = false,
+        exposureLevel = ExposureLevel.ENHANCED,
+        salesAnalyticsLevel = AnalyticsLevel.ADVANCED,
+        advertAnalyticsEnabled = true
     )
     val ELITE = TierEntitlement(
         tier = UserTier.ELITE,
-        maxShops = Int.MAX_VALUE,
-        freeListings = Int.MAX_VALUE,
+        maxShops = -1,
+        includedListingsPerShop = -1,
+        totalIncludedListings = -1,
         additionalListingFeeMinorUnits = 0L,
-        monthlyFeeMinorUnits = 49900L // M499.00
+        monthlyFeeMinorUnits = 49900L, // M499.00
+        internalPromotionAllowance = -1,
+        internalPromotionUnlimited = true,
+        externalPromotionAllowance = 50,
+        externalPromotionUnlimited = false,
+        exposureLevel = ExposureLevel.MAXIMUM,
+        salesAnalyticsLevel = AnalyticsLevel.FULL,
+        advertAnalyticsEnabled = true
     )
 
     fun forTier(tier: UserTier): TierEntitlement = when (tier) {
@@ -138,6 +172,9 @@ interface CommerceRepository {
     suspend fun getOrder(orderId: String): Result<Order>
     suspend fun updateOrderStatus(orderId: String, status: OrderStatus): Result<Unit>
     suspend fun cancelOrder(orderId: String, reason: String): Result<Unit>
+    // Merchant
+    fun observeMerchantUsage(userId: String): Flow<MerchantUsage?>
+    fun observeSubscription(userId: String): Flow<Subscription?>
 }
 
 data class CartItem(
@@ -259,5 +296,87 @@ class DeleteShopUseCase(private val repository: CommerceRepository) {
 
 class DeleteListingUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(listingId: String): Result<Unit> = repository.deleteListing(listingId)
+}
+
+class ObserveMerchantEntitlementsUseCase(
+    private val repository: CommerceRepository,
+    private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase
+) {
+    operator fun invoke(): Flow<MerchantEntitlement> = flow {
+        val user = observeCurrentUser().first() ?: return@flow
+        repository.observeSubscription(user.uid).collect { sub ->
+            val tier = if (sub?.isActive == true) sub.tier else UserTier.BASIC
+            val entitlement = TierEntitlements.forTier(tier)
+            emit(
+                MerchantEntitlement(
+                    tier = tier,
+                    maxShops = entitlement.maxShops,
+                    includedListingsPerShop = entitlement.includedListingsPerShop,
+                    totalIncludedListings = entitlement.totalIncludedListings,
+                    additionalListingFee = MoneyAmount("LSL", entitlement.additionalListingFeeMinorUnits),
+                    monthlyFee = MoneyAmount("LSL", entitlement.monthlyFeeMinorUnits),
+                    internalPromotionAllowance = entitlement.internalPromotionAllowance,
+                    internalPromotionUnlimited = entitlement.internalPromotionUnlimited,
+                    externalPromotionAllowance = entitlement.externalPromotionAllowance,
+                    externalPromotionUnlimited = entitlement.externalPromotionUnlimited,
+                    exposureLevel = entitlement.exposureLevel,
+                    salesAnalyticsLevel = entitlement.salesAnalyticsLevel,
+                    advertAnalyticsEnabled = entitlement.advertAnalyticsEnabled
+                )
+            )
+        }
+    }
+}
+
+class CheckShopCreationEligibilityUseCase(
+    private val repository: CommerceRepository,
+    private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase
+) {
+    suspend operator fun invoke(): Boolean {
+        val user = observeCurrentUser().first() ?: return false
+        val sub = repository.observeSubscription(user.uid).first()
+        val tier = if (sub?.isActive == true) sub.tier else UserTier.BASIC
+        val entitlement = TierEntitlements.forTier(tier)
+        
+        if (entitlement.maxShops == -1) return true
+        
+        val shops = repository.getUserShops(user.uid).first()
+        return shops.size < entitlement.maxShops
+    }
+}
+
+class CheckListingEligibilityUseCase(
+    private val repository: CommerceRepository,
+    private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase
+) {
+    sealed interface Result {
+        data object Included : Result
+        data object AdditionalFeeRequired : Result
+        data object Denied : Result
+    }
+
+    suspend operator fun invoke(shopId: String): Result {
+        val user = observeCurrentUser().first() ?: return Result.Denied
+        val sub = repository.observeSubscription(user.uid).first()
+        val tier = if (sub?.isActive == true) sub.tier else UserTier.BASIC
+        val entitlement = TierEntitlements.forTier(tier)
+        
+        if (entitlement.totalIncludedListings == -1) return Result.Included
+        
+        val allListings = repository.getUserListings(user.uid).getOrNull() ?: emptyList()
+        
+        return when (tier) {
+            UserTier.BASIC -> {
+                val shopListings = allListings.filter { it.shopId == shopId }
+                if (shopListings.size < entitlement.includedListingsPerShop) Result.Included
+                else Result.AdditionalFeeRequired
+            }
+            UserTier.PREMIUM -> {
+                if (allListings.size < entitlement.totalIncludedListings) Result.Included
+                else Result.AdditionalFeeRequired
+            }
+            else -> Result.Included
+        }
+    }
 }
 

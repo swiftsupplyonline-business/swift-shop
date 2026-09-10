@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { MopayClient, MOPAY_API_KEY } from "./mopay";
+import { resolveEntitlement } from "./entitlements";
 
 /**
  * Calculates authoritative order fees server-side.
@@ -1151,6 +1152,34 @@ export const createListing = onCall(async (request) => {
 
             if (shop.ownerId !== uid) throw new Error("Unauthorized");
 
+            // --- Authoritative Quota Check ---
+            const userDoc = await transaction.get(db.collection("users").doc(uid));
+            const tier = userDoc.data()?.tier || "BASIC";
+            const entitlement = resolveEntitlement(tier);
+
+            if (entitlement.totalIncludedListings !== -1) {
+                const allListingsQuery = db.collection("listings").where("sellerId", "==", uid);
+                const allListingsSnapshot = await transaction.get(allListingsQuery);
+                const totalListings = allListingsSnapshot.size;
+
+                if (tier === "BASIC") {
+                    const shopListingsQuery = db.collection("listings")
+                        .where("shopId", "==", listing.shopId)
+                        .where("sellerId", "==", uid);
+                    const shopListingsSnapshot = await transaction.get(shopListingsQuery);
+                    const shopListings = shopListingsSnapshot.size;
+
+                    if (shopListings >= entitlement.includedListingsPerShop) {
+                        throw new Error("ADDITIONAL_FEE_REQUIRED");
+                    }
+                } else if (tier === "PREMIUM") {
+                    if (totalListings >= entitlement.totalIncludedListings) {
+                        throw new Error("ADDITIONAL_FEE_REQUIRED");
+                    }
+                }
+            }
+            // -----------------------------------
+
             const profileRef = db.collection("profiles").doc(uid);
             const profileDoc = await transaction.get(profileRef);
             if (!profileDoc.exists) throw new Error("Profile not found");
@@ -1294,6 +1323,18 @@ export const createShop = onCall(async (request) => {
             const profileDoc = await transaction.get(profileRef);
             if (!profileDoc.exists) throw new Error("Profile not found");
 
+            // --- Authoritative Entitlement Check ---
+            const entitlement = resolveEntitlement(tier);
+
+            const shopsQuery = db.collection("shops").where("ownerId", "==", uid);
+            const shopsSnapshot = await transaction.get(shopsQuery);
+            const realShopCount = shopsSnapshot.size;
+
+            if (entitlement.maxShops !== -1 && realShopCount >= entitlement.maxShops) {
+                throw new Error(`Shop limit reached for ${tier} tier. Max: ${entitlement.maxShops}`);
+            }
+            // ----------------------------------------
+
             if (shop.id) {
                 const existingDoc = await transaction.get(db.collection("shops").doc(shop.id));
                 if (existingDoc.exists) {
@@ -1301,16 +1342,6 @@ export const createShop = onCall(async (request) => {
                     throw new Error("Shop ID already taken");
                 }
             }
-
-            const shopsQuery = db.collection("shops").where("ownerId", "==", uid);
-            const shopsSnapshot = await transaction.get(shopsQuery);
-            const realShopCount = shopsSnapshot.size;
-
-            let maxShops = 1;
-            if (tier === "PREMIUM") maxShops = 3;
-            if (tier === "ELITE") maxShops = -1;
-
-            if (maxShops !== -1 && realShopCount >= maxShops) throw new Error(`Shop limit reached for ${tier} tier.`);
 
             const shopId = shop.id || db.collection("shops").doc().id;
             const now = admin.firestore.FieldValue.serverTimestamp();

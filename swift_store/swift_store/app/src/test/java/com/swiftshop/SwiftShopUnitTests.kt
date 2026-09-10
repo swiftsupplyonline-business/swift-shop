@@ -107,23 +107,23 @@ class WalletRulesTest {
 class TierEntitlementTest {
 
     @Test
-    fun `basic tier has 1 shop limit`() {
-        assertEquals(1, TierEntitlements.BASIC.maxShops)
+    fun `basic tier has 3 shop limit`() {
+        assertEquals(3, TierEntitlements.BASIC.maxShops)
     }
 
     @Test
-    fun `basic tier has 3 free listings`() {
-        assertEquals(3, TierEntitlements.BASIC.freeListings)
+    fun `basic tier has 10 included listings per shop`() {
+        assertEquals(10, TierEntitlements.BASIC.includedListingsPerShop)
     }
 
     @Test
-    fun `premium tier has 3 shops`() {
-        assertEquals(3, TierEntitlements.PREMIUM.maxShops)
+    fun `premium tier has 5 shops`() {
+        assertEquals(5, TierEntitlements.PREMIUM.maxShops)
     }
 
     @Test
     fun `elite tier has unlimited shops`() {
-        assertEquals(Int.MAX_VALUE, TierEntitlements.ELITE.maxShops)
+        assertEquals(-1, TierEntitlements.ELITE.maxShops)
     }
 
     @Test
@@ -154,14 +154,15 @@ class CanCreateShopUseCaseTest {
     }
 
     @Test
-    fun `basic tier cannot create second shop`() {
-        assertFalse(useCase(UserTier.BASIC, existingShopCount = 1))
+    fun `basic tier can create up to 3 shops`() {
+        assertTrue(useCase(UserTier.BASIC, existingShopCount = 2))
+        assertFalse(useCase(UserTier.BASIC, existingShopCount = 3))
     }
 
     @Test
-    fun `premium tier can create up to 3 shops`() {
-        assertTrue(useCase(UserTier.PREMIUM, existingShopCount = 2))
-        assertFalse(useCase(UserTier.PREMIUM, existingShopCount = 3))
+    fun `premium tier can create up to 5 shops`() {
+        assertTrue(useCase(UserTier.PREMIUM, existingShopCount = 4))
+        assertFalse(useCase(UserTier.PREMIUM, existingShopCount = 5))
     }
 
     @Test
