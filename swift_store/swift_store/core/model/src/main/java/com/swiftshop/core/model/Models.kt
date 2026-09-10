@@ -192,6 +192,32 @@ enum class ListingType {
     }
 }
 
+/**
+ * Policy-driven fulfillment options.
+ */
+enum class FulfillmentType {
+    PICKUP,             // Buyer collects from seller
+    PHYSICAL_DELIVERY,  // Logistics provider delivers
+    AT_PROVIDER,        // Service performed at seller site
+    AT_CUSTOMER,        // Service performed at buyer site
+    REMOTE,             // Online/Digital service
+    FORM_WORKFLOW,      // No physical fulfillment (e.g. Application)
+    QUOTE,              // Pricing/terms to be determined
+    NONE                // Placeholder for unspecified
+}
+
+/**
+ * User response to a custom field definition.
+ */
+@Serializable
+@Parcelize
+data class CustomerFieldResponse(
+    val fieldId: String = "",
+    val label: String = "",
+    val value: String = "",
+    val displayValue: String? = null
+) : Parcelable
+
 
 @Serializable
 @Parcelize
@@ -218,6 +244,8 @@ data class Listing(
     val bookmarkCount: Int = 0,
     val isBookmarkedByMe: Boolean = false,
     val deliveryEstimateDays: Int = 0,
+    val durationMinutes: Int = 0, // New: for Services/Appointments
+    val fulfillmentOptions: List<FulfillmentType> = emptyList(), // New: policy-driven
     val customFields: List<CustomField> = emptyList(),
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
@@ -231,6 +259,8 @@ data class Listing(
         price = price,
         listingType = listingType.toCanonical().name,
         category = category,
+        durationMinutes = durationMinutes,
+        fulfillmentOptions = fulfillmentOptions,
         snapshotAt = System.currentTimeMillis()
     )
 }
@@ -365,7 +395,8 @@ data class ListingSnapshot(
     val listingType: String = "",
     val category: String = "",
     val variantId: String? = null,
-    val fulfillmentOptions: List<String> = emptyList(),
+    val fulfillmentOptions: List<FulfillmentType> = emptyList(),
+    val durationMinutes: Int = 0, // Added for Phase F1
     val snapshotAt: Long = 0L
 ) : Parcelable
 
@@ -456,10 +487,11 @@ data class Order(
     val recipientUid: String? = null,
     val paymentId: String = "",
 
+    val customerResponses: List<CustomerFieldResponse> = emptyList(), // Unified responses
     val paymentUrl: String? = null,
     val mopaySessionId: String? = null,
     val slotId: String? = null,
-    val fulfillmentType: String? = null,
+    val fulfillmentType: FulfillmentType? = null, // Updated to Enum
     val appointmentStartTime: Long? = null,
     val originLocationSnapshot: LocationSnapshot? = null,
     val destinationLocationSnapshot: LocationSnapshot? = null,

@@ -395,6 +395,8 @@ data class FirestoreListing(
     val commitmentCount: Int = 0,
     val bookmarkCount: Int = 0,
     val deliveryEstimateDays: Int = 0,
+    val durationMinutes: Int = 0,
+    val fulfillmentOptions: List<String> = emptyList(),
     val customFields: List<FirestoreCustomField> = emptyList(),
     val createdAt: Any? = null,
     val updatedAt: Any? = null
@@ -421,6 +423,8 @@ data class FirestoreListing(
         bookmarkCount = bookmarkCount,
         isBookmarkedByMe = false, // derived at read-time if needed
         deliveryEstimateDays = deliveryEstimateDays,
+        durationMinutes = durationMinutes,
+        fulfillmentOptions = fulfillmentOptions.mapNotNull { safeEnumValueOf<FulfillmentType>(it) },
         customFields = customFields.map { it.toDomain() },
         createdAt = tsToLong(createdAt),
         updatedAt = tsToLong(updatedAt)
@@ -454,6 +458,8 @@ fun Listing.toFirestore() = mapOf(
     "commitmentCount" to commitmentCount,
     "bookmarkCount" to bookmarkCount,
     "deliveryEstimateDays" to deliveryEstimateDays,
+    "durationMinutes" to durationMinutes,
+    "fulfillmentOptions" to fulfillmentOptions.map { it.name },
     "customFields" to customFields.map { it.toFirestore() },
     "createdAt" to createdAt, "updatedAt" to updatedAt
 )
@@ -541,6 +547,8 @@ data class FirestoreOrder(
     val deliveryListingSnapshot: FirestoreDeliveryListingSnapshot? = null,
     val recipientUid: String? = null,
     val paymentId: String = "",
+    val customerResponses: List<FirestoreCustomerFieldResponse> = emptyList(),
+    val notes: String = "",
 
     val slotId: String? = null,
     val fulfillmentType: String? = null,
@@ -616,9 +624,11 @@ data class FirestoreOrder(
             deliveryListingSnapshot = deliveryListingSnapshot?.toDomain(),
             recipientUid = recipientUid,
             paymentId = paymentId,
+            customerResponses = customerResponses.map { it.toDomain() },
+            notes = notes,
 
             slotId = slotId,
-            fulfillmentType = fulfillmentType,
+            fulfillmentType = safeEnumValueOf<FulfillmentType>(fulfillmentType),
             appointmentStartTime = appointmentStartTime,
             originLocationSnapshot = originLocationSnapshot?.toDomain(),
             destinationLocationSnapshot = destinationLocationSnapshot?.toDomain(),
@@ -643,6 +653,7 @@ data class FirestoreListingSnapshot(
     val category: String = "",
     val variantId: String? = null,
     val fulfillmentOptions: List<String> = emptyList(),
+    val durationMinutes: Int = 0,
     val snapshotAt: Long = 0L
 ) {
     fun toDomain() = ListingSnapshot(
@@ -656,7 +667,8 @@ data class FirestoreListingSnapshot(
         listingType = listingType,
         category = category,
         variantId = variantId,
-        fulfillmentOptions = fulfillmentOptions,
+        fulfillmentOptions = fulfillmentOptions.mapNotNull { safeEnumValueOf<FulfillmentType>(it) },
+        durationMinutes = durationMinutes,
         snapshotAt = snapshotAt
     )
 }
@@ -668,7 +680,8 @@ fun ListingSnapshot.toFirestore(): Map<String, Any?> = mapOf(
     "priceMinorUnits" to price.minorUnits, "currency" to price.currency,
     "listingType" to listingType, "category" to category,
     "variantId" to variantId,
-    "fulfillmentOptions" to fulfillmentOptions,
+    "fulfillmentOptions" to fulfillmentOptions.map { it.name },
+    "durationMinutes" to durationMinutes,
     "snapshotAt" to snapshotAt
 )
 
@@ -712,6 +725,19 @@ data class FirestoreOrderItem(
 ) {
     fun toDomain() = OrderItem(listingId, title, quantity, MoneyAmount(unitPriceCurrency, unitPriceMinorUnits), emptyMap())
 }
+
+data class FirestoreCustomerFieldResponse(
+    val fieldId: String = "",
+    val label: String = "",
+    val value: String = "",
+    val displayValue: String? = null
+) {
+    fun toDomain() = CustomerFieldResponse(fieldId, label, value, displayValue)
+}
+
+fun CustomerFieldResponse.toFirestore() = mapOf(
+    "fieldId" to fieldId, "label" to label, "value" to value, "displayValue" to displayValue
+)
 
 data class FirestoreLocationSnapshot(
     val lat: Double = 0.0,
@@ -762,6 +788,9 @@ fun Order.toFirestore(): Map<String, Any?> = buildMap {
         "selectedDeliveryListingId" to selectedDeliveryListingId,
         "deliveryListingSnapshot" to deliveryListingSnapshot?.toFirestore(),
         "recipientUid" to recipientUid,
+        "customerResponses" to customerResponses.map { it.toFirestore() },
+        "notes" to notes,
+        "fulfillmentType" to fulfillmentType?.name,
         "originLocationSnapshot" to originLocationSnapshot?.toFirestore(),
 
         "destinationLocationSnapshot" to destinationLocationSnapshot?.toFirestore(),

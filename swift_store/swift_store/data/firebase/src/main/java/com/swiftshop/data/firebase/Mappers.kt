@@ -12,3 +12,21 @@ fun tsToLong(v: Any?): Long = when (v) {
     }
     else -> 0L
 }
+
+inline fun <reified T : Enum<T>> safeEnumValueOf(
+    name: String?,
+    default: T? = null
+): T? {
+    if (name.isNullOrBlank()) return default
+    return try {
+        java.lang.Enum.valueOf(T::class.java, name)
+    } catch (e: Exception) {
+        // Handle legacy or unknown values gracefully
+        when (T::class.java) {
+            com.swiftshop.core.model.FulfillmentType::class.java -> {
+                if (name == "SERVICE") return com.swiftshop.core.model.FulfillmentType.AT_PROVIDER as T
+            }
+        }
+        null
+    }
+}
