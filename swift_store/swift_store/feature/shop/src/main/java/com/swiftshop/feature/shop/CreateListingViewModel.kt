@@ -91,13 +91,23 @@ class CreateListingViewModel @Inject constructor(
     private val _deliveryEstimateDays = MutableStateFlow("0")
     val deliveryEstimateDays = _deliveryEstimateDays.asStateFlow()
 
+    private val _durationMinutes = MutableStateFlow("0")
+    val durationMinutes = _durationMinutes.asStateFlow()
+
+    private val _fulfillmentOptions = MutableStateFlow<List<FulfillmentType>>(emptyList())
+    val fulfillmentOptions = _fulfillmentOptions.asStateFlow()
+
     val showCustomFieldBuilder: StateFlow<Boolean> = _listingType.map { type ->
-        type in listOf(ListingType.PLACE_ORDER, ListingType.REGISTER, ListingType.SET_APPOINTMENT, ListingType.SERVICE, ListingType.BOOKABLE_SERVICE, ListingType.PREPARED_FOOD)
+        com.swiftshop.domain.commerce.WorkflowMapping.supportsCustomFields(type)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     val showDeliveryEstimate: StateFlow<Boolean> = _listingType.map { type ->
-        type in listOf(ListingType.PRODUCT, ListingType.BUY, ListingType.PLACE_ORDER, ListingType.DELIVER, ListingType.PHYSICAL_ITEM, ListingType.DELIVERY_SERVICE)
+        com.swiftshop.domain.commerce.WorkflowMapping.supportsDeliveryEstimate(type)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    val showDurationInput: StateFlow<Boolean> = _listingType.map { type ->
+        com.swiftshop.domain.commerce.WorkflowMapping.supportsDuration(type)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val _selectedUnit = MutableStateFlow<String?>(null)
     val selectedUnit = _selectedUnit.asStateFlow()
@@ -206,10 +216,19 @@ class CreateListingViewModel @Inject constructor(
     fun onPriceChange(value: String) { _priceMajor.value = value }
     fun onStockChange(value: String) { _stockQuantity.value = value }
     fun onDeliveryEstimateChange(value: String) { _deliveryEstimateDays.value = value }
+    fun onDurationChange(value: String) { _durationMinutes.value = value }
+
+    fun onFulfillmentOptionToggle(option: FulfillmentType) {
+        _fulfillmentOptions.value = if (_fulfillmentOptions.value.contains(option)) {
+            _fulfillmentOptions.value - option
+        } else {
+            _fulfillmentOptions.value + option
+        }
+    }
 
     fun onListingTypeChange(type: ListingType) {
         _listingType.value = type
-        if (type !in listOf(ListingType.PLACE_ORDER, ListingType.REGISTER, ListingType.SET_APPOINTMENT)) {
+        if (!com.swiftshop.domain.commerce.WorkflowMapping.supportsCustomFields(type)) {
             _customFields.value = emptyList()
         }
     }
@@ -285,34 +304,27 @@ class CreateListingViewModel @Inject constructor(
                 _uiState.value = CreateListingUiState.Error("Please select a shop")
                 return@launch
             }
-            val price = MoneyAmount.fromMajorUnits(_priceMajor.value.toDoubleOrNull() ?: 0.0)
+            val price = MoneyAmount.fromDecimalString(_priceMajor.value)
             val stock = _stockQuantity.value.toIntOrNull() ?: 0
             val deliveryDays = _deliveryEstimateDays.value.toIntOrNull() ?: 0
+            val duration = _durationMinutes.value.toIntOrNull() ?: 0
+            val options = _fulfillmentOptions.value
             
-            repository.createListing(
-                Listing(
-                    shopId = shopId,
-                    sellerId = uid,
-                    title = _title.value,
-                    description = _description.value,
-                    category = _category.value,
-                    price = price,
-                    totalQuantity = stock,
-                    availableQuantity = stock,
-                    stockQuantity = stock,
-                    listingType = _listingType.value,
-                    customFields = _customFields.value,
-                    deliveryEstimateDays = deliveryDays,
-                    createdAt = System.currentTimeMillis()
-                )
+            createListing(
+                title = _title.value,
+                description = _description.value,
+                category = _category.value,
+                price = price,
+                stockQuantity = stock,
+                imageUris = _imageUris.value,
+                sellerId = uid,
+                shopId = shopId,
+                listingType = _listingType.value,
+                customFields = _customFields.value,
+                deliveryEstimateDays = deliveryDays,
+                durationMinutes = duration,
+                fulfillmentOptions = options
             ).onSuccess { newListingId ->
-                // VISIBILITY GATING: Wait until the listing is actually observable 
-                // in the shop's stream before claiming success.
-                repository.getShopListings(shopId, 0, 50)
-                    .map { list -> list.any { l -> l.id == newListingId } }
-                    .filter { it }
-                    .first()
-
                 _uiState.value = CreateListingUiState.Success
 
 

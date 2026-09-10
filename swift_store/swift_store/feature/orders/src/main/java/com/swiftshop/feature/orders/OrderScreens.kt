@@ -248,7 +248,7 @@ fun OrderDetailScreen(
                     }
 
                     // Appointment Details (for SERVICE orders)
-                    if (order.fulfillmentType == "SERVICE" && order.appointmentStartTime != null) {
+                    if (com.swiftshop.domain.commerce.WorkflowMapping.isAppointment(order.fulfillmentType) && order.appointmentStartTime != null) {
                         item {
                             Text("Appointment", style = MaterialTheme.typography.titleMedium)
                         }
@@ -365,20 +365,21 @@ fun OrderDetailScreen(
                     }
 
                     // Delivery address
-
-                    item {
-                        SwiftCard(modifier = Modifier.fillMaxWidth()) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text("Delivery Address", style = MaterialTheme.typography.titleSmall)
-                                Spacer(Modifier.height(8.dp))
-                                Text(order.deliveryAddress.label,
-                                    style = MaterialTheme.typography.bodyMedium)
-                                Text(order.deliveryAddress.streetHint,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("${order.deliveryAddress.city}, ${order.deliveryAddress.country}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (com.swiftshop.domain.commerce.WorkflowMapping.needsDeliveryInfo(order.type)) {
+                        item {
+                            SwiftCard(modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text("Delivery Address", style = MaterialTheme.typography.titleSmall)
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(order.deliveryAddress.label,
+                                        style = MaterialTheme.typography.bodyMedium)
+                                    Text(order.deliveryAddress.streetHint,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("${order.deliveryAddress.city}, ${order.deliveryAddress.country}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                             }
                         }
                     }

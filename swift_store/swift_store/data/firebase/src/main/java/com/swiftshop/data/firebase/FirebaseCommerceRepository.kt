@@ -223,7 +223,9 @@ class FirebaseCommerceRepository @Inject constructor(
         phoneNumber: String,
         idempotencyKey: String,
         recipientUid: String?,
-        payload: OrderPayload?
+        payload: OrderPayload?,
+        customerResponses: List<CustomerFieldResponse>,
+        notes: String
     ): Result<OrderInitiation> = runCatching {
         val data = buildMap {
             put("items", items.map { it.toFirestore() })
@@ -235,6 +237,8 @@ class FirebaseCommerceRepository @Inject constructor(
             put("idempotencyKey", idempotencyKey)
             recipientUid?.let { put("recipientUid", it) }
             payload?.let { put("payload", it.toFirestore()) }
+            put("customerResponses", customerResponses.map { it.toFirestore() })
+            put("notes", notes)
         }
 
         val result = functions.getHttpsCallable("createOrder").call(data).await()
@@ -258,7 +262,8 @@ class FirebaseCommerceRepository @Inject constructor(
         paymentMethod: PaymentMethod,
         provider: String?,
         phoneNumber: String,
-        idempotencyKey: String
+        idempotencyKey: String,
+        locationType: FulfillmentType
     ): Result<OrderInitiation> = runCatching {
         val data = mapOf(
             "listingId" to listingId,
@@ -266,7 +271,8 @@ class FirebaseCommerceRepository @Inject constructor(
             "paymentMethod" to paymentMethod.name,
             "provider" to provider,
             "phoneNumber" to phoneNumber,
-            "idempotencyKey" to idempotencyKey
+            "idempotencyKey" to idempotencyKey,
+            "payload" to mapOf("locationType" to locationType.name)
         )
         val result = functions.getHttpsCallable("initiateServiceBooking").call(data).await()
         val resMap = result.data as Map<String, Any>

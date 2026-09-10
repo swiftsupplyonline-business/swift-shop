@@ -110,7 +110,9 @@ interface CommerceRepository {
         phoneNumber: String,
         idempotencyKey: String,
         recipientUid: String? = null,
-        payload: OrderPayload? = null
+        payload: OrderPayload? = null,
+        customerResponses: List<CustomerFieldResponse> = emptyList(),
+        notes: String = ""
     ): Result<OrderInitiation>
 
 
@@ -121,7 +123,8 @@ interface CommerceRepository {
         paymentMethod: PaymentMethod,
         provider: String?,
         phoneNumber: String,
-        idempotencyKey: String
+        idempotencyKey: String,
+        locationType: FulfillmentType = FulfillmentType.AT_PROVIDER
     ): Result<OrderInitiation>
     suspend fun verifyMopayPayment(sessionId: String): Result<Unit>
     fun observeUserOrders(userId: String): Flow<List<Order>>
@@ -212,14 +215,16 @@ class PlaceOrderUseCase(private val repository: CommerceRepository) {
         phoneNumber: String,
         idempotencyKey: String,
         recipientUid: String? = null,
-        payload: OrderPayload? = null
+        payload: OrderPayload? = null,
+        customerResponses: List<CustomerFieldResponse> = emptyList(),
+        notes: String = ""
     ): Result<OrderInitiation> {
         if (items.isEmpty()) return Result.failure(IllegalArgumentException("Cart is empty"))
         if (idempotencyKey.isBlank()) return Result.failure(IllegalArgumentException("Idempotency key required"))
         if (deliveryListingId.isBlank()) return Result.failure(IllegalArgumentException("A delivery option must be selected"))
         // Server-side validates deliveryListingId and reads the canonical price from the listing.
         // The client must never pass a fee amount — the backend is the only financial authority.
-        return repository.placeOrder(items, address, deliveryListingId, paymentMethod, provider, phoneNumber, idempotencyKey, recipientUid, payload)
+        return repository.placeOrder(items, address, deliveryListingId, paymentMethod, provider, phoneNumber, idempotencyKey, recipientUid, payload, customerResponses, notes)
     }
 }
 

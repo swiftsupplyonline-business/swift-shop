@@ -25,7 +25,9 @@ class CreateListingUseCase(
         shopId: String,
         listingType: ListingType = ListingType.BUY,
         customFields: List<CustomField> = emptyList(),
-        deliveryEstimateDays: Int = 0
+        deliveryEstimateDays: Int = 0,
+        durationMinutes: Int = 0,
+        fulfillmentOptions: List<FulfillmentType> = emptyList()
     ): Result<String> = runCatching {
         Timber.d("DEBUG_CREATE: Inside UseCase - title: $title, type: $listingType, sellerId: $sellerId, shopId: $shopId, imageCount: ${imageUris.size}")
         if (title.isBlank()) throw IllegalArgumentException("Title is required")
@@ -60,6 +62,8 @@ class CreateListingUseCase(
             listingType = listingType,
             customFields = customFields,
             deliveryEstimateDays = deliveryEstimateDays,
+            durationMinutes = durationMinutes,
+            fulfillmentOptions = fulfillmentOptions,
             isAvailable = stockQuantity > 0,
             createdAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis()

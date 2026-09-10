@@ -93,6 +93,7 @@ function captureListingSnapshot(listing: any): any {
         category: listing.category || "",
         variantId: null,
         fulfillmentOptions: listing.fulfillmentOptions || [],
+        durationMinutes: listing.durationMinutes || 0,
         snapshotAt: Date.now()
     };
 }
@@ -350,9 +351,9 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                         requestedDate: String(clientPayload.requestedDate || ""),
                         requestedTime: String(clientPayload.requestedTime || ""),
                         durationMinutes: listingDataList[0].durationMinutes || 0,
-                        locationType: ["ON_SITE", "REMOTE", "BUYER_LOCATION"].includes(clientPayload.locationType)
+                        locationType: ["AT_PROVIDER", "REMOTE", "AT_CUSTOMER"].includes(clientPayload.locationType)
                             ? clientPayload.locationType
-                            : "ON_SITE"
+                            : "AT_PROVIDER"
                     };
                     break;
                 case "BULK_PURCHASE":
@@ -1043,7 +1044,7 @@ export const initiateServiceBooking = onCall({ secrets: [MOPAY_API_KEY] }, async
             if (!listingSnap.exists) throw new Error("Listing not found");
             const listing = listingSnap.data()!;
 
-            if (listing.listingType !== "SET_APPOINTMENT" && listing.listingType !== "BOOKABLE_SERVICE") {
+            if (listing.listingType !== "SET_APPOINTMENT" && listing.listingType !== "BOOKABLE_SERVICE" && listing.listingType !== "SERVICE") {
                 throw new Error("Listing is not a bookable service");
             }
 
@@ -1069,7 +1070,7 @@ export const initiateServiceBooking = onCall({ secrets: [MOPAY_API_KEY] }, async
                 id: orderId, buyerId: auth.uid, sellerId: listing.sellerId, shopId: shopId,
                 type: "SERVICE_BOOKING",
                 participants: { "REQUESTER": auth.uid, "LISTING_AUTHOR": listing.sellerId, "SERVICE_PROVIDER": listing.sellerId },
-                status: "PENDING", fulfillmentType: "SERVICE", slotId: slotId, appointmentStartTime: startTime,
+                status: "PENDING", fulfillmentType: "AT_PROVIDER", slotId: slotId, appointmentStartTime: startTime,
                 totalMinorUnits: priceMinorUnits, currency: currency, idempotencyKey,
                 paymentMethod: paymentMethod || "MOPAY", provider: provider || null, phoneNumber,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1077,7 +1078,7 @@ export const initiateServiceBooking = onCall({ secrets: [MOPAY_API_KEY] }, async
                 payload: {
                     serviceId: listingId, requestedDate: startDate.toISOString().split("T")[0],
                     requestedTime: startDate.toISOString().split("T")[1].substring(0, 5),
-                    durationMinutes: listing.durationMinutes || 0, locationType: clientPayload.locationType || "ON_SITE"
+                    durationMinutes: listing.durationMinutes || 0, locationType: clientPayload.locationType || "AT_PROVIDER"
                 }
             };
 
@@ -1351,7 +1352,8 @@ export const updateListing = onCall(async (request) => {
             const allowedFields = [
                 "title", "description", "category", "priceMinorUnits", "priceCurrency",
                 "imageUrls", "videoUrl", "tags", "isAvailable", "isSponsored",
-                "deliveryEstimateDays", "customFields", "totalQuantity"
+                "deliveryEstimateDays", "customFields", "totalQuantity",
+                "durationMinutes", "fulfillmentOptions"
             ];
 
             const filteredUpdates: Record<string, any> = {};

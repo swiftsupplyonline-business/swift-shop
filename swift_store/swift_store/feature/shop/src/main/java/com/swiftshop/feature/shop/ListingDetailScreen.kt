@@ -26,6 +26,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+import com.swiftshop.domain.commerce.WorkflowMapping
+
 // â”€â”€â”€ CTA Configuration Engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 data class CtaConfig(
@@ -35,21 +37,16 @@ data class CtaConfig(
 )
 
 @Composable
-fun ctaForListingType(type: ListingType, brandColor: Color): CtaConfig = when (type) {
-    ListingType.PRODUCT -> CtaConfig("Buy Now", Icons.Default.ShoppingCart, brandColor)
-    ListingType.SERVICE -> CtaConfig("Book Service", Icons.Default.Assignment, brandColor)
-    ListingType.BUY -> CtaConfig("Buy Now", Icons.Default.ShoppingCart, brandColor)
-    ListingType.MAKE_PAYMENT -> CtaConfig("Make Payment", Icons.Default.Payment, brandColor)
-    ListingType.SET_APPOINTMENT -> CtaConfig("Book Appointment", Icons.Default.CalendarMonth, brandColor)
-    ListingType.PLACE_ORDER -> CtaConfig("Place Order", Icons.Default.LocalShipping, brandColor)
-    ListingType.REGISTER -> CtaConfig("Register", Icons.Default.HowToReg, brandColor)
-    ListingType.DELIVER -> CtaConfig("Request Delivery", Icons.Default.DeliveryDining, brandColor)
-    ListingType.TAKE_ME_THERE -> CtaConfig("Take Me There", Icons.Default.Navigation, brandColor)
-    ListingType.PHYSICAL_ITEM -> CtaConfig("Buy Now", Icons.Default.ShoppingCart, brandColor)
-    ListingType.PREPARED_FOOD -> CtaConfig("Order Now", Icons.Default.Restaurant, brandColor)
-    ListingType.BOOKABLE_SERVICE -> CtaConfig("Book Now", Icons.Default.CalendarMonth, brandColor)
-    ListingType.BULK_SUPPLY -> CtaConfig("Request Quote", Icons.Default.Inventory, brandColor)
-    ListingType.DELIVERY_SERVICE -> CtaConfig("Request Delivery", Icons.Default.DeliveryDining, brandColor)
+fun ctaForListingType(type: ListingType, brandColor: Color): CtaConfig = when (WorkflowMapping.getWorkflowCategory(type)) {
+    WorkflowMapping.WorkflowCategory.RETAIL -> CtaConfig("Buy Now", Icons.Default.ShoppingCart, brandColor)
+    WorkflowMapping.WorkflowCategory.SERVICE -> CtaConfig("Book Now", Icons.Default.CalendarMonth, brandColor)
+    WorkflowMapping.WorkflowCategory.DELIVERY -> CtaConfig("Request Delivery", Icons.Default.DeliveryDining, brandColor)
+    WorkflowMapping.WorkflowCategory.FORM -> {
+        val label = if (type == ListingType.REGISTER) "Register" else "Place Order"
+        CtaConfig(label, Icons.Default.Assignment, brandColor)
+    }
+    WorkflowMapping.WorkflowCategory.PAYMENT -> CtaConfig("Make Payment", Icons.Default.Payment, brandColor)
+    WorkflowMapping.WorkflowCategory.NAVIGATION -> CtaConfig("Take Me There", Icons.Default.Navigation, brandColor)
 }
 
 
@@ -126,7 +123,7 @@ fun ListingDetailScreen(
                 )
             }
 
-            if (activeSheet == ListingType.SET_APPOINTMENT || activeSheet == ListingType.BOOKABLE_SERVICE) {
+            if (WorkflowMapping.getWorkflowCategory(listing.listingType) == WorkflowMapping.WorkflowCategory.SERVICE) {
                 ModalBottomSheet(onDismissRequest = { activeSheet = null }) {
                     AppointmentSheet(
                         listing = listing,
@@ -140,7 +137,7 @@ fun ListingDetailScreen(
                         onDismiss = { activeSheet = null }
                     )
                 }
-            } else if (activeSheet == ListingType.MAKE_PAYMENT) {
+            } else if (WorkflowMapping.getWorkflowCategory(listing.listingType) == WorkflowMapping.WorkflowCategory.PAYMENT) {
 
                 ModalBottomSheet(onDismissRequest = { activeSheet = null }) {
                     MakePaymentSheet(listing = listing, onDismiss = { activeSheet = null }, onConfirm = {})
@@ -225,14 +222,13 @@ fun ListingDetailScreen(
                             SwiftPrimaryButton(
                                 text = cta.label,
                                 onClick = {
-                                    when (listing.listingType) {
-                                        ListingType.PRODUCT, ListingType.BUY, ListingType.PHYSICAL_ITEM,
-                                        ListingType.PREPARED_FOOD, ListingType.BULK_SUPPLY -> {
+                                    when (WorkflowMapping.getWorkflowCategory(listing.listingType)) {
+                                        WorkflowMapping.WorkflowCategory.RETAIL -> {
                                             viewModel.buyNow()
                                         }
-                                        ListingType.DELIVER, ListingType.DELIVERY_SERVICE ->
+                                        WorkflowMapping.WorkflowCategory.DELIVERY ->
                                             navController.navigate(Screen.DeliveryTracking.createRoute(listing.id))
-                                        ListingType.TAKE_ME_THERE -> {
+                                        WorkflowMapping.WorkflowCategory.NAVIGATION -> {
                                             state.shop?.let { shop ->
                                                 if (shop.locationAddress.isNotBlank()) {
                                                     val uri = android.net.Uri.parse("geo:0,0?q=${android.net.Uri.encode(shop.locationAddress)}")

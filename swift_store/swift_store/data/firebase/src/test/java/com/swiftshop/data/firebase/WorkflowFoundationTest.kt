@@ -112,4 +112,35 @@ class WorkflowFoundationTest {
         assertEquals(30, reconstructed.durationMinutes)
         assertEquals(FulfillmentType.REMOTE, reconstructed.fulfillmentOptions[0])
     }
+
+    @Test
+    fun `Money parsing handles exact decimals without Double`() {
+        // Known valid cases
+        assertEquals(10000L, MoneyAmount.fromDecimalString("100").minorUnits)
+        assertEquals(10000L, MoneyAmount.fromDecimalString("100.0").minorUnits)
+        assertEquals(10000L, MoneyAmount.fromDecimalString("100.00").minorUnits)
+        assertEquals(10050L, MoneyAmount.fromDecimalString("100.5").minorUnits)
+        assertEquals(10050L, MoneyAmount.fromDecimalString("100.50").minorUnits)
+        assertEquals(10099L, MoneyAmount.fromDecimalString("100.99").minorUnits)
+
+        // Truncation/Excess precision (should take first 2)
+        assertEquals(10012L, MoneyAmount.fromDecimalString("100.123").minorUnits)
+
+        // Negative
+        assertEquals(-10050L, MoneyAmount.fromDecimalString("-100.50").minorUnits)
+
+        // Invalid
+        assertEquals(0L, MoneyAmount.fromDecimalString("abc").minorUnits)
+        assertEquals(0L, MoneyAmount.fromDecimalString("").minorUnits)
+    }
+
+    @Test
+    fun `Workflow mapping identifies appointment types correctly`() {
+        val mapping = com.swiftshop.domain.commerce.WorkflowMapping
+        assertTrue(mapping.isAppointment(FulfillmentType.AT_PROVIDER))
+        assertTrue(mapping.isAppointment(FulfillmentType.AT_CUSTOMER))
+        assertTrue(mapping.isAppointment(FulfillmentType.REMOTE))
+        assertFalse(mapping.isAppointment(FulfillmentType.PICKUP))
+        assertFalse(mapping.isAppointment(null))
+    }
 }

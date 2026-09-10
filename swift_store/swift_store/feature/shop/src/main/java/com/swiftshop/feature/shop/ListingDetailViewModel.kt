@@ -140,6 +140,10 @@ class ListingDetailViewModel @Inject constructor(
             _bookingOperationId.value = it 
         }
 
+        val locationType = state.listing.fulfillmentOptions.firstOrNull { 
+            it in listOf(FulfillmentType.AT_PROVIDER, FulfillmentType.AT_CUSTOMER, FulfillmentType.REMOTE) 
+        } ?: FulfillmentType.AT_PROVIDER
+
         viewModelScope.launch {
             _actionState.value = ActionState.Loading
             initiateBooking(
@@ -148,7 +152,8 @@ class ListingDetailViewModel @Inject constructor(
                 paymentMethod = PaymentMethod.MOPAY,
                 provider = null,
                 phoneNumber = phoneNumber,
-                idempotencyKey = opId
+                idempotencyKey = opId,
+                locationType = locationType
             ).fold(
                 onSuccess = {
                     _bookingOperationId.value = null // Clear on success
@@ -204,6 +209,15 @@ class ListingDetailViewModel @Inject constructor(
             val isDeliveryService = state.listing.listingType == ListingType.DELIVERY_SERVICE || 
                                    state.listing.listingType == ListingType.DELIVER
 
+            val customerResponses = fieldValues.map { (id, value) ->
+                val field = state.listing.customFields.find { it.id == id }
+                CustomerFieldResponse(
+                    fieldId = id,
+                    label = field?.label ?: "",
+                    value = value
+                )
+            }
+
             placeOrder(
                 items = listOf(item),
                 address = DeliveryAddress(label = "Direct Order"),
@@ -212,7 +226,9 @@ class ListingDetailViewModel @Inject constructor(
                 provider = null,
                 phoneNumber = "",
                 idempotencyKey = opId,
-                payload = payload
+                payload = payload,
+                customerResponses = customerResponses,
+                notes = fieldValues["notes"] ?: "" // Special case for general notes
             ).fold(
 
 

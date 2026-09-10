@@ -67,8 +67,26 @@ class EditListingViewModel @Inject constructor(
     private val _deliveryEstimateDays = MutableStateFlow("0")
     val deliveryEstimateDays = _deliveryEstimateDays.asStateFlow()
 
+    private val _durationMinutes = MutableStateFlow("0")
+    val durationMinutes = _durationMinutes.asStateFlow()
+
+    private val _fulfillmentOptions = MutableStateFlow<List<FulfillmentType>>(emptyList())
+    val fulfillmentOptions = _fulfillmentOptions.asStateFlow()
+
     private val _isAvailable = MutableStateFlow(true)
     val isAvailable = _isAvailable.asStateFlow()
+
+    val showCustomFieldBuilder: StateFlow<Boolean> = _listingType.map { type ->
+        com.swiftshop.domain.commerce.WorkflowMapping.supportsCustomFields(type)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    val showDeliveryEstimate: StateFlow<Boolean> = _listingType.map { type ->
+        com.swiftshop.domain.commerce.WorkflowMapping.supportsDeliveryEstimate(type)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    val showDurationInput: StateFlow<Boolean> = _listingType.map { type ->
+        com.swiftshop.domain.commerce.WorkflowMapping.supportsDuration(type)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private var originalListing: Listing? = null
 
@@ -91,6 +109,8 @@ class EditListingViewModel @Inject constructor(
                     _listingType.value = listing.listingType
                     _customFields.value = listing.customFields
                     _deliveryEstimateDays.value = listing.deliveryEstimateDays.toString()
+                    _durationMinutes.value = listing.durationMinutes.toString()
+                    _fulfillmentOptions.value = listing.fulfillmentOptions
                     _isAvailable.value = listing.isAvailable
                     _uiState.value = EditListingUiState.Content(listing)
                 },
@@ -107,7 +127,16 @@ class EditListingViewModel @Inject constructor(
     fun onPriceChange(v: String) { _priceMajor.value = v }
     fun onStockChange(v: String) { _totalQuantity.value = v }
     fun onDeliveryEstimateChange(v: String) { _deliveryEstimateDays.value = v }
+    fun onDurationChange(value: String) { _durationMinutes.value = value }
     fun onAvailableChange(v: Boolean) { _isAvailable.value = v }
+
+    fun onFulfillmentOptionToggle(option: FulfillmentType) {
+        _fulfillmentOptions.value = if (_fulfillmentOptions.value.contains(option)) {
+            _fulfillmentOptions.value - option
+        } else {
+            _fulfillmentOptions.value + option
+        }
+    }
 
     fun addImages(uris: List<Uri>) {
         _newImageUris.value = (_newImageUris.value + uris).distinct()
@@ -133,9 +162,11 @@ class EditListingViewModel @Inject constructor(
             }
 
             _uiState.value = EditListingUiState.Loading
-            val price = MoneyAmount.fromMajorUnits(_priceMajor.value.toDoubleOrNull() ?: 0.0)
+            val price = MoneyAmount.fromDecimalString(_priceMajor.value)
             val total = _totalQuantity.value.toIntOrNull() ?: 0
             val delivery = _deliveryEstimateDays.value.toIntOrNull() ?: 0
+            val duration = _durationMinutes.value.toIntOrNull() ?: 0
+            val options = _fulfillmentOptions.value
 
             updateListing(
                 listingId = listingId,
@@ -150,17 +181,12 @@ class EditListingViewModel @Inject constructor(
                 listingType = _listingType.value,
                 customFields = _customFields.value,
                 deliveryEstimateDays = delivery,
+                durationMinutes = duration,
+                fulfillmentOptions = options,
                 isAvailable = _isAvailable.value
             ).fold(
                 onSuccess = {
-                    // VISIBILITY GATING: Wait until the update is observable in the user's listings
-                    viewModelScope.launch {
-                        repository.observeUserListings(user.uid)
-                            .filter { listings -> listings.any { it.id == listingId } }
-                            .first()
-                        
-                        _uiState.value = EditListingUiState.Success
-                    }
+                    _uiState.value = EditListingUiState.Success
                 },
                 onFailure = { _uiState.value = EditListingUiState.Error(it.message ?: "Update failed") }
             )

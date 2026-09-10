@@ -25,7 +25,8 @@ class InitiateBookingUseCase(
         paymentMethod: PaymentMethod,
         provider: String?,
         phoneNumber: String,
-        idempotencyKey: String
+        idempotencyKey: String,
+        locationType: com.swiftshop.core.model.FulfillmentType = com.swiftshop.core.model.FulfillmentType.AT_PROVIDER
     ): Result<OrderInitiation> {
         val user: User = observeCurrentUser().first() ?: return Result.failure(IllegalStateException("User not signed in"))
         val buyerId = user.uid
@@ -41,7 +42,8 @@ class InitiateBookingUseCase(
             paymentMethod = paymentMethod,
             provider = provider,
             phoneNumber = phoneNumber,
-            idempotencyKey = idempotencyKey
+            idempotencyKey = idempotencyKey,
+            locationType = locationType
         )
     }
 }

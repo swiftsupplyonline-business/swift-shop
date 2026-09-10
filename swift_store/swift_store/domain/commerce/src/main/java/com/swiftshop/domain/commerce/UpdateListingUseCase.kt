@@ -27,6 +27,8 @@ class UpdateListingUseCase(
         listingType: ListingType,
         customFields: List<CustomField> = emptyList(),
         deliveryEstimateDays: Int = 0,
+        durationMinutes: Int = 0,
+        fulfillmentOptions: List<FulfillmentType> = emptyList(),
         isAvailable: Boolean = true
     ): Result<Unit> = runCatching {
         Timber.d("DEBUG_UPDATE: Updating listing $listingId - title: $title")
@@ -66,6 +68,8 @@ class UpdateListingUseCase(
             listingType = listingType,
             customFields = customFields,
             deliveryEstimateDays = deliveryEstimateDays,
+            durationMinutes = durationMinutes,
+            fulfillmentOptions = fulfillmentOptions,
             isAvailable = isAvailable,
             updatedAt = System.currentTimeMillis()
         )

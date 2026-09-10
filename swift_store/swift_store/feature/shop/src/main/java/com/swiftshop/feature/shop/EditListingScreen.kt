@@ -42,6 +42,10 @@ fun EditListingScreen(
     val newUris          by viewModel.newImageUris.collectAsState()
     val isAvailable      by viewModel.isAvailable.collectAsState()
     val deliveryDays     by viewModel.deliveryEstimateDays.collectAsState()
+    val durationMinutes  by viewModel.durationMinutes.collectAsState()
+    val showDuration     by viewModel.showDurationInput.collectAsState()
+    val showDelivery     by viewModel.showDeliveryEstimate.collectAsState()
+    val fulfillmentOpts  by viewModel.fulfillmentOptions.collectAsState()
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
@@ -166,13 +170,42 @@ fun EditListingScreen(
                         )
                     }
 
-                    OutlinedTextField(
-                        value = deliveryDays,
-                        onValueChange = viewModel::onDeliveryEstimateChange,
-                        label = { Text("Delivery Days") },
+                    if (showDelivery) {
+                        OutlinedTextField(
+                            value = deliveryDays,
+                            onValueChange = viewModel::onDeliveryEstimateChange,
+                            label = { Text("Delivery Days") },
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                    }
+
+                    if (showDuration) {
+                        OutlinedTextField(
+                            value = durationMinutes,
+                            onValueChange = viewModel::onDurationChange,
+                            label = { Text("Service Duration (minutes)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            leadingIcon = { Icon(Icons.Default.Timer, null) }
+                        )
+                    }
+
+                    // Fulfillment Options
+                    HorizontalDivider()
+                    Text("Fulfillment Options", style = MaterialTheme.typography.titleMedium)
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FulfillmentType.entries.filter { it != FulfillmentType.NONE }.forEach { option ->
+                            FilterChip(
+                                selected = fulfillmentOpts.contains(option),
+                                onClick = { viewModel.onFulfillmentOptionToggle(option) },
+                                label = { Text(option.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }) }
+                            )
+                        }
+                    }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Switch(checked = isAvailable, onCheckedChange = viewModel::onAvailableChange)

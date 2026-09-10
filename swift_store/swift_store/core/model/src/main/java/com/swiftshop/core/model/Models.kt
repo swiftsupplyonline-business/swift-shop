@@ -21,6 +21,26 @@ data class MoneyAmount(
         val ZERO = MoneyAmount("LSL", 0L)
         fun fromMajorUnits(major: Double, currency: String = "LSL"): MoneyAmount =
             MoneyAmount(currency, (major * 100).toLong())
+
+        /**
+         * Safely parses a decimal string (e.g. "100.50") to MoneyAmount without using Double.
+         */
+        fun fromDecimalString(amount: String, currency: String = "LSL"): MoneyAmount {
+            val clean = amount.trim()
+            if (clean.isBlank()) return ZERO
+            val parts = clean.split(".")
+            val major = parts[0].toLongOrNull() ?: 0L
+            val minor = if (parts.size > 1) {
+                parts[1].padEnd(2, '0').take(2).toLongOrNull() ?: 0L
+            } else 0L
+            // Handle negative values if parts[0] is "-" or similar
+            val totalMinor = if (clean.startsWith("-")) {
+                -(Math.abs(major) * 100 + minor)
+            } else {
+                major * 100 + minor
+            }
+            return MoneyAmount(currency, totalMinor)
+        }
     }
     fun toDisplayString(): String = "${currency} ${minorUnits / 100}.${(minorUnits % 100).toString().padStart(2, '0')}"
     operator fun plus(other: MoneyAmount): MoneyAmount {

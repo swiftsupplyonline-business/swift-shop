@@ -29,40 +29,11 @@ import com.swiftshop.core.ui.theme.swiftColors
 import com.swiftshop.core.ui.navigation.Screen
 import com.swiftshop.core.ui.components.SwiftPrimaryButton
 
-private fun ListingType.displayName(): String = when (this) {
-    ListingType.PRODUCT         -> "Physical Product"
-    ListingType.SERVICE         -> "Service"
-    ListingType.BUY             -> "Buy / Purchase"
-    ListingType.MAKE_PAYMENT    -> "Make a Payment"
-    ListingType.SET_APPOINTMENT -> "Book Appointment"
-    ListingType.PLACE_ORDER     -> "Place an Order (Custom Form)"
-    ListingType.REGISTER        -> "Register / Sign Up"
-    ListingType.DELIVER         -> "Request Delivery"
-    ListingType.TAKE_ME_THERE   -> "Navigation / Directions"
-    ListingType.PHYSICAL_ITEM    -> "Physical Item"
-    ListingType.PREPARED_FOOD    -> "Prepared Food"
-    ListingType.BOOKABLE_SERVICE -> "Bookable Service"
-    ListingType.BULK_SUPPLY      -> "Bulk Supply"
-    ListingType.DELIVERY_SERVICE -> "Delivery Service"
-}
+import com.swiftshop.domain.commerce.WorkflowMapping
 
+private fun ListingType.displayName(): String = WorkflowMapping.getDisplayName(this)
 
-private fun ListingType.helpText(): String = when (this) {
-    ListingType.PRODUCT         -> "Standard physical goods with inventory tracking."
-    ListingType.SERVICE         -> "A service offering with a booking/contact form."
-    ListingType.BUY             -> "Standard product purchase with quantity and cart."
-    ListingType.MAKE_PAYMENT    -> "Buyer enters an amount and pays via Mopay."
-    ListingType.SET_APPOINTMENT -> "Buyer selects a date/time slot to book."
-    ListingType.PLACE_ORDER     -> "Buyer fills a custom form you define before ordering."
-    ListingType.REGISTER        -> "Buyer submits a registration form (events, courses, etc.)."
-    ListingType.DELIVER         -> "Buyer requests a delivery pickup/dropoff."
-    ListingType.TAKE_ME_THERE   -> "Shows directions to your physical location."
-    ListingType.PHYSICAL_ITEM    -> "Standard physical goods."
-    ListingType.PREPARED_FOOD    -> "Food items for order."
-    ListingType.BOOKABLE_SERVICE -> "Services that require booking."
-    ListingType.BULK_SUPPLY      -> "Wholesale or bulk supplies."
-    ListingType.DELIVERY_SERVICE -> "Courier or transport services."
-}
+private fun ListingType.helpText(): String = WorkflowMapping.getHelpText(this)
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -86,6 +57,9 @@ fun CreateListingScreen(
     val showFieldBuilder by viewModel.showCustomFieldBuilder.collectAsState()
     val showDelivery     by viewModel.showDeliveryEstimate.collectAsState()
     val deliveryDays     by viewModel.deliveryEstimateDays.collectAsState()
+    val durationMinutes  by viewModel.durationMinutes.collectAsState()
+    val showDuration     by viewModel.showDurationInput.collectAsState()
+    val fulfillmentOpts  by viewModel.fulfillmentOptions.collectAsState()
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
@@ -266,7 +240,7 @@ fun CreateListingScreen(
                         shape = MaterialTheme.shapes.medium
                     )
                     ExposedDropdownMenu(expanded = typeExpanded, onDismissRequest = { typeExpanded = false }) {
-                        ListingType.entries.forEach { type ->
+                        WorkflowMapping.getCreatableTypes().forEach { type ->
                             DropdownMenuItem(
                                 text = {
                                     Column {
@@ -346,6 +320,39 @@ fun CreateListingScreen(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     leadingIcon = { Icon(Icons.Default.LocalShipping, null) }
                 )
+            }
+
+            // Duration (for services)
+            if (showDuration) {
+                OutlinedTextField(
+                    value = durationMinutes,
+                    onValueChange = viewModel::onDurationChange,
+                    label = { Text("Service Duration (minutes)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    leadingIcon = { Icon(Icons.Default.Timer, null) }
+                )
+            }
+
+            // Fulfillment Options
+            HorizontalDivider()
+            Text("Fulfillment Options", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Select all supported fulfillment methods.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FulfillmentType.entries.filter { it != FulfillmentType.NONE }.forEach { option ->
+                    FilterChip(
+                        selected = fulfillmentOpts.contains(option),
+                        onClick = { viewModel.onFulfillmentOptionToggle(option) },
+                        label = { Text(option.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }) }
+                    )
+                }
             }
 
             // Custom Field Builder
