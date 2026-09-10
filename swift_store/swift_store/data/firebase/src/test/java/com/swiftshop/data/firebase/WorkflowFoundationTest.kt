@@ -114,33 +114,55 @@ class WorkflowFoundationTest {
     }
 
     @Test
-    fun `Money parsing handles exact decimals without Double`() {
-        // Known valid cases
-        assertEquals(10000L, MoneyAmount.fromDecimalString("100").minorUnits)
-        assertEquals(10000L, MoneyAmount.fromDecimalString("100.0").minorUnits)
-        assertEquals(10000L, MoneyAmount.fromDecimalString("100.00").minorUnits)
-        assertEquals(10050L, MoneyAmount.fromDecimalString("100.5").minorUnits)
-        assertEquals(10050L, MoneyAmount.fromDecimalString("100.50").minorUnits)
-        assertEquals(10099L, MoneyAmount.fromDecimalString("100.99").minorUnits)
+    fun `Money parsing handles exact decimals and rejects invalid inputs`() {
+        // Valid cases
+        assertEquals(10000L, MoneyAmount.fromDecimalString("100").getOrThrow().minorUnits)
+        assertEquals(10000L, MoneyAmount.fromDecimalString("100.0").getOrThrow().minorUnits)
+        assertEquals(10000L, MoneyAmount.fromDecimalString("100.00").getOrThrow().minorUnits)
+        assertEquals(10050L, MoneyAmount.fromDecimalString("100.5").getOrThrow().minorUnits)
+        assertEquals(10050L, MoneyAmount.fromDecimalString("100.50").getOrThrow().minorUnits)
+        assertEquals(10099L, MoneyAmount.fromDecimalString("100.99").getOrThrow().minorUnits)
+        assertEquals(99L, MoneyAmount.fromDecimalString("0.99").getOrThrow().minorUnits)
 
-        // Truncation/Excess precision (should take first 2)
-        assertEquals(10012L, MoneyAmount.fromDecimalString("100.123").minorUnits)
+        // Realistic large value
+        assertEquals(99999999L, MoneyAmount.fromDecimalString("999999.99").getOrThrow().minorUnits)
 
-        // Negative
-        assertEquals(-10050L, MoneyAmount.fromDecimalString("-100.50").minorUnits)
+        // Invalid cases - should be Failure
+        assertTrue(MoneyAmount.fromDecimalString("abc").isFailure)
+        assertTrue(MoneyAmount.fromDecimalString("").isFailure)
+        assertTrue(MoneyAmount.fromDecimalString("   ").isFailure)
+        assertTrue(MoneyAmount.fromDecimalString(null).isFailure)
+        
+        // Excess precision - should be Failure (Contract: reject instead of truncate)
+        assertTrue(MoneyAmount.fromDecimalString("100.123").isFailure)
 
-        // Invalid
-        assertEquals(0L, MoneyAmount.fromDecimalString("abc").minorUnits)
-        assertEquals(0L, MoneyAmount.fromDecimalString("").minorUnits)
+        // Negative - should be Failure
+        assertTrue(MoneyAmount.fromDecimalString("-100.50").isFailure)
+        
+        // Zero - should be Failure if contract requires positive (Swift Shop usually does for listings)
+        assertTrue(MoneyAmount.fromDecimalString("0").isFailure)
+        assertTrue(MoneyAmount.fromDecimalString("0.00").isFailure)
+
+        // Malformed
+        assertTrue(MoneyAmount.fromDecimalString("1..5").isFailure)
+        assertTrue(MoneyAmount.fromDecimalString("1.5.0").isFailure)
     }
 
     @Test
     fun `Workflow mapping identifies appointment types correctly`() {
         val mapping = com.swiftshop.domain.commerce.WorkflowMapping
-        assertTrue(mapping.isAppointment(FulfillmentType.AT_PROVIDER))
-        assertTrue(mapping.isAppointment(FulfillmentType.AT_CUSTOMER))
-        assertTrue(mapping.isAppointment(FulfillmentType.REMOTE))
-        assertFalse(mapping.isAppointment(FulfillmentType.PICKUP))
-        assertFalse(mapping.isAppointment(null))
+        
+        // Appointment based
+        assertTrue(mapping.isAppointment(ListingType.SERVICE))
+        assertTrue(mapping.isAppointment(ListingType.SET_APPOINTMENT))
+        assertTrue(mapping.isAppointment(ListingType.BOOKABLE_SERVICE))
+        assertTrue(mapping.isAppointment(OrderType.SERVICE_BOOKING))
+        
+        // Not appointment based (even if they can have fulfillment locations)
+        assertFalse(mapping.isAppointment(ListingType.PHYSICAL_ITEM))
+        assertFalse(mapping.isAppointment(ListingType.PREPARED_FOOD))
+        assertFalse(mapping.isAppointment(ListingType.DELIVERY_SERVICE))
+        assertFalse(mapping.isAppointment(OrderType.PRODUCT_PURCHASE))
+        assertFalse(mapping.isAppointment(OrderType.DELIVERY_REQUEST))
     }
 }

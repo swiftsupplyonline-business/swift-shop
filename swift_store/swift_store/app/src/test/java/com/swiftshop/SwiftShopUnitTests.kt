@@ -20,9 +20,25 @@ class MoneyAmountTest {
 
     @Test
     fun `fromMajorUnits converts correctly`() {
+        @Suppress("DEPRECATION")
         val amount = MoneyAmount.fromMajorUnits(99.0)
         assertEquals(9900L, amount.minorUnits)
         assertEquals("LSL", amount.currency)
+    }
+
+    @Test
+    fun `fromDecimalString parses correctly`() {
+        assertEquals(10000L, MoneyAmount.fromDecimalString("100").getOrThrow().minorUnits)
+        assertEquals(10050L, MoneyAmount.fromDecimalString("100.50").getOrThrow().minorUnits)
+        assertEquals(99L, MoneyAmount.fromDecimalString("0.99").getOrThrow().minorUnits)
+    }
+
+    @Test
+    fun `fromDecimalString rejects invalid input`() {
+        assertTrue(MoneyAmount.fromDecimalString("abc").isFailure)
+        assertTrue(MoneyAmount.fromDecimalString("100.123").isFailure)
+        assertTrue(MoneyAmount.fromDecimalString("-10").isFailure)
+        assertTrue(MoneyAmount.fromDecimalString("0").isFailure)
     }
 
     @Test

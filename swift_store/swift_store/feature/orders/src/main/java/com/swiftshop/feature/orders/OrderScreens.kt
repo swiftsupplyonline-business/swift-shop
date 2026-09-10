@@ -248,7 +248,7 @@ fun OrderDetailScreen(
                     }
 
                     // Appointment Details (for SERVICE orders)
-                    if (com.swiftshop.domain.commerce.WorkflowMapping.isAppointment(order.fulfillmentType) && order.appointmentStartTime != null) {
+                    if (com.swiftshop.domain.commerce.WorkflowMapping.isAppointment(order.type) && order.appointmentStartTime != null) {
                         item {
                             Text("Appointment", style = MaterialTheme.typography.titleMedium)
                         }

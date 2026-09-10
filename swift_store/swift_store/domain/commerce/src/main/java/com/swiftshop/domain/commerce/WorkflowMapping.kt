@@ -2,12 +2,24 @@ package com.swiftshop.domain.commerce
 
 import com.swiftshop.core.model.ListingType
 import com.swiftshop.core.model.OrderType
+import com.swiftshop.core.model.FulfillmentType
 
 /**
  * Centralized mapping source for Swift Shop Android workflow paths.
  * Reconciles ListingType to canonical Workflow/Order semantics.
  */
 object WorkflowMapping {
+
+    data class WorkflowDefinition(
+        val type: ListingType,
+        val category: WorkflowCategory,
+        val isAppointmentBased: Boolean,
+        val supportsCustomFields: Boolean,
+        val supportsDeliveryEstimate: Boolean,
+        val supportsDuration: Boolean
+    )
+
+    enum class WorkflowCategory { RETAIL, SERVICE, DELIVERY, FORM, PAYMENT, NAVIGATION }
 
     fun getOrderType(listingType: ListingType): OrderType = when (listingType) {
         ListingType.PRODUCT, 
@@ -28,47 +40,116 @@ object WorkflowMapping {
         else -> OrderType.LEGACY
     }
 
+    fun getDefinition(type: ListingType): WorkflowDefinition = when (type) {
+        ListingType.PRODUCT, 
+        ListingType.BUY, 
+        ListingType.PHYSICAL_ITEM -> WorkflowDefinition(
+            type = type,
+            category = WorkflowCategory.RETAIL,
+            isAppointmentBased = false,
+            supportsCustomFields = false,
+            supportsDeliveryEstimate = true,
+            supportsDuration = false
+        )
+
+        ListingType.SERVICE,
+        ListingType.BOOKABLE_SERVICE,
+        ListingType.SET_APPOINTMENT -> WorkflowDefinition(
+            type = type,
+            category = WorkflowCategory.SERVICE,
+            isAppointmentBased = true,
+            supportsCustomFields = true,
+            supportsDeliveryEstimate = false,
+            supportsDuration = true
+        )
+
+        ListingType.PREPARED_FOOD -> WorkflowDefinition(
+            type = type,
+            category = WorkflowCategory.RETAIL,
+            isAppointmentBased = false,
+            supportsCustomFields = true,
+            supportsDeliveryEstimate = true,
+            supportsDuration = false
+        )
+
+        ListingType.BULK_SUPPLY -> WorkflowDefinition(
+            type = type,
+            category = WorkflowCategory.RETAIL,
+            isAppointmentBased = false,
+            supportsCustomFields = false,
+            supportsDeliveryEstimate = false,
+            supportsDuration = false
+        )
+
+        ListingType.DELIVER,
+        ListingType.DELIVERY_SERVICE -> WorkflowDefinition(
+            type = type,
+            category = WorkflowCategory.DELIVERY,
+            isAppointmentBased = false,
+            supportsCustomFields = false,
+            supportsDeliveryEstimate = true,
+            supportsDuration = false
+        )
+
+        ListingType.PLACE_ORDER -> WorkflowDefinition(
+            type = type,
+            category = WorkflowCategory.FORM,
+            isAppointmentBased = false,
+            supportsCustomFields = true,
+            supportsDeliveryEstimate = true,
+            supportsDuration = false
+        )
+
+        ListingType.REGISTER -> WorkflowDefinition(
+            type = type,
+            category = WorkflowCategory.FORM,
+            isAppointmentBased = false,
+            supportsCustomFields = true,
+            supportsDeliveryEstimate = false,
+            supportsDuration = false
+        )
+
+        ListingType.MAKE_PAYMENT -> WorkflowDefinition(
+            type = type,
+            category = WorkflowCategory.PAYMENT,
+            isAppointmentBased = false,
+            supportsCustomFields = false,
+            supportsDeliveryEstimate = false,
+            supportsDuration = false
+        )
+
+        ListingType.TAKE_ME_THERE -> WorkflowDefinition(
+            type = type,
+            category = WorkflowCategory.NAVIGATION,
+            isAppointmentBased = false,
+            supportsCustomFields = false,
+            supportsDeliveryEstimate = false,
+            supportsDuration = false
+        )
+    }
+
     /**
      * Determines if a listing type supports seller-defined custom fields.
      */
-    fun supportsCustomFields(type: ListingType): Boolean = type in listOf(
-        ListingType.PLACE_ORDER,
-        ListingType.REGISTER,
-        ListingType.SET_APPOINTMENT,
-        ListingType.SERVICE,
-        ListingType.BOOKABLE_SERVICE,
-        ListingType.PREPARED_FOOD
-    )
+    fun supportsCustomFields(type: ListingType): Boolean = getDefinition(type).supportsCustomFields
 
     /**
      * Determines if a listing type supports/requires delivery estimates.
      */
-    fun supportsDeliveryEstimate(type: ListingType): Boolean = type in listOf(
-        ListingType.PRODUCT,
-        ListingType.BUY,
-        ListingType.PLACE_ORDER,
-        ListingType.DELIVER,
-        ListingType.PHYSICAL_ITEM,
-        ListingType.DELIVERY_SERVICE
-    )
+    fun supportsDeliveryEstimate(type: ListingType): Boolean = getDefinition(type).supportsDeliveryEstimate
 
     /**
      * Determines if a listing type supports/requires duration metadata (minutes).
      */
-    fun supportsDuration(type: ListingType): Boolean = type in listOf(
-        ListingType.SERVICE,
-        ListingType.BOOKABLE_SERVICE,
-        ListingType.SET_APPOINTMENT
-    )
+    fun supportsDuration(type: ListingType): Boolean = getDefinition(type).supportsDuration
 
     /**
      * Determines if a fulfillment type represents an appointment-based service.
+     * Note: This now relies on ListingType or OrderType context where possible.
      */
-    fun isAppointment(fulfillmentType: com.swiftshop.core.model.FulfillmentType?): Boolean = fulfillmentType in listOf(
-        com.swiftshop.core.model.FulfillmentType.AT_PROVIDER,
-        com.swiftshop.core.model.FulfillmentType.AT_CUSTOMER,
-        com.swiftshop.core.model.FulfillmentType.REMOTE
-    )
+    fun isAppointment(type: ListingType): Boolean = getDefinition(type).isAppointmentBased
+
+    fun isAppointment(orderType: OrderType): Boolean = orderType == OrderType.SERVICE_BOOKING
 
     fun getDisplayName(type: ListingType): String = when (type) {
         ListingType.PRODUCT         -> "Physical Product"
@@ -116,29 +197,7 @@ object WorkflowMapping {
         ListingType.DELIVERY_SERVICE
     )
 
-    enum class WorkflowCategory { RETAIL, SERVICE, DELIVERY, FORM, PAYMENT, NAVIGATION }
-
-    fun getWorkflowCategory(type: ListingType): WorkflowCategory = when (type) {
-        ListingType.PRODUCT, 
-        ListingType.BUY, 
-        ListingType.PHYSICAL_ITEM, 
-        ListingType.PREPARED_FOOD, 
-        ListingType.BULK_SUPPLY -> WorkflowCategory.RETAIL
-        
-        ListingType.SERVICE, 
-        ListingType.BOOKABLE_SERVICE, 
-        ListingType.SET_APPOINTMENT -> WorkflowCategory.SERVICE
-        
-        ListingType.DELIVER, 
-        ListingType.DELIVERY_SERVICE -> WorkflowCategory.DELIVERY
-        
-        ListingType.PLACE_ORDER, 
-        ListingType.REGISTER -> WorkflowCategory.FORM
-        
-        ListingType.MAKE_PAYMENT -> WorkflowCategory.PAYMENT
-        
-        ListingType.TAKE_ME_THERE -> WorkflowCategory.NAVIGATION
-    }
+    fun getWorkflowCategory(type: ListingType): WorkflowCategory = getDefinition(type).category
 
     /**
      * Determines if an order type requires physical delivery information.

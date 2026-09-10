@@ -162,7 +162,12 @@ class EditListingViewModel @Inject constructor(
             }
 
             _uiState.value = EditListingUiState.Loading
-            val price = MoneyAmount.fromDecimalString(_priceMajor.value)
+            val priceResult = MoneyAmount.fromDecimalString(_priceMajor.value)
+            if (priceResult.isFailure) {
+                _uiState.value = EditListingUiState.Error(priceResult.exceptionOrNull()?.message ?: "Invalid price")
+                return@launch
+            }
+            val price = priceResult.getOrThrow()
             val total = _totalQuantity.value.toIntOrNull() ?: 0
             val delivery = _deliveryEstimateDays.value.toIntOrNull() ?: 0
             val duration = _durationMinutes.value.toIntOrNull() ?: 0

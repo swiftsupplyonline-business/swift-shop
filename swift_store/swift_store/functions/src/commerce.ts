@@ -116,7 +116,7 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { items, deliveryAddress, deliveryListingId, paymentMethod, provider, idempotencyKey, recipientUid } = request.data;
+    const { items, deliveryAddress, deliveryListingId, paymentMethod, provider, idempotencyKey, recipientUid, customerResponses, notes } = request.data;
     if (!items || !Array.isArray(items) || !idempotencyKey) {
         throw new HttpsError("invalid-argument", "Missing items or idempotencyKey");
     }
@@ -407,6 +407,8 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 paymentMethod: paymentMethod || "MOPAY",
                 provider: provider || null,
                 idempotencyKey: idempotencyKey,
+                customerResponses: customerResponses || [],
+                notes: notes || "",
                 reservationExpiresAt: expiresAt,
                 createdAt: now,
                 updatedAt: now
@@ -1020,7 +1022,7 @@ export const initiateServiceBooking = onCall({ secrets: [MOPAY_API_KEY] }, async
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { listingId, slotId, paymentMethod, provider, phoneNumber, idempotencyKey } = request.data;
+    const { listingId, slotId, paymentMethod, provider, phoneNumber, idempotencyKey, customerResponses, notes } = request.data;
     if (!listingId || !slotId || !idempotencyKey) {
         throw new HttpsError("invalid-argument", "Missing required booking parameters");
     }
@@ -1073,6 +1075,7 @@ export const initiateServiceBooking = onCall({ secrets: [MOPAY_API_KEY] }, async
                 status: "PENDING", fulfillmentType: "AT_PROVIDER", slotId: slotId, appointmentStartTime: startTime,
                 totalMinorUnits: priceMinorUnits, currency: currency, idempotencyKey,
                 paymentMethod: paymentMethod || "MOPAY", provider: provider || null, phoneNumber,
+                customerResponses: customerResponses || [], notes: notes || "",
                 createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 items: [{ listingId, title, quantity: 1, unitPriceMinorUnits: priceMinorUnits, unitPriceCurrency: currency }],
                 payload: {

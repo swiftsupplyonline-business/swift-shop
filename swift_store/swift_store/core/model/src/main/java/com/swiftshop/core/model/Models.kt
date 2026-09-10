@@ -19,27 +19,36 @@ data class MoneyAmount(
 ) : Parcelable {
     companion object {
         val ZERO = MoneyAmount("LSL", 0L)
+        
+        @Deprecated("Use fromDecimalString for commercial paths", ReplaceWith("fromDecimalString(major.toString(), currency)"))
         fun fromMajorUnits(major: Double, currency: String = "LSL"): MoneyAmount =
             MoneyAmount(currency, (major * 100).toLong())
 
         /**
-         * Safely parses a decimal string (e.g. "100.50") to MoneyAmount without using Double.
+         * Strictly parses a decimal string (e.g. "100.50") to MoneyAmount.
+         * Rejects: null, blank, non-numeric, negative, more than 2 decimal places.
          */
-        fun fromDecimalString(amount: String, currency: String = "LSL"): MoneyAmount {
+        fun fromDecimalString(amount: String?, currency: String = "LSL"): Result<MoneyAmount> {
+            if (amount.isNullOrBlank()) return Result.failure(IllegalArgumentException("Amount cannot be empty"))
             val clean = amount.trim()
-            if (clean.isBlank()) return ZERO
+            
+            // Regex: Optional digits, optional dot followed by 0-2 digits.
+            // Must be positive.
+            val regex = Regex("^\\d+(\\.\\d{0,2})?$")
+            if (!regex.matches(clean)) {
+                return Result.failure(IllegalArgumentException("Invalid amount format. Must be a positive number with up to 2 decimal places."))
+            }
+
             val parts = clean.split(".")
             val major = parts[0].toLongOrNull() ?: 0L
             val minor = if (parts.size > 1) {
                 parts[1].padEnd(2, '0').take(2).toLongOrNull() ?: 0L
             } else 0L
-            // Handle negative values if parts[0] is "-" or similar
-            val totalMinor = if (clean.startsWith("-")) {
-                -(Math.abs(major) * 100 + minor)
-            } else {
-                major * 100 + minor
-            }
-            return MoneyAmount(currency, totalMinor)
+            
+            val totalMinor = major * 100 + minor
+            if (totalMinor <= 0) return Result.failure(IllegalArgumentException("Amount must be positive"))
+            
+            return Result.success(MoneyAmount(currency, totalMinor))
         }
     }
     fun toDisplayString(): String = "${currency} ${minorUnits / 100}.${(minorUnits % 100).toString().padStart(2, '0')}"

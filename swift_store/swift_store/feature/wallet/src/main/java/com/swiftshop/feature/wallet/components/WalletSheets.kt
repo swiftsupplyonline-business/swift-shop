@@ -83,9 +83,9 @@ fun DepositSheet(
                 isLoading = isLoading,
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
-                    val amountVal = amount.toDoubleOrNull() ?: return@SwiftPrimaryButton
+                    val amountVal = MoneyAmount.fromDecimalString(amount).getOrNull() ?: return@SwiftPrimaryButton
                     onDeposit(
-                        MoneyAmount.fromMajorUnits(amountVal),
+                        amountVal,
                         selectedProvider,
                         phone
                     )
@@ -167,8 +167,8 @@ fun WithdrawSheet(
                 isLoading = isLoading,
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
-                    val amountVal = amount.toDoubleOrNull() ?: return@SwiftPrimaryButton
-                    onWithdraw(MoneyAmount.fromMajorUnits(amountVal), selectedProvider, destination)
+                    val amountVal = MoneyAmount.fromDecimalString(amount).getOrNull() ?: return@SwiftPrimaryButton
+                    onWithdraw(amountVal, selectedProvider, destination)
                 }
             )
             Spacer(Modifier.height(32.dp))
@@ -226,8 +226,8 @@ fun TransferSheet(
                 isLoading = isLoading,
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
-                    val amountVal = amount.toDoubleOrNull() ?: return@SwiftPrimaryButton
-                    onTransfer(recipientId, MoneyAmount.fromMajorUnits(amountVal))
+                    val amountVal = MoneyAmount.fromDecimalString(amount).getOrNull() ?: return@SwiftPrimaryButton
+                    onTransfer(recipientId, amountVal)
                 }
             )
             Spacer(Modifier.height(32.dp))

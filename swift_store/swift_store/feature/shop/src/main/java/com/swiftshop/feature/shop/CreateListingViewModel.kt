@@ -304,7 +304,12 @@ class CreateListingViewModel @Inject constructor(
                 _uiState.value = CreateListingUiState.Error("Please select a shop")
                 return@launch
             }
-            val price = MoneyAmount.fromDecimalString(_priceMajor.value)
+            val priceResult = MoneyAmount.fromDecimalString(_priceMajor.value)
+            if (priceResult.isFailure) {
+                _uiState.value = CreateListingUiState.Error(priceResult.exceptionOrNull()?.message ?: "Invalid price")
+                return@launch
+            }
+            val price = priceResult.getOrThrow()
             val stock = _stockQuantity.value.toIntOrNull() ?: 0
             val deliveryDays = _deliveryEstimateDays.value.toIntOrNull() ?: 0
             val duration = _durationMinutes.value.toIntOrNull() ?: 0
