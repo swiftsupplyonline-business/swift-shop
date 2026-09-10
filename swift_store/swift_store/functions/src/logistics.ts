@@ -60,11 +60,6 @@ export const requestDelivery = onCall(async (request) => {
                 );
             }
 
-            // ── Idempotent: one active route per order ──────────────────────
-            if (order.deliveryRouteId) {
-                return order.deliveryRouteId as string;
-            }
-
             // ── Source dropoff from the order's buyer pin snapshot ──────────
             const dest = order.destinationLocationSnapshot;
             if (!dest || typeof dest.lat !== "number" || typeof dest.lng !== "number") {

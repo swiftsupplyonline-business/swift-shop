@@ -163,7 +163,7 @@ private fun RequestDeliveryContent(
         }
         
         Box(modifier = Modifier.padding(horizontal = 16.dp).height(300.dp).clip(MaterialTheme.shapes.large)) {
-            val mapState = rememberMapState(initialCenter = destination ?: shop.location)
+            val mapState = rememberMapState(initialCenter = destination ?: order.originLocationSnapshot?.toGeoPoint() ?: GeoPoint())
             SwiftMapView(
                 state = mapState,
                 markers = listOfNotNull(shopMarker, purchasedDest),
