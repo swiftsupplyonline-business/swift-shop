@@ -152,7 +152,6 @@ fun SwiftMapView(
     Box(modifier = modifier) {
         AndroidView(
             factory = {
-                Configuration.getInstance().userAgentValue = context.packageName
                 mapView.apply {
                     setTileSource(TileSourceFactory.MAPNIK)
                     setMultiTouchControls(true)
