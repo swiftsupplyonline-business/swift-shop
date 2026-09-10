@@ -5,21 +5,18 @@ import * as admin from "firebase-admin";
  * Creates a delivery route for a paid order.
  *
  * Contract (matches FirebaseDeliveryRepository.requestDelivery on Android):
- * - Request: { orderId: string, pickup: {lat, lng}, dropoff: {lat, lng} }
+ * - Request: { orderId: string, deliveryListingId: string }
  * - Response: routeId (string)
  */
 export const requestDelivery = onCall(async (request) => {
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { orderId, pickup } = request.data;
-    if (
-        !orderId || !pickup ||
-        typeof pickup.lat !== "number" || typeof pickup.lng !== "number"
-    ) {
+    const { orderId, deliveryListingId } = request.data;
+    if (!orderId || !deliveryListingId) {
         throw new HttpsError(
             "invalid-argument",
-            "orderId and pickup ({lat, lng}) are required"
+            "orderId and deliveryListingId are required"
         );
     }
 
@@ -49,19 +46,23 @@ export const requestDelivery = onCall(async (request) => {
                 );
             }
 
+            // ── Reconciliation: verify the provider matches the purchased one ──
+            if (deliveryListingId !== order.selectedDeliveryListingId) {
+                throw new Error(
+                    "Selected delivery provider does not match the purchased option."
+                );
+            }
+
             // ── Idempotent: one active route per order ──────────────────────
             if (order.deliveryRouteId) {
                 return order.deliveryRouteId as string;
             }
 
             // ── Source dropoff from the order's buyer pin snapshot ──────────
-            // destinationLocationSnapshot is written by placeOrder/confirmOrder
-            // from the buyer's confirmed DeliveryAddress lat/lng.
             const dest = order.destinationLocationSnapshot;
             if (!dest || typeof dest.lat !== "number" || typeof dest.lng !== "number") {
                 throw new Error(
-                    "Order has no confirmed buyer location. " +
-                    "destinationLocationSnapshot is missing or malformed."
+                    "Order has no confirmed buyer location snapshot."
                 );
             }
 
@@ -69,12 +70,12 @@ export const requestDelivery = onCall(async (request) => {
             // originLocationSnapshot is written at order creation from the
             // shop document — never from the client.
             const origin = order.originLocationSnapshot;
-            const resolvedPickupLat = (origin && typeof origin.lat === "number")
-                ? origin.lat
-                : pickup.lat;   // fallback to client only if shop has no geo
-            const resolvedPickupLng = (origin && typeof origin.lng === "number")
-                ? origin.lng
-                : pickup.lng;
+            if (!origin || typeof origin.lat !== "number" || typeof origin.lng !== "number") {
+                throw new Error(
+                    "Order has no confirmed shop origin snapshot. " +
+                    "Seller must set shop location before dispatch."
+                );
+            }
 
             const routeId = db.collection("deliveryRoutes").doc().id;
             const newRoute = {
@@ -83,10 +84,10 @@ export const requestDelivery = onCall(async (request) => {
                 buyerId: order.buyerId,
                 sellerId: order.sellerId,
                 driverId: "",
-                // Pickup = shop / origin (server-sourced)
-                pickupLat: resolvedPickupLat,
-                pickupLng: resolvedPickupLng,
-                // Dropoff = buyer confirmed pin (server-sourced, immutable)
+                // Pickup = shop / origin (server-sourced, immutable snapshot)
+                pickupLat: origin.lat,
+                pickupLng: origin.lng,
+                // Dropoff = buyer confirmed pin (server-sourced, immutable snapshot)
                 dropoffLat: dest.lat,
                 dropoffLng: dest.lng,
                 dropoffAddressSnapshot: dest.addressSnapshot || "",

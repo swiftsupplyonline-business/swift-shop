@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.Flow
 interface DeliveryRepository {
     fun observeDeliveryRoute(routeId: String): Flow<DeliveryRoute>
     fun observeDeliveryRoutesByOrder(orderId: String, userId: String, role: DeliveryRole): Flow<List<DeliveryRoute>>
-    suspend fun requestDelivery(orderId: String, pickup: GeoPoint, dropoff: GeoPoint): Result<String>
+    suspend fun requestDelivery(orderId: String, deliveryListingId: String): Result<String>
     suspend fun updateDriverLocation(routeId: String, location: GeoPoint): Result<Unit>
     suspend fun updateDeliveryStatus(routeId: String, status: DeliveryStatus): Result<Unit>
     fun getActiveDeliveriesForDriver(driverId: String): Flow<List<DeliveryRoute>>

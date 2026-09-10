@@ -44,11 +44,10 @@ class FirebaseDeliveryRepository @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
-    override suspend fun requestDelivery(orderId: String, pickup: GeoPoint, dropoff: GeoPoint): Result<String> = runCatching {
+    override suspend fun requestDelivery(orderId: String, deliveryListingId: String): Result<String> = runCatching {
         val data = mapOf(
             "orderId" to orderId,
-            "pickup" to mapOf("lat" to pickup.lat, "lng" to pickup.lng),
-            "dropoff" to mapOf("lat" to dropoff.lat, "lng" to dropoff.lng)
+            "deliveryListingId" to deliveryListingId
         )
         val result = functions.getHttpsCallable("requestDelivery").call(data).await()
         result.data as String

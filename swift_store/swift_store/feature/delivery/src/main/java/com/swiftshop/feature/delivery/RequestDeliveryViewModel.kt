@@ -80,26 +80,32 @@ class RequestDeliveryViewModel @Inject constructor(
 
             _uiState.value = RequestDeliveryUiState.Success(order, shop, deliveryListings)
             
-            // Initialize destination from order if available
-            if (order.deliveryAddress.lat != 0.0) {
-                _destination.value = GeoPoint(order.deliveryAddress.lat, order.deliveryAddress.lng)
+            // Initialize destination strictly from the purchased snapshot
+            order.destinationLocationSnapshot?.let {
+                _destination.value = it.toGeoPoint()
+            }
+
+            // Pre-select the purchased delivery option
+            deliveryListings.find { it.id == order.selectedDeliveryListingId }?.let {
+                _selectedListing.value = it
             }
         }
     }
 
     fun onDestinationSelected(location: GeoPoint) {
+        // UI can display the selection, but the backend will use the snapshot
         _destination.value = location
     }
 
     fun onListingSelected(listing: DeliveryListing) {
+        // UI allows selection, backend will validate against purchased option
         _selectedListing.value = listing
     }
 
     fun submitRequest() {
-        val currentState = _uiState.value as? RequestDeliveryUiState.Success ?: return
-        val dest = _destination.value
-        if (dest == null || !dest.isValid()) {
-            _actionState.value = DeliveryRequestActionState.Error("Please select a destination on the map")
+        val selected = _selectedListing.value
+        if (selected == null) {
+            _actionState.value = DeliveryRequestActionState.Error("Please select the purchased delivery provider")
             return
         }
 
@@ -107,8 +113,7 @@ class RequestDeliveryViewModel @Inject constructor(
             _actionState.value = DeliveryRequestActionState.Loading
             requestDelivery(
                 orderId = orderId,
-                pickup = currentState.shop.location,
-                dropoff = dest
+                deliveryListingId = selected.id
             ).fold(
                 onSuccess = { _actionState.value = DeliveryRequestActionState.Success(it) },
                 onFailure = { _actionState.value = DeliveryRequestActionState.Error(it.message ?: "Request failed") }

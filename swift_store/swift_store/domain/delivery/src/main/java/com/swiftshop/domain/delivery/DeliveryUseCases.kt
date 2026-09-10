@@ -14,6 +14,6 @@ class ObserveDeliveryRoutesByOrderUseCase(private val repository: DeliveryReposi
 }
 
 class RequestDeliveryUseCase(private val repository: DeliveryRepository) {
-    suspend operator fun invoke(orderId: String, pickup: GeoPoint, dropoff: GeoPoint): Result<String> =
-        repository.requestDelivery(orderId, pickup, dropoff)
+    suspend operator fun invoke(orderId: String, deliveryListingId: String): Result<String> =
+        repository.requestDelivery(orderId, deliveryListingId)
 }

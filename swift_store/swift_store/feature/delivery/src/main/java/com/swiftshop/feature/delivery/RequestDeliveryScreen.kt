@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -93,7 +94,7 @@ private fun RequestDeliveryContent(
     selectedListing: DeliveryListing?,
     actionState: DeliveryRequestActionState,
     padding: PaddingValues,
-    onDestinationSelect: (GeoPoint) -> Unit,
+    onDestinationSelect: (GeoPoint) -> Unit, // Reserved for future use if allowed
     onListingSelect: (DeliveryListing) -> Unit,
     onSubmit: () -> Unit
 ) {
@@ -129,9 +130,9 @@ private fun RequestDeliveryContent(
             }
         }
 
-        // --- 2. Destination ---
+        // --- 2. Destination (Immutable Purchased Location) ---
         Text(
-            "2. Set Destination",
+            "2. Delivery Destination",
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(horizontal = 16.dp)
         )
@@ -144,26 +145,55 @@ private fun RequestDeliveryContent(
                 entityType = SwiftEntity.SHOP
             )
         }
-        DropYourPinComponent(
-            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
-            initialLocation = destination,
-            markers = listOf(shopMarker),
-            onLocationConfirmed = onDestinationSelect,
-            isConfirmed = destination != null
-        )
+        val purchasedDest = remember(order) {
+            order.destinationLocationSnapshot?.let {
+                MapMarker(
+                    id = "purchased_dest",
+                    position = it.toGeoPoint(),
+                    title = "Purchased Destination",
+                    snippet = it.addressSnapshot,
+                    entityType = SwiftEntity.PIN
+                )
+            }
+        }
+        
+        Box(modifier = Modifier.padding(horizontal = 16.dp).height(300.dp).clip(MaterialTheme.shapes.large)) {
+            val mapState = rememberMapState(initialCenter = destination ?: shop.location)
+            SwiftMapView(
+                state = mapState,
+                markers = listOfNotNull(shopMarker, purchasedDest),
+                modifier = Modifier.fillMaxSize()
+            )
+            
+            Surface(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                tonalElevation = 2.dp
+            ) {
+                Text(
+                    "Logistics locked to purchased destination",
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
 
         // --- 3. Delivery Option ---
         if (listings.isNotEmpty()) {
             Text(
-                "3. Choose Provider",
+                "3. Purchased Provider",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
             listings.forEach { listing ->
+                val isPurchased = listing.id == order.selectedDeliveryListingId
                 DeliveryOptionCard(
                     listing = listing,
                     isSelected = selectedListing?.id == listing.id,
-                    onSelect = { onListingSelect(listing) },
+                    isPurchased = isPurchased,
+                    onSelect = { if (isPurchased) onListingSelect(listing) },
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
@@ -175,7 +205,7 @@ private fun RequestDeliveryContent(
         SwiftPrimaryButton(
             text = "Request Delivery",
             isLoading = actionState is DeliveryRequestActionState.Loading,
-            enabled = destination != null && selectedListing != null && actionState !is DeliveryRequestActionState.Loading,
+            enabled = selectedListing?.id == order.selectedDeliveryListingId && actionState !is DeliveryRequestActionState.Loading,
             onClick = onSubmit,
             modifier = Modifier.padding(16.dp).fillMaxWidth()
         )
@@ -186,17 +216,24 @@ private fun RequestDeliveryContent(
 private fun DeliveryOptionCard(
     listing: DeliveryListing,
     isSelected: Boolean,
+    isPurchased: Boolean,
     onSelect: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary 
-                     else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+    val borderColor = when {
+        isSelected -> MaterialTheme.colorScheme.primary 
+        isPurchased -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)
+        else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+    }
     
+    val cardAlpha = if (isPurchased) 1f else 0.5f
+
     SwiftCard(
         modifier = modifier
             .fillMaxWidth()
             .border(2.dp, borderColor, MaterialTheme.shapes.medium)
-            .clickable { onSelect() }
+            .alpha(cardAlpha)
+            .clickable(enabled = isPurchased) { onSelect() }
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
@@ -208,7 +245,13 @@ private fun DeliveryOptionCard(
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(listing.title, style = MaterialTheme.typography.titleSmall)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(listing.title, style = MaterialTheme.typography.titleSmall)
+                    if (isPurchased) {
+                        Spacer(Modifier.width(8.dp))
+                        Icon(Icons.Default.Verified, "Paid", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                    }
+                }
                 Text(listing.providerName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(
