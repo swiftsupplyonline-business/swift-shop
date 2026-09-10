@@ -392,19 +392,35 @@ fun OrderDetailScreen(
                     )
                     if (order.status in trackableStatuses) {
                         item {
-                            SwiftPrimaryButton(
-                                text = if (order.status == OrderStatus.DELIVERED) "View Delivery" else "Track Order",
-                                onClick = {
-                                    navController.navigate(Screen.TrackOrder.createRoute(order.id))
-                                },
-                                leadingIcon = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (order.status == OrderStatus.CONFIRMED) {
+                                    SwiftPrimaryButton(
+                                        text = "Request Delivery",
+                                        onClick = {
+                                            navController.navigate(Screen.RequestDelivery.createRoute(order.id))
+                                        },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.LocalShipping, null, modifier = Modifier.size(18.dp))
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                                
+                                OutlinedButton(
+                                    onClick = {
+                                        navController.navigate(Screen.TrackOrder.createRoute(order.id))
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = MaterialTheme.shapes.medium
+                                ) {
                                     SwiftEntityIcon(
                                         entity = SwiftEntity.DELIVERY,
                                         modifier = Modifier.size(18.dp)
                                     )
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(if (order.status == OrderStatus.DELIVERED) "View Delivery" else "Track Order")
+                                }
+                            }
                         }
                     }
                     if (order.status == OrderStatus.PENDING) {

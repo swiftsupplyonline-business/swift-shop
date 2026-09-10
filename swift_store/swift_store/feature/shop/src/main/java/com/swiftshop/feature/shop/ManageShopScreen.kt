@@ -27,6 +27,8 @@ import android.os.Build
 import com.swiftshop.core.ui.components.ErrorState
 import com.swiftshop.core.ui.components.LoadingState
 import com.swiftshop.core.ui.components.SwiftPrimaryButton
+import com.swiftshop.core.ui.components.DropYourPinComponent
+import com.swiftshop.core.model.GeoPoint
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,18 +70,21 @@ fun ManageShopScreen(
                 val logoUrl by viewModel.logoUrl.collectAsState()
                 val coverUrl by viewModel.coverUrl.collectAsState()
                 val uploadProgress by viewModel.uploadProgress.collectAsState()
+                val selectedLocation by viewModel.selectedLocation.collectAsState()
                 
                 ManageShopContent(
                     shop = state.shop,
                     actionState = actionState,
                     logoUrl = logoUrl,
                     coverUrl = coverUrl,
+                    selectedLocation = selectedLocation,
                     uploadProgress = uploadProgress,
                     padding = padding,
                     onUpdate = { n, d, c, a -> viewModel.update(n, d, c, a) },
                     onDelete = { viewModel.deleteShop { navController.popBackStack() } },
                     onLogoSelect = viewModel::onLogoSelected,
-                    onCoverSelect = viewModel::onCoverSelected
+                    onCoverSelect = viewModel::onCoverSelected,
+                    onLocationSelect = viewModel::onLocationSelected
                 )
             }
         }
@@ -92,12 +97,14 @@ private fun ManageShopContent(
     actionState: ManageActionState,
     logoUrl: String,
     coverUrl: String,
+    selectedLocation: GeoPoint?,
     uploadProgress: Int?,
     padding: PaddingValues,
     onUpdate: (String, String, String, String) -> Unit,
     onDelete: () -> Unit,
     onLogoSelect: (android.net.Uri) -> Unit,
-    onCoverSelect: (android.net.Uri) -> Unit
+    onCoverSelect: (android.net.Uri) -> Unit,
+    onLocationSelect: (GeoPoint) -> Unit
 ) {
     var name by remember { mutableStateOf(shop.name) }
     var description by remember { mutableStateOf(shop.description) }
@@ -250,6 +257,13 @@ private fun ManageShopContent(
             label = { Text("Category") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
+        )
+
+        Text("Shop Location", style = MaterialTheme.typography.titleMedium)
+        DropYourPinComponent(
+            modifier = Modifier.fillMaxWidth(),
+            initialLocation = selectedLocation,
+            onLocationConfirmed = onLocationSelect
         )
 
         OutlinedTextField(

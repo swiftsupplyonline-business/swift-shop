@@ -54,6 +54,9 @@ class ManageShopViewModel @Inject constructor(
     private val _uploadProgress = MutableStateFlow<Int?>(null)
     val uploadProgress = _uploadProgress.asStateFlow()
 
+    private val _selectedLocation = MutableStateFlow<GeoPoint?>(null)
+    val selectedLocation = _selectedLocation.asStateFlow()
+
     init {
         load()
     }
@@ -66,10 +69,15 @@ class ManageShopViewModel @Inject constructor(
                     _uiState.value = ManageShopUiState.Success(it)
                     _logoUrl.value = it.logoUrl
                     _coverUrl.value = it.coverUrl
+                    _selectedLocation.value = it.location
                 },
                 onFailure = { _uiState.value = ManageShopUiState.Error(it.message ?: "Failed to load shop") }
             )
         }
+    }
+
+    fun onLocationSelected(location: GeoPoint) {
+        _selectedLocation.value = location
     }
 
     fun onLogoSelected(uri: android.net.Uri) {
@@ -114,6 +122,7 @@ class ManageShopViewModel @Inject constructor(
                 description = description.trim(),
                 category = category.trim(),
                 locationAddress = address.trim(),
+                location = _selectedLocation.value ?: currentShop.location,
                 logoUrl = _logoUrl.value,
                 coverUrl = _coverUrl.value
             )

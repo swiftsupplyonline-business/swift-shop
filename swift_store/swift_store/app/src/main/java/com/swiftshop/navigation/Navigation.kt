@@ -21,6 +21,7 @@ import com.swiftshop.core.security.BiometricGuard
 import com.swiftshop.feature.auth.AuthScreen
 import com.swiftshop.feature.checkout.CheckoutScreen
 import com.swiftshop.feature.delivery.DeliveryTrackingScreen
+import com.swiftshop.feature.delivery.RequestDeliveryScreen
 import com.swiftshop.feature.home.HomeScreen
 import com.swiftshop.feature.messaging.ConversationScreen
 import com.swiftshop.feature.messaging.MessagingListScreen
@@ -146,6 +147,12 @@ fun SwiftShopNavHost(
             route = Screen.TrackOrder.route,
             arguments = listOf(navArgument("orderId") { type = NavType.StringType })
         ) { TrackOrderScreen(navController = navController) }
+
+        composable(
+            route = Screen.RequestDelivery.route,
+            arguments = listOf(navArgument("orderId") { type = NavType.StringType })
+        ) { RequestDeliveryScreen(navController = navController) }
+
         composable(Screen.CreatePost.route) {
             CreatePostScreen(onBack = { navController.popBackStack() },
                 onCreated = { navController.popBackStack() })

@@ -54,7 +54,8 @@ fun HomeScreen(
         HomeHeader(
             onSearchClick = onSearch,
             onNotificationsClick = { /* navigate to notifications */ },
-            onMessagesClick = { onNavigate(Screen.MessagingList.route) }
+            onMessagesClick = { onNavigate(Screen.MessagingList.route) },
+            onCartClick = { onNavigate(Screen.Checkout.route) }
         )
 
         // ── Tab Row ─────────────────────────────────────────────────────────
@@ -145,7 +146,8 @@ fun HomeScreen(
 private fun HomeHeader(
     onSearchClick: () -> Unit,
     onNotificationsClick: () -> Unit,
-    onMessagesClick: () -> Unit
+    onMessagesClick: () -> Unit,
+    onCartClick: () -> Unit
 ) {
     val colors = MaterialTheme.swiftColors
 
@@ -173,6 +175,14 @@ private fun HomeHeader(
                 )
 
                 // Icon buttons
+                IconButton(onClick = onCartClick) {
+                    Icon(
+                        Icons.Default.ShoppingCart,
+                        "Cart",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
                 IconButton(onClick = onMessagesClick) {
                     Icon(
                         Icons.Default.Message,

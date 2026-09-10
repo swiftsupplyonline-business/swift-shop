@@ -21,6 +21,7 @@ import coil.compose.AsyncImage
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.swiftshop.core.ui.components.SwiftPrimaryButton
+import com.swiftshop.core.ui.components.DropYourPinComponent
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,6 +40,7 @@ fun CreateShopScreen(
     val logoUrl by viewModel.logoUrl.collectAsState()
     val coverUrl by viewModel.coverUrl.collectAsState()
     val uploadProgress by viewModel.uploadProgress.collectAsState()
+    val selectedLocation by viewModel.selectedLocation.collectAsState()
 
     val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { viewModel.onLogoSelected(it) }
@@ -152,6 +154,13 @@ fun CreateShopScreen(
                 label = { Text("Category") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
+            )
+
+            Text("Shop Location", style = MaterialTheme.typography.titleMedium)
+            DropYourPinComponent(
+                modifier = Modifier.fillMaxWidth(),
+                initialLocation = selectedLocation,
+                onLocationConfirmed = viewModel::onLocationSelect
             )
 
             OutlinedTextField(

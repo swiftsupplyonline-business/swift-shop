@@ -65,6 +65,9 @@ class CreateShopViewModel @Inject constructor(
     private val _locationAddress = MutableStateFlow("")
     val locationAddress = _locationAddress.asStateFlow()
 
+    private val _selectedLocation = MutableStateFlow<GeoPoint?>(null)
+    val selectedLocation = _selectedLocation.asStateFlow()
+
     init {
         viewModelScope.launch {
             observeCurrentUser()
@@ -94,6 +97,7 @@ class CreateShopViewModel @Inject constructor(
     fun onDescriptionChange(v: String) { _description.value = v }
     fun onCategoryChange(v: String) { _category.value = v }
     fun onLocationAddressChange(v: String) { _locationAddress.value = v }
+    fun onLocationSelect(v: GeoPoint) { _selectedLocation.value = v }
 
     fun onLogoSelected(uri: android.net.Uri) {
         uploadMedia(uri, isLogo = true)
@@ -151,6 +155,7 @@ class CreateShopViewModel @Inject constructor(
                 description = _description.value.trim(),
                 category = _category.value,
                 locationAddress = _locationAddress.value.trim(),
+                location = _selectedLocation.value ?: GeoPoint(),
                 logoUrl = _logoUrl.value,
                 coverUrl = _coverUrl.value,
                 isActive = true,
