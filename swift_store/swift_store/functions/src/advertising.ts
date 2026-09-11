@@ -26,7 +26,14 @@ export const activateCampaign = onCall(async (request) => {
             if (idempotencyKey) {
                 const idempotencyRef = db.collection("idempotencyKeys").doc(idempotencyKey);
                 const idempotencyDoc = await transaction.get(idempotencyRef);
-                if (idempotencyDoc.exists) return; // Idempotent success
+                if (idempotencyDoc.exists) {
+                    const data = idempotencyDoc.data()!;
+                    // Validate parameters to prevent collision
+                    if (data.campaignId !== campaignId || data.action !== "ACTIVATE_CAMPAIGN") {
+                        throw new Error("IDEMPOTENCY_KEY_CONFLICT");
+                    }
+                    return; // Idempotent success
+                }
             }
 
             const campaignRef = db.collection("advertisingCampaigns").doc(campaignId);
@@ -43,34 +50,55 @@ export const activateCampaign = onCall(async (request) => {
             if (campaign.status === "DRAFT") {
                 const budgetMinorUnits = campaign.budgetMinorUnits || 0;
                 const currency = campaign.budgetCurrency || "LSL";
+                const usageRef = db.collection("merchantUsage").doc(auth.uid);
+                const usageDoc = await transaction.get(usageRef);
+                const period = getCurrentWeeklyPeriod();
+                const userDoc = await transaction.get(db.collection("users").doc(auth.uid));
+                const tier = userDoc.data()?.tier || "BASIC";
+                const entitlement = resolveEntitlement(tier);
+
+                let usageData = usageDoc.exists ? usageDoc.data()! : {
+                    periodStart: period.start,
+                    internalPromotionsUsed: 0,
+                    externalPromotionsUsed: 0
+                };
+
+                if (usageData.periodStart !== period.start) {
+                    usageData = {
+                        periodStart: period.start,
+                        internalPromotionsUsed: 0,
+                        externalPromotionsUsed: 0
+                    };
+                }
 
                 if (budgetMinorUnits === 0) {
                     // --- Internal Promotion (Free) Path ---
-                    const usageRef = db.collection("merchantUsage").doc(auth.uid);
-                    const usageDoc = await transaction.get(usageRef);
-                    const period = getCurrentWeeklyPeriod();
-
-                    const userDoc = await transaction.get(db.collection("users").doc(auth.uid));
-                    const tier = userDoc.data()?.tier || "BASIC";
-                    const entitlement = resolveEntitlement(tier);
-
                     if (!entitlement.internalPromotionUnlimited) {
-                        let used = 0;
-                        if (usageDoc.exists && usageDoc.data()?.periodStart === period.start) {
-                            used = usageDoc.data()?.internalPromotionsUsed || 0;
-                        }
-                        if (used >= entitlement.internalPromotionAllowance) {
+                        if (usageData.internalPromotionsUsed >= entitlement.internalPromotionAllowance) {
                             throw new Error("INTERNAL_PROMOTION_LIMIT_REACHED");
                         }
                         transaction.set(usageRef, {
-                            internalPromotionsUsed: used + 1,
-                            periodStart: period.start,
+                            ...usageData,
+                            internalPromotionsUsed: usageData.internalPromotionsUsed + 1,
                             periodEnd: period.end,
                             updatedAt: admin.firestore.FieldValue.serverTimestamp()
                         }, { merge: true });
                     }
                 } else {
-                    // --- Paid Campaign Path ---
+                    // --- Paid (External) Campaign Path ---
+                    // Enforce external allowance limit if not unlimited
+                    if (!entitlement.externalPromotionUnlimited) {
+                        if (usageData.externalPromotionsUsed >= entitlement.externalPromotionAllowance) {
+                            throw new Error("EXTERNAL_PROMOTION_LIMIT_REACHED");
+                        }
+                        transaction.set(usageRef, {
+                            ...usageData,
+                            externalPromotionsUsed: usageData.externalPromotionsUsed + 1,
+                            periodEnd: period.end,
+                            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                        }, { merge: true });
+                    }
+
                     const walletRef = db.collection("wallets").doc(auth.uid);
                     const walletDoc = await transaction.get(walletRef);
                     if (!walletDoc.exists) throw new Error("Wallet not found");
@@ -252,11 +280,11 @@ export const consumePromotionAllowance = onCall(async (request) => {
             const idempotencyRef = db.collection("idempotencyKeys").doc(idempotencyKey);
             const idempotencyDoc = await transaction.get(idempotencyRef);
             if (idempotencyDoc.exists) {
-                const existingAction = idempotencyDoc.data()?.action;
-                if (existingAction === "CONSUME_PROMOTION" && idempotencyDoc.data()?.type === type) {
+                const data = idempotencyDoc.data()!;
+                if (data.action === "CONSUME_PROMOTION" && data.type === type) {
                     return; // Idempotent success
                 }
-                throw new Error("IDEMPOTENCY_KEY_REUSE_MISMATCH");
+                throw new Error("IDEMPOTENCY_KEY_CONFLICT");
             }
 
             const userDoc = await transaction.get(db.collection("users").doc(auth.uid));

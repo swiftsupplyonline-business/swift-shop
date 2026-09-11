@@ -1157,25 +1157,23 @@ export const createListing = onCall(async (request) => {
             const tier = userDoc.data()?.tier || "BASIC";
             const entitlement = resolveEntitlement(tier);
 
+            // 1. Per-shop limit check (e.g. BASIC: 10 per shop)
+            if (entitlement.includedListingsPerShop !== -1) {
+                const shopListingsQuery = db.collection("listings")
+                    .where("shopId", "==", listing.shopId)
+                    .where("sellerId", "==", uid);
+                const shopListingsSnapshot = await transaction.get(shopListingsQuery);
+                if (shopListingsSnapshot.size >= entitlement.includedListingsPerShop) {
+                    throw new Error("ADDITIONAL_FEE_REQUIRED");
+                }
+            }
+
+            // 2. Total account limit check (e.g. PREMIUM: 50 total)
             if (entitlement.totalIncludedListings !== -1) {
                 const allListingsQuery = db.collection("listings").where("sellerId", "==", uid);
                 const allListingsSnapshot = await transaction.get(allListingsQuery);
-                const totalListings = allListingsSnapshot.size;
-
-                if (tier === "BASIC") {
-                    const shopListingsQuery = db.collection("listings")
-                        .where("shopId", "==", listing.shopId)
-                        .where("sellerId", "==", uid);
-                    const shopListingsSnapshot = await transaction.get(shopListingsQuery);
-                    const shopListings = shopListingsSnapshot.size;
-
-                    if (shopListings >= entitlement.includedListingsPerShop) {
-                        throw new Error("ADDITIONAL_FEE_REQUIRED");
-                    }
-                } else if (tier === "PREMIUM") {
-                    if (totalListings >= entitlement.totalIncludedListings) {
-                        throw new Error("ADDITIONAL_FEE_REQUIRED");
-                    }
+                if (allListingsSnapshot.size >= entitlement.totalIncludedListings) {
+                    throw new Error("ADDITIONAL_FEE_REQUIRED");
                 }
             }
             // -----------------------------------

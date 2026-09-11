@@ -40,7 +40,7 @@ object TierEntitlements {
         tier = UserTier.BASIC,
         maxShops = 3,
         includedListingsPerShop = 10,
-        totalIncludedListings = 10,
+        totalIncludedListings = -1, // Only per-shop for BASIC
         additionalListingFeeMinorUnits = 500L, // M5.00
         monthlyFeeMinorUnits = 0L,
         internalPromotionAllowance = 1,
@@ -54,7 +54,7 @@ object TierEntitlements {
     val PREMIUM = TierEntitlement(
         tier = UserTier.PREMIUM,
         maxShops = 5,
-        includedListingsPerShop = 50, 
+        includedListingsPerShop = -1, 
         totalIncludedListings = 50,
         additionalListingFeeMinorUnits = 500L, // M5.00
         monthlyFeeMinorUnits = 9900L,  // M99.00

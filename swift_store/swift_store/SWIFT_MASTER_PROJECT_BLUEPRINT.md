@@ -342,7 +342,7 @@ The treasury and double-entry ledger are the authoritative financial records.
 
 ## 14. Advertising & Monetization
 *   **Revenue**: 1.5% fee, Ads, Tiers.
-*   **Tier Limits**: BASIC (1 shop, 3 listings), PREMIUM (3 shops, inf listings), ELITE (inf/inf).
+*   **Tier Limits**: BASIC (3 shops, 10 listings/shop), PREMIUM (5 shops, 50 listings total), ELITE (inf/inf).
 
 ## 15. Admin / Governance
 *   City treasury and oversight.

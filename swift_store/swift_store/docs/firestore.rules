@@ -29,7 +29,13 @@ service cloud.firestore {
         && request.resource.data.get('tier', 'BASIC') == 'BASIC'
         && request.resource.data.get('isAdmin', false) == false
         && request.resource.data.get('accountStatus', 'ACTIVE') == 'ACTIVE'
-        && request.resource.data.get('isVerified', false) == false;
+        && request.resource.data.get('isVerified', false) == false
+        // STRICT BOOTSTRAP: Only permit essential profile fields
+        && request.resource.data.keys().hasOnly([
+          'uid', 'email', 'phoneNumber', 'displayName', 'photoUrl',
+          'tier', 'isAdmin', 'isVerified', 'accountStatus',
+          'createdAt', 'updatedAt'
+        ]);
       allow update: if isOwner(uid)
         // Prevent self-promotion to Admin, bypassing Active check, or forging Tier
         && !request.resource.data.diff(resource.data).affectedKeys()

@@ -37,7 +37,7 @@ export const TIER_ENTITLEMENTS: Record<UserTier, MerchantEntitlement> = {
         tier: UserTier.BASIC,
         maxShops: 3,
         includedListingsPerShop: 10,
-        totalIncludedListings: 10,
+        totalIncludedListings: -1, // No total account limit for BASIC, only per-shop
         additionalListingFeeMinorUnits: 500,
         monthlyFeeMinorUnits: 0,
         internalPromotionAllowance: 1,
@@ -51,8 +51,8 @@ export const TIER_ENTITLEMENTS: Record<UserTier, MerchantEntitlement> = {
     [UserTier.PREMIUM]: {
         tier: UserTier.PREMIUM,
         maxShops: 5,
-        includedListingsPerShop: 50,
-        totalIncludedListings: 50,
+        includedListingsPerShop: -1,
+        totalIncludedListings: 50, // 50 total listings across account
         additionalListingFeeMinorUnits: 500,
         monthlyFeeMinorUnits: 9900,
         internalPromotionAllowance: -1,

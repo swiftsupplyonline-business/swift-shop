@@ -12,6 +12,7 @@ class EntitlementTest {
         assertEquals(UserTier.BASIC, entitlement.tier)
         assertEquals(3, entitlement.maxShops)
         assertEquals(10, entitlement.includedListingsPerShop)
+        assertEquals(-1, entitlement.totalIncludedListings)
         assertEquals(500L, entitlement.additionalListingFeeMinorUnits)
         assertEquals(0L, entitlement.monthlyFeeMinorUnits)
         assertEquals(1, entitlement.internalPromotionAllowance)

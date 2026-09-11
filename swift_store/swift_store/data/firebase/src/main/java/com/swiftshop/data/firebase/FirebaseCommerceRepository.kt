@@ -57,11 +57,13 @@ class FirebaseCommerceRepository @Inject constructor(
 
     override suspend fun updateShop(shop: Shop): Result<Unit> = runCatching {
         firestore.collection("shops").document(shop.id).update(shop.toUpdateMap()).await()
+        Unit
     }
 
     override suspend fun deleteShop(shopId: String): Result<Unit> = runCatching {
         val data = mapOf("shopId" to shopId)
         functions.getHttpsCallable("deleteShop").call(data).await()
+        Unit
     }
 
     // --- Listings -----------------------------------------------------------
@@ -128,11 +130,13 @@ class FirebaseCommerceRepository @Inject constructor(
             "updates" to listing.toFirestore()
         )
         functions.getHttpsCallable("updateListing").call(data).await()
+        Unit
     }
 
     override suspend fun deleteListing(listingId: String): Result<Unit> = runCatching {
         val data = mapOf("listingId" to listingId)
         functions.getHttpsCallable("deleteListing").call(data).await()
+        Unit
     }
 
     // --- Delivery Listings --------------------------------------------------
@@ -164,6 +168,7 @@ class FirebaseCommerceRepository @Inject constructor(
             .collection("cart").document(item.listingId)
             .set(item.toFirestore())
             .await()
+        Unit
     }
 
     override suspend fun removeFromCart(userId: String, listingId: String): Result<Unit> = runCatching {
@@ -171,6 +176,7 @@ class FirebaseCommerceRepository @Inject constructor(
             .collection("cart").document(listingId)
             .delete()
             .await()
+        Unit
     }
 
     override suspend fun clearCart(userId: String): Result<Unit> = runCatching {
@@ -178,6 +184,7 @@ class FirebaseCommerceRepository @Inject constructor(
         val batch = firestore.batch()
         cart.documents.forEach { batch.delete(it.reference) }
         batch.commit().await()
+        Unit
     }
 
     // --- Subscriptions ------------------------------------------------------
@@ -291,6 +298,7 @@ class FirebaseCommerceRepository @Inject constructor(
         if (status != "SUCCESS") {
             throw Exception(status ?: "Verification failed")
         }
+        Unit
     }
 
     override fun observeUserOrders(userId: String): Flow<List<Order>> = observeOrdersByRole(userId, OrderRole.REQUESTER)
@@ -313,11 +321,13 @@ class FirebaseCommerceRepository @Inject constructor(
     override suspend fun updateOrderStatus(orderId: String, status: OrderStatus): Result<Unit> = runCatching {
         val data = mapOf("orderId" to orderId, "status" to status.name)
         functions.getHttpsCallable("updateOrderStatus").call(data).await()
+        Unit
     }
 
     override suspend fun cancelOrder(orderId: String, reason: String): Result<Unit> = runCatching {
         val data = mapOf("orderId" to orderId, "reason" to reason)
         functions.getHttpsCallable("cancelOrder").call(data).await()
+        Unit
     }
 
     override fun observeMerchantUsage(userId: String): Flow<MerchantUsage?> = callbackFlow {
