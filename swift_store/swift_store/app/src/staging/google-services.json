@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "651419297699",
+    "project_id": "swift-staging-3bed1",
+    "storage_bucket": "swift-staging-3bed1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:651419297699:android:d61b18e3cb9186e4b35c16",
+        "android_client_info": {
+          "package_name": "com.swiftshop.client.staging.debug"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBArbPIMrZW8WxpfERKnQ_mLAvYJLD3Y5Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,317 @@
+package com.swiftshop.feature.shop
+
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.swiftshop.core.model.*
+import com.swiftshop.domain.auth.ObserveCurrentUserUseCase
+import com.swiftshop.domain.commerce.*
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import timber.log.Timber
+import javax.inject.Inject
+
+sealed interface ListingDetailNavigation {
+    data class GoToCheckout(val orderId: String? = null) : ListingDetailNavigation
+}
+
+sealed interface ActionState {
+    data object Idle : ActionState
+    data object Loading : ActionState
+    data class Success(val message: String) : ActionState
+    data class Error(val message: String) : ActionState
+}
+
+sealed interface ListingDetailState {
+    data object Loading : ListingDetailState
+    data class Loaded(val listing: Listing, val shop: Shop? = null) : ListingDetailState
+    data class Error(val message: String) : ListingDetailState
+}
+
+@HiltViewModel
+class ListingDetailViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
+    private val getListing: GetListingUseCase,
+    private val getShop: GetShopUseCase,
+    private val deleteListing: DeleteListingUseCase,
+    private val observeCurrentUser: ObserveCurrentUserUseCase,
+    private val addToCartUseCase: com.swiftshop.domain.commerce.AddToCartUseCase,
+    private val observeAvailableSlots: ObserveAvailableSlotsUseCase,
+    private val initiateBooking: InitiateBookingUseCase,
+    private val placeOrder: PlaceOrderUseCase,
+    private val toggleBookmark: com.swiftshop.domain.feed.ToggleBookmarkUseCase,
+
+    private val observeBookmarkedIds: com.swiftshop.domain.feed.ObserveBookmarkedIdsUseCase
+) : ViewModel() {
+
+    private val listingId: String = checkNotNull(savedStateHandle["listingId"])
+
+    private val _uiState = MutableStateFlow<ListingDetailState>(ListingDetailState.Loading)
+    val uiState: StateFlow<ListingDetailState> = _uiState.asStateFlow()
+
+    private val _isBookmarked = MutableStateFlow(false)
+    val isBookmarked = _isBookmarked.asStateFlow()
+
+    private val _quantity = MutableStateFlow(1)
+    val quantity = _quantity.asStateFlow()
+
+    private val _availableSlots = MutableStateFlow<List<AvailabilitySlot>>(emptyList())
+    val availableSlots = _availableSlots.asStateFlow()
+
+    private val _selectedSlot = MutableStateFlow<AvailabilitySlot?>(null)
+    val selectedSlot = _selectedSlot.asStateFlow()
+
+    private val _isAddingToCart = MutableStateFlow(false)
+    val isAddingToCart = _isAddingToCart.asStateFlow()
+
+    val currentUser = observeCurrentUser().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    private val _actionState = MutableStateFlow<ActionState>(ActionState.Idle)
+    val actionState = _actionState.asStateFlow()
+
+    private val _navigationEvents = MutableSharedFlow<ListingDetailNavigation>()
+    val navigationEvents: SharedFlow<ListingDetailNavigation> = _navigationEvents.asSharedFlow()
+
+    private val _bookingOperationId = MutableStateFlow<String?>(null)
+
+    init {
+        load()
+        observeBookmarkStatus()
+    }
+
+    private fun observeBookmarkStatus() {
+        viewModelScope.launch {
+            observeCurrentUser().collectLatest { user ->
+                if (user != null) {
+                    observeBookmarkedIds(user.uid).collect { ids ->
+                        _isBookmarked.value = listingId in ids
+                    }
+                }
+            }
+        }
+    }
+
+    fun toggleBookmark() {
+        viewModelScope.launch {
+            val user = observeCurrentUser().first() ?: return@launch
+            toggleBookmark(user.uid, listingId, "LISTING")
+        }
+    }
+
+    fun load() {
+        viewModelScope.launch {
+            _uiState.value = ListingDetailState.Loading
+            getListing(listingId).fold(
+                onSuccess = { listing ->
+                    val shop = getShop(listing.shopId).getOrNull()
+                    _uiState.value = ListingDetailState.Loaded(listing, shop)
+                    if (listing.listingType == ListingType.SET_APPOINTMENT || listing.listingType == ListingType.BOOKABLE_SERVICE) {
+                        observeSlots(listing.shopId)
+                    }
+                },
+                onFailure = { _uiState.value = ListingDetailState.Error(it.message ?: "Failed to load") }
+            )
+        }
+    }
+
+    private fun observeSlots(shopId: String) {
+        viewModelScope.launch {
+            observeAvailableSlots(shopId).collect { slots ->
+                _availableSlots.value = slots
+                // If selected slot is no longer in available list, clear it
+                if (_selectedSlot.value != null && slots.none { it.id == _selectedSlot.value?.id }) {
+                    _selectedSlot.value = null
+                }
+            }
+        }
+    }
+
+    fun onSlotSelected(slot: AvailabilitySlot?) {
+        _selectedSlot.value = slot
+    }
+
+    fun onConfirmBooking(phoneNumber: String) {
+        val state = _uiState.value as? ListingDetailState.Loaded ?: return
+        val slot = _selectedSlot.value ?: return
+        
+        // Preserve stable operation ID across retries
+        val opId = _bookingOperationId.value ?: java.util.UUID.randomUUID().toString().also { 
+            _bookingOperationId.value = it 
+        }
+
+        val locationType = state.listing.fulfillmentOptions.firstOrNull { 
+            it in listOf(FulfillmentType.AT_PROVIDER, FulfillmentType.AT_CUSTOMER, FulfillmentType.REMOTE) 
+        } ?: FulfillmentType.AT_PROVIDER
+
+        viewModelScope.launch {
+            _actionState.value = ActionState.Loading
+            initiateBooking(
+                listingId = state.listing.id,
+                slotId = slot.id,
+                paymentMethod = PaymentMethod.MOPAY,
+                provider = null,
+                phoneNumber = phoneNumber,
+                idempotencyKey = opId,
+                locationType = locationType
+            ).fold(
+                onSuccess = {
+                    _bookingOperationId.value = null // Clear on success
+                    _navigationEvents.emit(ListingDetailNavigation.GoToCheckout(it.orderId))
+                },
+                onFailure = {
+                    _actionState.value = ActionState.Error(it.message ?: "Booking failed")
+                }
+            )
+        }
+    }
+
+    fun submitCustomOrder(fieldValues: Map<String, String>) {
+        val state = _uiState.value as? ListingDetailState.Loaded ?: return
+        val opId = java.util.UUID.randomUUID().toString()
+
+        viewModelScope.launch {
+            _actionState.value = ActionState.Loading
+            
+            val item = OrderItem(
+                listingId = state.listing.id,
+                title = state.listing.title,
+                quantity = _quantity.value,
+                unitPrice = state.listing.price,
+                selectedOptions = fieldValues
+            )
+
+            // Construct payload based on type
+            val payload = when (state.listing.listingType) {
+                ListingType.DELIVER, ListingType.DELIVERY_SERVICE -> OrderPayload.DeliveryRequest(
+                    packageDescription = fieldValues["package"] ?: "Package delivery",
+                    recipientName = fieldValues["recipient_name"] ?: "Recipient",
+                    recipientPhone = fieldValues["recipient_phone"] ?: "",
+                    instructions = fieldValues["instructions"] ?: ""
+                )
+                ListingType.PREPARED_FOOD -> OrderPayload.FoodOrder(
+                    items = listOf(FoodOrderItem(state.listing.id, state.listing.title, _quantity.value)),
+                    preparationNotes = fieldValues["notes"] ?: ""
+                )
+                ListingType.BULK_SUPPLY -> OrderPayload.BulkPurchase(
+                    quantity = _quantity.value.toDouble(),
+                    unitOfMeasure = "unit"
+                )
+                ListingType.SERVICE, ListingType.BOOKABLE_SERVICE, ListingType.SET_APPOINTMENT -> {
+                    _actionState.value = ActionState.Error("Invalid order path for service")
+                    return@launch
+                }
+                else -> null 
+            }
+
+
+
+            val isDeliveryService = state.listing.listingType == ListingType.DELIVERY_SERVICE || 
+                                   state.listing.listingType == ListingType.DELIVER
+
+            val customerResponses = fieldValues.map { (id, value) ->
+                val field = state.listing.customFields.find { it.id == id }
+                CustomerFieldResponse(
+                    fieldId = id,
+                    label = field?.label ?: "",
+                    value = value
+                )
+            }
+
+            placeOrder(
+                items = listOf(item),
+                address = DeliveryAddress(label = "Direct Order"),
+                deliveryListingId = if (isDeliveryService) state.listing.id else "none", // Direct order from listing
+                paymentMethod = PaymentMethod.MOPAY,
+                provider = null,
+                phoneNumber = "",
+                idempotencyKey = opId,
+                payload = payload,
+                customerResponses = customerResponses,
+                notes = fieldValues["notes"] ?: "" // Special case for general notes
+            ).fold(
+
+
+                onSuccess = {
+                    _navigationEvents.emit(ListingDetailNavigation.GoToCheckout(it.orderId))
+                },
+                onFailure = {
+                    _actionState.value = ActionState.Error(it.message ?: "Order failed")
+                }
+            )
+        }
+    }
+
+
+
+    fun updateQuantity(q: Int) {
+        _quantity.value = q.coerceAtLeast(1)
+    }
+
+    fun addToCart(onComplete: (() -> Unit)? = null) {
+        val state = _uiState.value as? ListingDetailState.Loaded ?: return
+        viewModelScope.launch {
+            _isAddingToCart.value = true
+            _actionState.value = ActionState.Loading
+            Timber.d("Adding listing ${state.listing.id} to cart (quantity: ${_quantity.value})")
+            val user = observeCurrentUser().first()
+            val uid = user?.uid
+            
+            if (uid != null) { 
+                val item = CartItem(
+                    listingId = state.listing.id,
+                    shopId = state.listing.shopId,
+                    title = state.listing.title,
+                    imageUrl = state.listing.imageUrls.firstOrNull() ?: "",
+                    quantity = _quantity.value,
+                    unitPrice = state.listing.price
+                )
+                addToCartUseCase(uid, item).fold(
+                    onSuccess = {
+                        Timber.i("Successfully added to cart")
+                        _actionState.value = ActionState.Success("Added to cart")
+                        onComplete?.invoke()
+                    },
+                    onFailure = {
+                        Timber.e(it, "Failed to add to cart")
+                        _actionState.value = ActionState.Error(it.message ?: "Failed to add to cart")
+                    }
+                )
+            } else {
+                Timber.w("User not signed in - cannot add to cart")
+                _actionState.value = ActionState.Error("User not signed in")
+            }
+            _isAddingToCart.value = false
+        }
+    }
+
+    fun deleteListing(onDeleted: () -> Unit) {
+        val state = _uiState.value as? ListingDetailState.Loaded ?: return
+        viewModelScope.launch {
+            _actionState.value = ActionState.Loading
+            val user = observeCurrentUser().first()
+            if (user?.uid == state.listing.sellerId) {
+                deleteListing(listingId).fold(
+                    onSuccess = { onDeleted() },
+                    onFailure = { _actionState.value = ActionState.Error(it.message ?: "Failed to delete listing") }
+                )
+            } else {
+                _actionState.value = ActionState.Error("Unauthorized")
+            }
+        }
+    }
+
+    fun clearActionState() {
+        _actionState.value = ActionState.Idle
+    }
+
+    fun buyNow() {
+        Timber.d("buyNow triggered")
+        addToCart {
+            viewModelScope.launch {
+                Timber.i("Navigating to checkout from buyNow")
+                _navigationEvents.emit(ListingDetailNavigation.GoToCheckout())
+            }
+        }
+    }
+}
