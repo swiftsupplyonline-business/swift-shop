@@ -128,7 +128,7 @@ Listings are adaptable business offerings supporting commerce, services, and wor
 *   `Visit Shop` is a mandatory CTA.
 
 ### 7.3 Listing Creation
-*   Requires valid Tier (Basic: 3 free).
+*   Requires valid Tier (Basic: 10 per shop).
 *   Server-side validation of limits.
 
 ### 7.4 Media
@@ -203,7 +203,7 @@ Listings are adaptable business offerings supporting commerce, services, and wor
 
 ## 13. Advertising & Monetization
 *   **Revenue**: 1.5% fee, Ads, Tiers.
-*   **Tier Limits**: BASIC (1 shop, 3 listings), PREMIUM (3 shops, inf listings), ELITE (inf/inf).
+*   **Tier Limits**: BASIC (3 shops, 10 listings/shop), PREMIUM (5 shops, 50 listings total), ELITE (inf/inf).
 
 ## 14. Admin / Governance
 *   City treasury and oversight.

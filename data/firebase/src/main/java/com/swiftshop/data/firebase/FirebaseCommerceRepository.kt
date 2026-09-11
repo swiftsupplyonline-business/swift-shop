@@ -51,9 +51,10 @@ class FirebaseCommerceRepository @Inject constructor(
 
     override suspend fun updateShop(shop: Shop): Result<Unit> = runCatching {
         firestore.collection("shops").document(shop.id).update(shop.toUpdateMap()).await()
+        Unit
     }
 
-    // ─── Listings ─────────────────────────────────────────────────────────────
+    // â”€â”€â”€ Listings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     override fun getShopListings(shopId: String, page: Int, pageSize: Int): Flow<List<Listing>> = callbackFlow {
         // Basic pagination via limit (cursor-based omitted for brevity in repository restoration)
@@ -100,14 +101,16 @@ class FirebaseCommerceRepository @Inject constructor(
             "updates" to listing.toFirestore()
         )
         functions.getHttpsCallable("updateListing").call(data).await()
+        Unit
     }
 
     override suspend fun deleteListing(listingId: String): Result<Unit> = runCatching {
         val data = mapOf("listingId" to listingId)
         functions.getHttpsCallable("deleteListing").call(data).await()
+        Unit
     }
 
-    // ─── Cart ─────────────────────────────────────────────────────────────────
+    // â”€â”€â”€ Cart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     override fun observeCart(userId: String): Flow<List<CartItem>> = callbackFlow {
         val subscription = firestore.collection("users").document(userId)
@@ -124,6 +127,7 @@ class FirebaseCommerceRepository @Inject constructor(
             .collection("cart").document(item.listingId)
             .set(item.toFirestore())
             .await()
+        Unit
     }
 
     override suspend fun removeFromCart(userId: String, listingId: String): Result<Unit> = runCatching {
@@ -131,6 +135,7 @@ class FirebaseCommerceRepository @Inject constructor(
             .collection("cart").document(listingId)
             .delete()
             .await()
+        Unit
     }
 
     override suspend fun clearCart(userId: String): Result<Unit> = runCatching {
@@ -138,9 +143,10 @@ class FirebaseCommerceRepository @Inject constructor(
         val batch = firestore.batch()
         cart.documents.forEach { batch.delete(it.reference) }
         batch.commit().await()
+        Unit
     }
 
-    // ─── Subscriptions ────────────────────────────────────────────────────────
+    // â”€â”€â”€ Subscriptions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     override suspend fun initiateSubscription(targetTier: UserTier): Result<String> = runCatching {
         val data = mapOf("targetTier" to targetTier.name)
@@ -148,7 +154,7 @@ class FirebaseCommerceRepository @Inject constructor(
         result.data as String
     }
 
-    // ─── Orders ───────────────────────────────────────────────────────────────
+    // â”€â”€â”€ Orders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     override suspend fun calculateOrderFees(items: List<OrderItem>, address: DeliveryAddress): Result<OrderSummary> = runCatching {
         val data = mapOf(
@@ -196,6 +202,7 @@ class FirebaseCommerceRepository @Inject constructor(
     override suspend fun verifyMopayPayment(sessionId: String): Result<Unit> = runCatching {
         val data = mapOf("sessionId" to sessionId)
         functions.getHttpsCallable("verifyMopayPayment").call(data).await()
+        Unit
     }
 
     override fun observeUserOrders(userId: String): Flow<List<Order>> = callbackFlow {
@@ -218,15 +225,17 @@ class FirebaseCommerceRepository @Inject constructor(
         // This is a request intent.
         val data = mapOf("orderId" to orderId, "status" to status.name)
         functions.getHttpsCallable("updateOrderStatus").call(data).await()
+        Unit
     }
 
     override suspend fun cancelOrder(orderId: String, reason: String): Result<Unit> = runCatching {
         val data = mapOf("orderId" to orderId, "reason" to reason)
         functions.getHttpsCallable("cancelOrder").call(data).await()
+        Unit
     }
 }
 
-// ─── DTOs & Mappers ──────────────────────────────────────────────────────────
+// â”€â”€â”€ DTOs & Mappers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 data class FirestoreShop(
     val id: String = "",

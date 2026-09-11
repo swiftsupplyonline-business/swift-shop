@@ -8,9 +8,17 @@ import kotlinx.coroutines.flow.Flow
 data class TierEntitlement(
     val tier: UserTier,
     val maxShops: Int,          // -1 = unlimited
-    val freeListings: Int,      // per shop
+    val includedListingsPerShop: Int,         // used for BASIC
+    val totalIncludedListings: Int,           // used for PREMIUM
     val additionalListingFeeMinorUnits: Long,
-    val monthlyFeeMinorUnits: Long
+    val monthlyFeeMinorUnits: Long,
+    val internalPromotionAllowance: Int,
+    val internalPromotionUnlimited: Boolean,
+    val externalPromotionAllowance: Int,
+    val externalPromotionUnlimited: Boolean,
+    val exposureLevel: ExposureLevel,
+    val salesAnalyticsLevel: AnalyticsLevel,
+    val advertAnalyticsEnabled: Boolean
 )
 
 data class OrderSummary(
@@ -25,24 +33,48 @@ object TierEntitlements {
     // Hard-coded here only as defaults.
     val BASIC = TierEntitlement(
         tier = UserTier.BASIC,
-        maxShops = 1,
-        freeListings = 3,
+        maxShops = 3,
+        includedListingsPerShop = 10,
+        totalIncludedListings = -1, // Only per-shop for BASIC
         additionalListingFeeMinorUnits = 500L, // M5.00
-        monthlyFeeMinorUnits = 0L
+        monthlyFeeMinorUnits = 0L,
+        internalPromotionAllowance = 1,
+        internalPromotionUnlimited = false,
+        externalPromotionAllowance = 0,
+        externalPromotionUnlimited = false,
+        exposureLevel = ExposureLevel.STANDARD,
+        salesAnalyticsLevel = AnalyticsLevel.BASIC,
+        advertAnalyticsEnabled = false
     )
     val PREMIUM = TierEntitlement(
         tier = UserTier.PREMIUM,
-        maxShops = 3,
-        freeListings = Int.MAX_VALUE,
-        additionalListingFeeMinorUnits = 0L,
-        monthlyFeeMinorUnits = 9900L  // M99.00
+        maxShops = 5,
+        includedListingsPerShop = -1, 
+        totalIncludedListings = 50,
+        additionalListingFeeMinorUnits = 500L, // M5.00
+        monthlyFeeMinorUnits = 9900L,  // M99.00
+        internalPromotionAllowance = -1,
+        internalPromotionUnlimited = true,
+        externalPromotionAllowance = 10,
+        externalPromotionUnlimited = false,
+        exposureLevel = ExposureLevel.ENHANCED,
+        salesAnalyticsLevel = AnalyticsLevel.ADVANCED,
+        advertAnalyticsEnabled = true
     )
     val ELITE = TierEntitlement(
         tier = UserTier.ELITE,
-        maxShops = Int.MAX_VALUE,
-        freeListings = Int.MAX_VALUE,
+        maxShops = -1,
+        includedListingsPerShop = -1,
+        totalIncludedListings = -1,
         additionalListingFeeMinorUnits = 0L,
-        monthlyFeeMinorUnits = 49900L // M499.00
+        monthlyFeeMinorUnits = 49900L, // M499.00
+        internalPromotionAllowance = -1,
+        internalPromotionUnlimited = true,
+        externalPromotionAllowance = 50,
+        externalPromotionUnlimited = false,
+        exposureLevel = ExposureLevel.MAXIMUM,
+        salesAnalyticsLevel = AnalyticsLevel.FULL,
+        advertAnalyticsEnabled = true
     )
 
     fun forTier(tier: UserTier): TierEntitlement = when (tier) {
@@ -56,15 +88,19 @@ object TierEntitlements {
 
 interface CommerceRepository {
     // Shops
+    fun generateShopId(): String = "" // Placeholder for interface consistency
     fun getUserShops(userId: String): Flow<List<Shop>>
+    fun getAllShops(): Flow<List<Shop>> = kotlinx.coroutines.flow.emptyFlow()
     suspend fun getShop(shopId: String): Result<Shop>
     suspend fun createShop(shop: Shop): Result<String>
     suspend fun updateShop(shop: Shop): Result<Unit>
+    suspend fun deleteShop(shopId: String): Result<Unit> = Result.success(Unit)
 
     // Listings
     fun getShopListings(shopId: String, page: Int, pageSize: Int): Flow<List<Listing>>
     suspend fun getListing(listingId: String): Result<Listing>
     suspend fun getUserListings(userId: String): Result<List<Listing>>
+    fun observeUserListings(userId: String): Flow<List<Listing>> = kotlinx.coroutines.flow.emptyFlow()
     suspend fun searchListings(query: String): Result<List<Listing>>
     suspend fun createListing(listing: Listing): Result<String>
     suspend fun updateListing(listing: Listing): Result<Unit>
@@ -78,6 +114,10 @@ interface CommerceRepository {
 
     // Subscriptions
     suspend fun initiateSubscription(targetTier: UserTier): Result<String>
+
+    // Merchant
+    fun observeMerchantUsage(userId: String): Flow<MerchantUsage?> = kotlinx.coroutines.flow.emptyFlow()
+    fun observeSubscription(userId: String): Flow<Subscription?> = kotlinx.coroutines.flow.emptyFlow()
 
     // Orders
     suspend fun calculateOrderFees(items: List<OrderItem>, address: DeliveryAddress): Result<OrderSummary>

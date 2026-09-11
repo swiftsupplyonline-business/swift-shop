@@ -552,15 +552,31 @@ export const createListing = onCall(async (request) => {
             if (!profileDoc.exists) throw new Error("Profile not found");
             const activeListingCount = profileDoc.data()!.activeListingCount || 0;
 
-            // Enforce limits (Basic: 3 active listings)
-            if (tier === "BASIC" && activeListingCount >= 3) {
-                // Check for active paid entitlement
-                const entitlementRef = db.collection("entitlements").doc(`${uid}_ADDITIONAL_LISTINGS`);
-                const entitlementDoc = await transaction.get(entitlementRef);
-                if (!entitlementDoc.exists || !entitlementDoc.data()?.isActive) {
-                    throw new Error("Active listing limit reached for BASIC tier. Upgrade to PREMIUM or purchase additional capacity.");
+            // --- Authoritative Quota Check ---
+            const userDoc = await transaction.get(db.collection("users").doc(uid));
+            const tier = userDoc.data()?.tier || "BASIC";
+            const entitlement = resolveEntitlement(tier);
+
+            // 1. Per-shop limit check (e.g. BASIC: 10 per shop)
+            if (entitlement.includedListingsPerShop !== -1) {
+                const shopListingsQuery = db.collection("listings")
+                    .where("shopId", "==", listing.shopId)
+                    .where("sellerId", "==", uid);
+                const shopListingsSnapshot = await transaction.get(shopListingsQuery);
+                if (shopListingsSnapshot.size >= entitlement.includedListingsPerShop) {
+                    throw new Error("ADDITIONAL_FEE_REQUIRED");
                 }
             }
+
+            // 2. Total account limit check (e.g. PREMIUM: 50 total)
+            if (entitlement.totalIncludedListings !== -1) {
+                const allListingsQuery = db.collection("listings").where("sellerId", "==", uid);
+                const allListingsSnapshot = await transaction.get(allListingsQuery);
+                if (allListingsSnapshot.size >= entitlement.totalIncludedListings) {
+                    throw new Error("ADDITIONAL_FEE_REQUIRED");
+                }
+            }
+            // -----------------------------------
 
             const listingId = db.collection("listings").doc().id;
             const isAvailable = listing.isAvailable !== false; // Default to true
@@ -668,14 +684,17 @@ export const createShop = onCall(async (request) => {
             if (!profileDoc.exists) throw new Error("Profile not found");
             const currentShopCount = profileDoc.data()!.shopCount || 0;
 
-            // Enforce limits (Basic: 1 shop, Premium: 3 shops, Elite: unlimited)
-            let maxShops = 1;
-            if (tier === "PREMIUM") maxShops = 3;
-            if (tier === "ELITE") maxShops = -1;
+            // --- Authoritative Entitlement Check ---
+            const entitlement = resolveEntitlement(tier);
 
-            if (maxShops !== -1 && currentShopCount >= maxShops) {
-                throw new Error(`Shop limit reached for ${tier} tier. Upgrade to PREMIUM or ELITE.`);
+            const shopsQuery = db.collection("shops").where("ownerId", "==", uid);
+            const shopsSnapshot = await transaction.get(shopsQuery);
+            const realShopCount = shopsSnapshot.size;
+
+            if (entitlement.maxShops !== -1 && realShopCount >= entitlement.maxShops) {
+                throw new Error(`Shop limit reached for ${tier} tier. Max: ${entitlement.maxShops}`);
             }
+            // ----------------------------------------
 
             const shopId = db.collection("shops").doc().id;
             const newShop = {

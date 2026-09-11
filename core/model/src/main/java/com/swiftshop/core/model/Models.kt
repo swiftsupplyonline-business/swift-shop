@@ -36,10 +36,31 @@ data class MoneyAmount(
 // ─── Tier ────────────────────────────────────────────────────────────────────
 
 enum class UserTier {
-    BASIC,   // Free: 1 shop, 3 free listings
-    PREMIUM, // M99/mo: 3 shops, unlimited listings
-    ELITE    // M499/mo: unlimited shops, max exposure
+    BASIC,   // Free: 3 shops, 10 listings/shop
+    PREMIUM, // M99/mo: 5 shops, 50 total listings
+    ELITE    // M499/mo: unlimited shops, unlimited listings
 }
+
+enum class ExposureLevel {
+    STANDARD,
+    ENHANCED,
+    MAXIMUM
+}
+
+enum class AnalyticsLevel {
+    BASIC,
+    ADVANCED,
+    FULL
+}
+
+data class MerchantUsage(
+    val userId: String = "",
+    val periodStart: Long = 0L,
+    val periodEnd: Long = 0L,
+    val internalPromotionsUsed: Int = 0,
+    val externalPromotionsUsed: Int = 0,
+    val updatedAt: Long = 0L
+)
 
 // ─── Account Status ──────────────────────────────────────────────────────────
 
