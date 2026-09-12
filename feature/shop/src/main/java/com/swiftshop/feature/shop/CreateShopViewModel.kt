@@ -66,10 +66,14 @@ class CreateShopViewModel @Inject constructor(
         }
     }
 
+    private val _selectedLocation = MutableStateFlow(GeoPoint(-29.3167, 27.4833))
+    val selectedLocation = _selectedLocation.asStateFlow()
+
     fun onNameChange(v: String) { _name.value = v }
     fun onDescriptionChange(v: String) { _description.value = v }
     fun onCategoryChange(v: String) { _category.value = v }
     fun onLocationAddressChange(v: String) { _locationAddress.value = v }
+    fun onLocationChange(lat: Double, lng: Double) { _selectedLocation.value = GeoPoint(lat, lng) }
 
     fun submit() {
         viewModelScope.launch {
@@ -90,6 +94,7 @@ class CreateShopViewModel @Inject constructor(
                 name = _name.value.trim(),
                 description = _description.value.trim(),
                 category = _category.value,
+                location = _selectedLocation.value,
                 locationAddress = _locationAddress.value.trim(),
                 isActive = true,
                 createdAt = System.currentTimeMillis()

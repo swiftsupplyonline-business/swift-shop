@@ -53,7 +53,8 @@ fun HomeScreen(
         HomeHeader(
             onSearchClick = onSearch,
             onNotificationsClick = { /* navigate to notifications */ },
-            onMessagesClick = { onNavigate(Screen.MessagingList.route) }
+            onMessagesClick = { onNavigate(Screen.MessagingList.route) },
+            onCartClick = { onNavigate(Screen.Checkout.route) }
         )
 
         // ── Tab Row ──────────────────────────────────────────────────────────
@@ -100,7 +101,7 @@ fun HomeScreen(
                     onLoadMore = { viewModel.loadMoreShop() },
                     onListingClick = { onNavigate(Screen.ListingDetail.createRoute(it)) },
                     onShopClick = { onNavigate(Screen.ShopDetail.createRoute(it)) },
-                    onCreateListing = { onNavigate(Screen.CreateListing.route) }
+                    onCreateListing = { onNavigate(Screen.SellGateway.route) }
                 )
                 HomeTab.POSTS -> PostsTabContent(
                     state = postState,
@@ -124,7 +125,8 @@ fun HomeScreen(
 private fun HomeHeader(
     onSearchClick: () -> Unit,
     onNotificationsClick: () -> Unit,
-    onMessagesClick: () -> Unit
+    onMessagesClick: () -> Unit,
+    onCartClick: () -> Unit
 ) {
     val colors = MaterialTheme.swiftColors
     Surface(
@@ -147,6 +149,10 @@ private fun HomeHeader(
             )
 
             // Action icons
+            IconButton(onClick = onCartClick) {
+                Icon(Icons.Default.ShoppingCart, "Cart",
+                    tint = MaterialTheme.colorScheme.onSurface)
+            }
             IconButton(onClick = onMessagesClick) {
                 Icon(Icons.Default.Message, "Messages",
                     tint = MaterialTheme.colorScheme.onSurface)
@@ -195,9 +201,9 @@ fun ShopTabContent(
             is PagingState.Loading -> LoadingState()
             is PagingState.Empty -> EmptyState(
                 title = "No listings yet",
-                subtitle = "Be the first to add something for sale",
+                subtitle = "Be the first to sell something",
                 action = {
-                    SwiftPrimaryButton("Add Listing", onClick = onCreateListing)
+                    SwiftPrimaryButton("Sell Something", onClick = onCreateListing)
                 }
             )
             is PagingState.Error -> ErrorState(state.message, onRetry = onLoadMore)
@@ -241,7 +247,7 @@ fun ShopTabContent(
                 .padding(16.dp),
             containerColor = MaterialTheme.colorScheme.primary
         ) {
-            Icon(Icons.Default.Add, "Add listing", tint = Color.White)
+            Icon(Icons.Default.Add, "Sell something", tint = Color.White)
         }
     }
 }

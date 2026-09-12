@@ -139,6 +139,17 @@ fun OsmMapView(route: DeliveryRoute, modifier: Modifier = Modifier) {
                     }
                     overlays.add(driverMarker)
                 }
+
+                // Add simple visual connecting polyline
+                if (route.pickupLocation.lat != 0.0 && route.dropoffLocation.lat != 0.0) {
+                    val polyline = org.osmdroid.views.overlay.Polyline().apply {
+                        addPoint(OsmGeoPoint(route.pickupLocation.lat, route.pickupLocation.lng))
+                        addPoint(OsmGeoPoint(route.dropoffLocation.lat, route.dropoffLocation.lng))
+                        outlinePaint.color = android.graphics.Color.BLUE
+                        outlinePaint.strokeWidth = 5f
+                    }
+                    overlays.add(polyline)
+                }
             }
         },
         update = { mapView ->

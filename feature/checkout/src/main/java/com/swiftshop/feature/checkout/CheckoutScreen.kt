@@ -23,6 +23,14 @@ import com.swiftshop.core.ui.components.*
 import com.swiftshop.core.ui.navigation.Screen
 import com.swiftshop.domain.commerce.CartItem
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.viewinterop.AndroidView
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint as OsmGeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Overlay
 
 import androidx.compose.ui.platform.LocalUriHandler
 
@@ -68,8 +76,11 @@ fun CheckoutScreen(
                 navigationIcon = {
                     if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION) {
                         IconButton(onClick = {
-                            if (step == CheckoutStep.CART) navController.popBackStack()
-                            else step = CheckoutStep.values()[step.ordinal - 1]
+                            when (step) {
+                                CheckoutStep.CART -> navController.popBackStack()
+                                CheckoutStep.PAYMENT -> step = if (viewModel.requiresDelivery) CheckoutStep.ADDRESS else CheckoutStep.CART
+                                else -> step = CheckoutStep.values()[step.ordinal - 1]
+                            }
                         }) {
                             Icon(Icons.Default.ArrowBack, "Back")
                         }
@@ -101,7 +112,7 @@ fun CheckoutScreen(
                             text = buttonText,
                             onClick = {
                                 when (step) {
-                                    CheckoutStep.CART -> step = CheckoutStep.ADDRESS
+                                    CheckoutStep.CART -> step = if (viewModel.requiresDelivery) CheckoutStep.ADDRESS else CheckoutStep.PAYMENT
                                     CheckoutStep.ADDRESS -> step = CheckoutStep.PAYMENT
                                     CheckoutStep.PAYMENT -> viewModel.placeOrder()
                                     else -> {}
@@ -128,14 +139,20 @@ fun CheckoutScreen(
         ) {
             // Step indicator
             if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION) {
-                CheckoutStepIndicator(currentStep = step)
+                CheckoutStepIndicator(currentStep = step, requiresDelivery = viewModel.requiresDelivery)
             }
 
             when (step) {
-                CheckoutStep.CART -> CartStep(
-                    state = uiState,
-                    onRemoveItem = { viewModel.removeItem(it) }
-                )
+                CheckoutStep.CART -> Column {
+                    DeliveryChoiceToggle(
+                        requiresDelivery = viewModel.requiresDelivery,
+                        onChange = { viewModel.updateRequiresDelivery(it) }
+                    )
+                    CartStep(
+                        state = uiState,
+                        onRemoveItem = { viewModel.removeItem(it) }
+                    )
+                }
                 CheckoutStep.ADDRESS -> AddressStep(
                     address = viewModel.deliveryAddress,
                     onAddressUpdate = { viewModel.updateAddress(it) }
@@ -215,9 +232,28 @@ private fun VerificationStep(
 }
 
 @Composable
-private fun CheckoutStepIndicator(currentStep: CheckoutStep) {
-    val steps = listOf("Cart", "Address", "Payment")
-    val currentIndex = currentStep.ordinal.coerceAtMost(steps.size - 1)
+private fun DeliveryChoiceToggle(requiresDelivery: Boolean, onChange: (Boolean) -> Unit) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text("Delivery", style = MaterialTheme.typography.titleSmall)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.selectable(
+            selected = requiresDelivery, onClick = { onChange(true) }
+        )) {
+            RadioButton(selected = requiresDelivery, onClick = { onChange(true) })
+            Text("I want it delivered")
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.selectable(
+            selected = !requiresDelivery, onClick = { onChange(false) }
+        )) {
+            RadioButton(selected = !requiresDelivery, onClick = { onChange(false) })
+            Text("I'll collect / arrange it myself")
+        }
+    }
+}
+
+@Composable
+private fun CheckoutStepIndicator(currentStep: CheckoutStep, requiresDelivery: Boolean) {
+    val steps = if (requiresDelivery) listOf("Cart", "Address", "Payment") else listOf("Cart", "Payment")
+    val currentIndex = if (!requiresDelivery && currentStep == CheckoutStep.PAYMENT) 1 else currentStep.ordinal.coerceAtMost(steps.size - 1)
 
     Row(
         modifier = Modifier
@@ -399,18 +435,47 @@ private fun AddressStep(
 
         Spacer(Modifier.height(16.dp))
 
-        // Map placeholder — real implementation uses OsmDroid
-        SwiftCard(modifier = Modifier.fillMaxWidth().height(200.dp)) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.Map, null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.primary)
-                    Text("Tap to select location on map",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
+        Text("Select Delivery Location on Map *", style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(200.dp)
+                .clip(RoundedCornerShape(12.dp))
+        ) {
+            AndroidView(
+                factory = { ctx ->
+                    Configuration.getInstance().userAgentValue = ctx.packageName
+                    val initialLat = if (address.lat != 0.0) address.lat else -29.3167
+                    val initialLng = if (address.lng != 0.0) address.lng else 27.4833
+                    MapView(ctx).apply {
+                        setTileSource(TileSourceFactory.MAPNIK)
+                        setMultiTouchControls(true)
+                        controller.setZoom(15.0)
+                        controller.setCenter(OsmGeoPoint(initialLat, initialLng))
+                        
+                        val dropoffMarker = Marker(this).apply {
+                            position = OsmGeoPoint(initialLat, initialLng)
+                            title = "Delivery Point"
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                        }
+                        overlays.add(dropoffMarker)
+
+                        val touchOverlay = object : Overlay() {
+                            override fun onSingleTapUp(e: android.view.MotionEvent, mapView: MapView): Boolean {
+                                val proj = mapView.projection
+                                val geoPoint = proj.fromPixels(e.x.toInt(), e.y.toInt()) as OsmGeoPoint
+                                onAddressUpdate(address.copy(lat = geoPoint.latitude, lng = geoPoint.longitude))
+                                dropoffMarker.position = geoPoint
+                                mapView.invalidate()
+                                return true
+                            }
+                        }
+                        overlays.add(touchOverlay)
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
 }

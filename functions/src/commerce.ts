@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { MopayClient, MOPAY_API_KEY } from "./mopay";
+import { resolveEntitlement } from "./entitlements";
 
 /**
  * Calculates authoritative order fees server-side.
@@ -13,22 +14,46 @@ export const calculateOrderFees = onCall(async (request) => {
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { items } = request.data;
+    const { items, requiresDelivery, deliveryAddress } = request.data;
     if (!items || !Array.isArray(items)) throw new HttpsError("invalid-argument", "Missing items");
+    if (typeof requiresDelivery !== "boolean") throw new HttpsError("invalid-argument", "requiresDelivery is required");
+    if (requiresDelivery && !deliveryAddress) throw new HttpsError("invalid-argument", "deliveryAddress is required when requiresDelivery is true");
 
     let subtotal = 0;
+    let shopId = "";
     const db = admin.firestore();
 
-    // Authoritative price check
     for (const item of items) {
         const listingDoc = await db.collection("listings").doc(item.listingId).get();
         if (!listingDoc.exists) throw new HttpsError("not-found", `Listing ${item.listingId} not found`);
         const listing = listingDoc.data()!;
         subtotal += (listing.priceMinorUnits || 0) * (item.quantity || 1);
+
+        if (!shopId) {
+            shopId = listing.shopId;
+        } else if (listing.shopId !== shopId) {
+            throw new HttpsError("invalid-argument", "Multi-shop orders are not supported in this version.");
+        }
     }
 
-    const deliveryFee = 2500; // Flat M25.00 for DEV
-    const platformFee = Math.floor((subtotal * 15) / 1000); // 1.5% using integer math
+    let deliveryFee = 0;
+    if (requiresDelivery) {
+        const deliverySnap = await db.collection("listings")
+            .where("shopId", "==", shopId)
+            .where("listingType", "==", "DELIVER")
+            .where("isAvailable", "==", true)
+            .get();
+
+        if (deliverySnap.empty) {
+            throw new HttpsError("failed-precondition", "No delivery option is available for this shop.");
+        }
+        if (deliverySnap.size > 1) {
+            throw new HttpsError("failed-precondition", "Multiple delivery options are available; selection is required.");
+        }
+        deliveryFee = deliverySnap.docs[0].data().priceMinorUnits || 0;
+    }
+
+    const platformFee = Math.floor((subtotal * 15) / 1000);
     const total = subtotal + deliveryFee + platformFee;
 
     return {
@@ -40,28 +65,16 @@ export const calculateOrderFees = onCall(async (request) => {
     };
 });
 
-/**
- * Creates a server-authoritative order.
- *
- * Logic:
- * 1. Validate auth and inputs.
- * 2. Start Firestore transaction.
- * 3. Check idempotency.
- * 4. Verify each listing (existence, availability, price, stock).
- * 5. Calculate authoritative totals.
- * 6. Decrement stock quantity.
- * 7. Create PENDING order document.
- * 8. Record idempotency.
- * 9. Return orderId.
- */
 export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) => {
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { items, deliveryAddress, paymentMethod, provider, idempotencyKey } = request.data;
+    const { items, requiresDelivery, deliveryAddress, paymentMethod, provider, idempotencyKey } = request.data;
     if (!items || !Array.isArray(items) || !idempotencyKey) {
-        throw new HttpsError("invalid-argument", "Missing items, deliveryAddress, or idempotencyKey");
+        throw new HttpsError("invalid-argument", "Missing items or idempotencyKey");
     }
+    if (typeof requiresDelivery !== "boolean") throw new HttpsError("invalid-argument", "requiresDelivery is required");
+    if (requiresDelivery && !deliveryAddress) throw new HttpsError("invalid-argument", "deliveryAddress is required when requiresDelivery is true");
 
     const db = admin.firestore();
     let orderId = "";
@@ -69,7 +82,6 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
 
     try {
         orderId = await db.runTransaction(async (transaction) => {
-            // 1. Idempotency Check
             const idempotencyRef = db.collection("idempotencyKeys").doc(idempotencyKey);
             const idempotencyDoc = await transaction.get(idempotencyRef);
             if (idempotencyDoc.exists) {
@@ -83,7 +95,6 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
             let shopId = "";
             let sellerId = "";
 
-            // 2. Authoritative Price & Inventory Check
             for (const item of items) {
                 const listingRef = db.collection("listings").doc(item.listingId);
                 const listingDoc = await transaction.get(listingRef);
@@ -100,7 +111,6 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                     if (availableStock < requestedQty) {
                         throw new Error(`Insufficient stock for ${listing.title}. Requested: ${requestedQty}, Available: ${availableStock}`);
                     }
-
                     transaction.update(listingRef, {
                         stockQuantity: availableStock - requestedQty,
                         updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -126,7 +136,26 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 });
             }
 
-            const deliveryFee = 2500;
+            let deliveryFee = 0;
+            let selectedDeliveryListingId: string | null = null;
+            if (requiresDelivery) {
+                const deliverySnap = await transaction.get(
+                    db.collection("listings")
+                        .where("shopId", "==", shopId)
+                        .where("listingType", "==", "DELIVER")
+                        .where("isAvailable", "==", true)
+                );
+                if (deliverySnap.empty) {
+                    throw new Error("No delivery option is available for this shop.");
+                }
+                if (deliverySnap.size > 1) {
+                    throw new Error("Multiple delivery options are available; selection is required.");
+                }
+                const deliveryListingDoc = deliverySnap.docs[0];
+                deliveryFee = deliveryListingDoc.data().priceMinorUnits || 0;
+                selectedDeliveryListingId = deliveryListingDoc.id;
+            }
+
             const platformFee = Math.floor((subtotal * 15) / 1000);
             const total = subtotal + deliveryFee + platformFee;
             finalTotal = total;
@@ -174,6 +203,8 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 totalMinorUnits: total,
                 currency: "LSL",
                 status: orderStatus,
+                requiresDelivery: requiresDelivery,
+                selectedDeliveryListingId: selectedDeliveryListingId,
                 deliveryAddress: deliveryAddress || {},
                 paymentMethod: paymentMethod || "MOPAY",
                 provider: provider || null,
@@ -192,17 +223,11 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
             return newOrderId;
         });
 
-        // 8. MoPay Initiation (Outside transaction, but after order created)
         if (paymentMethod === "MOPAY" && orderId) {
             const mopayRequest = {
-                amount: finalTotal / 100, // MoPay expects major units? (Wait, verify contract)
-                // RE-CHECK: Official MoPay documentation usually expects major units for amount if it's a number.
-                // Let's assume major units for now, or check if they support minor units.
-                // The prompt says "Verify the documented success response ... amount".
-                // I'll use finalTotal / 100 to be safe, or just pass the minor units if they support it.
-                // Actually, most gateways use major units in their 'amount' field if it's not explicitly 'amount_minor_units'.
+                amount: finalTotal / 100,
                 reference: orderId,
-                redirectUrl: "swiftshop://checkout/verify", // Custom scheme for Android return
+                redirectUrl: "swiftshop://checkout/verify",
                 description: `Order ${orderId} at Swift Shop`,
                 customerEmail: auth.token.email,
                 customerName: auth.token.name || auth.uid,
@@ -224,7 +249,6 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 };
             } else {
                 console.error("MoPay Session Creation Failed:", mopayResponse.message);
-                // We keep the order as PENDING. The client can retry or see the error.
                 return {
                     orderId,
                     error: mopayResponse.message || "Failed to initiate payment gateway"
@@ -553,8 +577,6 @@ export const createListing = onCall(async (request) => {
             const activeListingCount = profileDoc.data()!.activeListingCount || 0;
 
             // --- Authoritative Quota Check ---
-            const userDoc = await transaction.get(db.collection("users").doc(uid));
-            const tier = userDoc.data()?.tier || "BASIC";
             const entitlement = resolveEntitlement(tier);
 
             // 1. Per-shop limit check (e.g. BASIC: 10 per shop)

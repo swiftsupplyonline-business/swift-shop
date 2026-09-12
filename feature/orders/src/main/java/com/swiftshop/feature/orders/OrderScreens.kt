@@ -1,6 +1,7 @@
 package com.swiftshop.feature.orders
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -39,24 +40,33 @@ fun OrdersScreen(
             )
         }
     ) { padding ->
-        when (val state = uiState) {
-            is OrdersUiState.Loading -> LoadingState()
-            is OrdersUiState.Empty -> EmptyState(
-                "No orders yet",
-                "Your orders will appear here after you make a purchase"
-            )
-            is OrdersUiState.Error -> ErrorState(state.message, onRetry = { viewModel.load() })
-            is OrdersUiState.Loaded -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(padding),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(state.orders, key = { it.id }) { order ->
-                        OrderCard(
-                            order = order,
-                            onClick = { navController.navigate(Screen.OrderDetail.createRoute(order.id)) }
-                        )
+        val isSellerMode by viewModel.isSellerMode.collectAsState()
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            TabRow(selectedTabIndex = if (isSellerMode) 1 else 0) {
+                Tab(selected = !isSellerMode, onClick = { viewModel.setSellerMode(false) }, text = { Text("Purchases") })
+                Tab(selected = isSellerMode, onClick = { viewModel.setSellerMode(true) }, text = { Text("Sales") })
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                when (val state = uiState) {
+                    is OrdersUiState.Loading -> LoadingState()
+                    is OrdersUiState.Empty -> EmptyState(
+                        "No orders yet",
+                        "Your orders will appear here"
+                    )
+                    is OrdersUiState.Error -> ErrorState(state.message, onRetry = { viewModel.load() })
+                    is OrdersUiState.Loaded -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(state.orders, key = { it.id }) { order ->
+                                OrderCard(
+                                    order = order,
+                                    onClick = { navController.navigate(Screen.OrderDetail.createRoute(order.id)) }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -118,9 +128,7 @@ private fun OrderStatusBadge(status: OrderStatus) {
     androidx.compose.foundation.layout.Box(
         modifier = Modifier
             .clip(MaterialTheme.shapes.small)
-            .run {
-                background(color.copy(alpha = 0.15f))
-            }
+            .background(color.copy(alpha = 0.15f))
             .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = color)
@@ -298,22 +306,12 @@ private fun OrderProgressBar(status: OrderStatus) {
                     modifier = Modifier
                         .size(10.dp)
                         .clip(androidx.compose.foundation.shape.CircleShape)
-                        .run {
-                            background(
-                                if (i <= statusIndex) SwiftShopColors.BrandBlue
-                                else MaterialTheme.colorScheme.outline
-                            )
-                        }
+                        .background(if (i <= statusIndex) SwiftShopColors.BrandBlue else MaterialTheme.colorScheme.outline)
                 )
             }
             if (i < steps.size - 1) {
                 androidx.compose.foundation.layout.Box(
-                    modifier = Modifier.weight(0.5f).height(2.dp).run {
-                        background(
-                            if (i < statusIndex) SwiftShopColors.BrandBlue
-                            else MaterialTheme.colorScheme.outline
-                        )
-                    }
+                    modifier = Modifier.weight(0.5f).height(2.dp).background(if (i < statusIndex) SwiftShopColors.BrandBlue else MaterialTheme.colorScheme.outline)
                 )
             }
         }
@@ -332,5 +330,3 @@ private fun SummaryRow(label: String, value: String, isTotal: Boolean = false) {
     }
 }
 
-private fun Modifier.background(color: Color): Modifier =
-    this.then(Modifier.background(color))

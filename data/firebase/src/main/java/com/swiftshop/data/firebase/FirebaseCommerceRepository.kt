@@ -156,10 +156,11 @@ class FirebaseCommerceRepository @Inject constructor(
 
     // â”€â”€â”€ Orders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-    override suspend fun calculateOrderFees(items: List<OrderItem>, address: DeliveryAddress): Result<OrderSummary> = runCatching {
+    override suspend fun calculateOrderFees(items: List<OrderItem>, requiresDelivery: Boolean, address: DeliveryAddress?): Result<OrderSummary> = runCatching {
         val data = mapOf(
             "items" to items.map { it.toFirestore() },
-            "deliveryAddress" to address.toFirestore()
+            "requiresDelivery" to requiresDelivery,
+            "deliveryAddress" to address?.toFirestore()
         )
         val result = functions.getHttpsCallable("calculateOrderFees").call(data).await()
         val resMap = result.data as Map<String, Any>
@@ -175,7 +176,8 @@ class FirebaseCommerceRepository @Inject constructor(
 
     override suspend fun placeOrder(
         items: List<OrderItem>,
-        address: DeliveryAddress,
+        requiresDelivery: Boolean,
+        address: DeliveryAddress?,
         paymentMethod: PaymentMethod,
         provider: String?,
         phoneNumber: String,
@@ -183,7 +185,8 @@ class FirebaseCommerceRepository @Inject constructor(
     ): Result<OrderInitiation> = runCatching {
         val data = mapOf(
             "items" to items.map { it.toFirestore() },
-            "deliveryAddress" to address.toFirestore(),
+            "requiresDelivery" to requiresDelivery,
+            "deliveryAddress" to address?.toFirestore(),
             "paymentMethod" to paymentMethod.name,
             "provider" to provider,
             "phoneNumber" to phoneNumber,
@@ -208,6 +211,16 @@ class FirebaseCommerceRepository @Inject constructor(
     override fun observeUserOrders(userId: String): Flow<List<Order>> = callbackFlow {
         val subscription = firestore.collection("orders")
             .whereEqualTo("buyerId", userId)
+            .addSnapshotListener { snapshot, _ ->
+                val list = snapshot?.toObjects(FirestoreOrder::class.java)?.map { it.toDomain() } ?: emptyList()
+                trySend(list)
+            }
+        awaitClose { subscription.remove() }
+    }
+
+    override fun observeSellerOrders(sellerId: String): Flow<List<Order>> = callbackFlow {
+        val subscription = firestore.collection("orders")
+            .whereEqualTo("sellerId", sellerId)
             .addSnapshotListener { snapshot, _ ->
                 val list = snapshot?.toObjects(FirestoreOrder::class.java)?.map { it.toDomain() } ?: emptyList()
                 trySend(list)

@@ -9,6 +9,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.platform.LocalContext
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint as OsmGeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Overlay
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.swiftshop.core.ui.components.SwiftPrimaryButton
 
@@ -88,6 +98,47 @@ fun CreateShopScreen(
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3
             )
+
+            Text("Select Shop Location on Map *", style = MaterialTheme.typography.titleSmall)
+            val selectedLocation by viewModel.selectedLocation.collectAsState()
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .clip(RoundedCornerShape(12.dp))
+            ) {
+                AndroidView(
+                    factory = { ctx ->
+                        Configuration.getInstance().userAgentValue = ctx.packageName
+                        MapView(ctx).apply {
+                            setTileSource(TileSourceFactory.MAPNIK)
+                            setMultiTouchControls(true)
+                            controller.setZoom(15.0)
+                            controller.setCenter(OsmGeoPoint(selectedLocation.lat, selectedLocation.lng))
+                            
+                            val pinMarker = Marker(this).apply {
+                                position = OsmGeoPoint(selectedLocation.lat, selectedLocation.lng)
+                                title = "Shop Location"
+                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                            }
+                            overlays.add(pinMarker)
+
+                            val touchOverlay = object : Overlay() {
+                                override fun onSingleTapUp(e: android.view.MotionEvent, mapView: MapView): Boolean {
+                                    val proj = mapView.projection
+                                    val geoPoint = proj.fromPixels(e.x.toInt(), e.y.toInt()) as OsmGeoPoint
+                                    viewModel.onLocationChange(geoPoint.latitude, geoPoint.longitude)
+                                    pinMarker.position = geoPoint
+                                    mapView.invalidate()
+                                    return true
+                                }
+                            }
+                            overlays.add(touchOverlay)
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
 
             if (uiState is CreateShopUiState.Error) {
                 Text(

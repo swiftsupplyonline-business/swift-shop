@@ -46,6 +46,10 @@ class CheckoutViewModel @Inject constructor(
     var deliveryAddress by mutableStateOf(_deliveryAddress.value)
         private set
 
+    private val _requiresDelivery = MutableStateFlow(false)
+    var requiresDelivery by mutableStateOf(_requiresDelivery.value)
+        private set
+
     var paymentMethod by mutableStateOf(PaymentMethod.MOPAY)
     var paymentProvider by mutableStateOf<String?>(null)
     var paymentPhone by mutableStateOf("")
@@ -71,11 +75,23 @@ class CheckoutViewModel @Inject constructor(
                 .distinctUntilChanged()
                 .collect { updateFees() }
         }
+
+        viewModelScope.launch {
+            _requiresDelivery
+                .debounce(500)
+                .distinctUntilChanged()
+                .collect { updateFees() }
+        }
     }
 
     fun updateAddress(address: DeliveryAddress) {
         deliveryAddress = address
         _deliveryAddress.value = address
+    }
+
+    fun updateRequiresDelivery(value: Boolean) {
+        requiresDelivery = value
+        _requiresDelivery.value = value
     }
 
     private fun updateFees() {
@@ -96,7 +112,7 @@ class CheckoutViewModel @Inject constructor(
                     selectedOptions = it.selectedOptions
                 )
             }
-            calculateOrderFees(orderItems, deliveryAddress).fold(
+            calculateOrderFees(orderItems, requiresDelivery, if (requiresDelivery) deliveryAddress else null).fold(
                 onSuccess = { summary ->
                     _uiState.value = CheckoutUiState.CartLoaded(currentCartItems, summary)
                 },
@@ -130,7 +146,8 @@ class CheckoutViewModel @Inject constructor(
             
             placeOrder(
                 items = orderItems,
-                address = deliveryAddress,
+                requiresDelivery = requiresDelivery,
+                address = if (requiresDelivery) deliveryAddress else null,
                 paymentMethod = paymentMethod,
                 provider = paymentProvider,
                 phoneNumber = paymentPhone,

@@ -73,8 +73,10 @@ fun ProfileScreen(
                 onSettings = { navController.navigate(Screen.Settings.route) },
                 onEditProfile = { navController.navigate(Screen.EditProfile.route) },
                 onCreatePost = { navController.navigate(Screen.CreatePost.route) },
-                onCreateListing = { navController.navigate(Screen.CreateListing.route) },
                 onCreateShop = { navController.navigate(Screen.CreateShop.route) },
+                onCreateListing = { navController.navigate(Screen.SellGateway.route) },
+                
+                onOrdersClick = { navController.navigate(Screen.Orders.route) },
                 onUpgradeTier = { 
                     val target = if (state.profile.tier == UserTier.BASIC) UserTier.PREMIUM else UserTier.ELITE
                     viewModel.upgradeTier(target)
@@ -112,6 +114,8 @@ private fun ProfileContent(
     onCreatePost: () -> Unit,
     onCreateListing: () -> Unit,
     onCreateShop: () -> Unit,
+    
+    onOrdersClick: () -> Unit,
     onUpgradeTier: () -> Unit,
     onSignOut: () -> Unit,
     snackbarHostState: SnackbarHostState
@@ -323,6 +327,17 @@ private fun ProfileContent(
                     onWalletClick = onWalletClick,
                     onUpgrade = onUpgradeTier,
                     modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+        }
+
+        // -- My Orders Button --
+        if (isOwnProfile) {
+            item {
+                SwiftGradientButton(
+                    text = "My Orders",
+                    onClick = onOrdersClick,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
                 )
             }
         }

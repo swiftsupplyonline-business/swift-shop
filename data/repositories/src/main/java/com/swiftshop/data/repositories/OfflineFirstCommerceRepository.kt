@@ -89,21 +89,23 @@ class OfflineFirstCommerceRepository @Inject constructor(
 
     override suspend fun initiateSubscription(targetTier: com.swiftshop.core.model.UserTier) = remote.initiateSubscription(targetTier)
 
-    override suspend fun calculateOrderFees(items: List<com.swiftshop.core.model.OrderItem>, address: com.swiftshop.core.model.DeliveryAddress) = 
-        remote.calculateOrderFees(items, address)
+    override suspend fun calculateOrderFees(items: List<com.swiftshop.core.model.OrderItem>, requiresDelivery: Boolean, address: com.swiftshop.core.model.DeliveryAddress?) =
+        remote.calculateOrderFees(items, requiresDelivery, address)
 
     override suspend fun placeOrder(
         items: List<com.swiftshop.core.model.OrderItem>,
-        address: com.swiftshop.core.model.DeliveryAddress,
+        requiresDelivery: Boolean,
+        address: com.swiftshop.core.model.DeliveryAddress?,
         paymentMethod: com.swiftshop.core.model.PaymentMethod,
         provider: String?,
         phoneNumber: String,
         idempotencyKey: String
-    ) = remote.placeOrder(items, address, paymentMethod, provider, phoneNumber, idempotencyKey)
+    ) = remote.placeOrder(items, requiresDelivery, address, paymentMethod, provider, phoneNumber, idempotencyKey)
 
     override suspend fun verifyMopayPayment(sessionId: String) = remote.verifyMopayPayment(sessionId)
 
     override fun observeUserOrders(userId: String): Flow<List<Order>> = remote.observeUserOrders(userId)
+    override fun observeSellerOrders(sellerId: String): Flow<List<Order>> = remote.observeSellerOrders(sellerId)
     override suspend fun getOrder(orderId: String) = remote.getOrder(orderId)
     override suspend fun updateOrderStatus(orderId: String, status: OrderStatus) = remote.updateOrderStatus(orderId, status)
     override suspend fun cancelOrder(orderId: String, reason: String) = remote.cancelOrder(orderId, reason)

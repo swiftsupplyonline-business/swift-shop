@@ -40,16 +40,27 @@ class OrdersViewModel @Inject constructor(
     private val _detailState = MutableStateFlow<OrderDetailState>(OrderDetailState.Loading)
     val detailState: StateFlow<OrderDetailState> = _detailState.asStateFlow()
 
+    private val _isSellerMode = MutableStateFlow(false)
+    val isSellerMode = _isSellerMode.asStateFlow()
+    private var currentJob: kotlinx.coroutines.Job? = null
+
     init {
         load()
         if (orderId != null) loadDetail()
     }
 
     fun load() {
-        viewModelScope.launch {
+        setSellerMode(_isSellerMode.value)
+    }
+
+    fun setSellerMode(enabled: Boolean) {
+        _isSellerMode.value = enabled
+        currentJob?.cancel()
+        currentJob = viewModelScope.launch {
             observeCurrentUser().filterNotNull().collect { user ->
-                commerceRepository.observeUserOrders(user.uid)
-                    .catch { _uiState.value = OrdersUiState.Error(it.message ?: "Error") }
+                _uiState.value = OrdersUiState.Loading
+                val flow = if (enabled) commerceRepository.observeSellerOrders(user.uid) else commerceRepository.observeUserOrders(user.uid)
+                flow.catch { _uiState.value = OrdersUiState.Error(it.message ?: "Error") }
                     .collect { orders ->
                         _uiState.value = if (orders.isEmpty()) OrdersUiState.Empty
                         else OrdersUiState.Loaded(orders.sortedByDescending { it.createdAt })
