@@ -126,7 +126,8 @@ fun SwiftShopNavHost(
 
         composable(
             route = Screen.OrderDetail.route,
-            arguments = listOf(navArgument("orderId") { type = NavType.StringType })
+            arguments = listOf(navArgument("orderId") { type = NavType.StringType }),
+            deepLinks = listOf(navDeepLink { uriPattern = "swiftshop://order/{orderId}" })
         ) { OrderDetailScreen(navController = navController) }
 
         composable(Screen.CreatePost.route) {
@@ -137,9 +138,21 @@ fun SwiftShopNavHost(
             CreateReelScreen(onBack = { navController.popBackStack() },
                 onCreated = { navController.popBackStack() })
         }
-        composable(Screen.CreateListing.route) {
-            CreateListingScreen(onBack = { navController.popBackStack() },
-                onCreated = { navController.popBackStack() })
+        composable(Screen.CreateListing.route) { backStackEntry ->
+            CreateListingScreen(
+                onBack = { navController.popBackStack() },
+                onCreated = {
+                    navController.popBackStack(Screen.Home.route, false)
+                }
+            )
+        }
+        composable(Screen.SellGateway.route) {
+            com.swiftshop.feature.shop.SellGatewayScreen(
+                onBack = { navController.popBackStack() },
+                onOptionSelected = { type ->
+                    navController.navigate(Screen.CreateListing.createRoute(type.name))
+                }
+            )
         }
         composable(
             route = Screen.CreateAd.route,
@@ -167,7 +180,8 @@ fun SwiftShopNavHost(
 
         composable(
             route = Screen.DeliveryTracking.route,
-            arguments = listOf(navArgument("routeId") { type = NavType.StringType })
+            arguments = listOf(navArgument("routeId") { type = NavType.StringType }),
+            deepLinks = listOf(navDeepLink { uriPattern = "swiftshop://delivery/{routeId}" })
         ) { DeliveryTrackingScreen(navController = navController) }
 
         composable(Screen.Settings.route) {

@@ -1,6 +1,7 @@
-﻿package com.swiftshop.feature.shop
+package com.swiftshop.feature.shop
 
 import android.net.Uri
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.swiftshop.core.model.*
@@ -17,7 +18,7 @@ import javax.inject.Inject
 sealed interface CreateListingUiState {
     data object Idle : CreateListingUiState
     data object Loading : CreateListingUiState
-    data object Success : CreateListingUiState
+    data class Success(val listingId: String) : CreateListingUiState
     data class Error(val message: String) : CreateListingUiState
 }
 
@@ -26,7 +27,8 @@ class CreateListingViewModel @Inject constructor(
     private val observeCurrentUser: ObserveCurrentUserUseCase,
     private val observeProfile: com.swiftshop.domain.profile.ObserveProfileUseCase,
     private val createListing: CreateListingUseCase,
-    private val repository: CommerceRepository
+    private val repository: CommerceRepository,
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<CreateListingUiState>(CreateListingUiState.Idle)
@@ -65,7 +67,11 @@ class CreateListingViewModel @Inject constructor(
     private val _isSeeding = MutableStateFlow(false)
     val isSeeding = _isSeeding.asStateFlow()
 
-    private val _listingType = MutableStateFlow(ListingType.BUY)
+    private val initialType = savedStateHandle.get<String>("listingType")?.let {
+        runCatching { ListingType.valueOf(it) }.getOrNull()
+    } ?: ListingType.BUY
+
+    private val _listingType = MutableStateFlow(initialType)
     val listingType = _listingType.asStateFlow()
 
     private val _customFields = MutableStateFlow<List<CustomField>>(emptyList())
@@ -99,7 +105,8 @@ class CreateListingViewModel @Inject constructor(
                         _listingUsageText.value = "Unlimited listings"
                         _canPublish.value = true
                     } else {
-                        _listingUsageText.value = "Usage: $usage / $limit active listings"
+                        val remaining = (limit - usage).coerceAtLeast(0)
+                        _listingUsageText.value = "You have $remaining free sells remaining!"
                         _canPublish.value = usage < limit
                     }
                 }
@@ -228,8 +235,8 @@ class CreateListingViewModel @Inject constructor(
                 listingType = _listingType.value,
                 customFields = _customFields.value,
                 deliveryEstimateDays = deliveryDays
-            ).onSuccess {
-                _uiState.value = CreateListingUiState.Success
+            ).onSuccess { listingId ->
+                _uiState.value = CreateListingUiState.Success(listingId)
             }.onFailure {
                 _uiState.value = CreateListingUiState.Error(it.message ?: "Failed to create listing")
             }

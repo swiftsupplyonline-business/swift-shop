@@ -79,7 +79,7 @@ fun CreateListingScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Create Listing") },
+                title = { Text("Sell something") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, "Back")
@@ -97,7 +97,7 @@ fun CreateListingScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Images
-            Text("Product Images", style = MaterialTheme.typography.titleMedium)
+            Text("Add some photos", style = MaterialTheme.typography.titleMedium)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
                     Box(
@@ -132,13 +132,13 @@ fun CreateListingScreen(
             val selectedShop by viewModel.selectedShop.collectAsState()
             if (userShops.isNotEmpty()) {
                 var expanded by remember { mutableStateOf(false) }
-                Text("Select Shop", style = MaterialTheme.typography.titleMedium)
+                Text("Which hustle is this for?", style = MaterialTheme.typography.titleMedium)
                 ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
                     OutlinedTextField(
-                        value = selectedShop?.name ?: "Select Shop",
+                        value = selectedShop?.name ?: "Select My Hustle",
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Shop") },
+                        label = { Text("My Hustle") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
                         modifier = Modifier.fillMaxWidth().menuAnchor(),
                         shape = MaterialTheme.shapes.medium
@@ -154,7 +154,7 @@ fun CreateListingScreen(
                 }
             } else {
                 Text(
-                    "No shops found. Please create a shop first.",
+                    "You need to set up your hustle first.",
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -164,94 +164,38 @@ fun CreateListingScreen(
             OutlinedTextField(
                 value = title,
                 onValueChange = viewModel::onTitleChange,
-                label = { Text("Title") },
+                label = { Text("What are you selling?") },
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
                 value = description,
                 onValueChange = viewModel::onDescriptionChange,
-                label = { Text("Description") },
+                label = { Text("Tell people about it") },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3
             )
             OutlinedTextField(
                 value = category,
                 onValueChange = viewModel::onCategoryChange,
-                label = { Text("Category") },
+                label = { Text("Category (e.g. Clothing, Food)") },
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // Listing Type
-            Divider()
-            Text("Listing Type", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Choose how buyers interact with this listing.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            var typeExpanded by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(expanded = typeExpanded, onExpandedChange = { typeExpanded = it }) {
-                OutlinedTextField(
-                    value = listingType.displayName(),
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Type") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(typeExpanded) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor(),
-                    shape = MaterialTheme.shapes.medium
-                )
-                ExposedDropdownMenu(expanded = typeExpanded, onDismissRequest = { typeExpanded = false }) {
-                    ListingType.entries.forEach { type ->
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(type.displayName(), style = MaterialTheme.typography.bodyMedium)
-                                    Text(
-                                        type.helpText(),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            },
-                            onClick = { viewModel.onListingTypeChange(type); typeExpanded = false }
-                        )
-                    }
-                }
-            }
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                shape = MaterialTheme.shapes.medium
-            ) {
-                Row(
-                    modifier = Modifier.padding(10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Info, null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp).align(Alignment.CenterVertically)
-                    )
-                    Text(
-                        listingType.helpText(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
-
             // Price & Stock
+            Divider()
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 OutlinedTextField(
                     value = price,
                     onValueChange = viewModel::onPriceChange,
-                    label = { Text("Price (LSL)") },
+                    label = { Text("Price (M)") },
                     modifier = Modifier.weight(1f),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    prefix = { Text("M") }
                 )
                 OutlinedTextField(
                     value = stock,
                     onValueChange = viewModel::onStockChange,
-                    label = { Text("Stock") },
+                    label = { Text("Quantity") },
                     modifier = Modifier.weight(1f),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
@@ -262,7 +206,7 @@ fun CreateListingScreen(
                 OutlinedTextField(
                     value = deliveryDays,
                     onValueChange = viewModel::onDeliveryEstimateChange,
-                    label = { Text("Estimated Delivery (days)") },
+                    label = { Text("How long for delivery? (days)") },
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     leadingIcon = { Icon(Icons.Default.LocalShipping, null) }
@@ -277,15 +221,10 @@ fun CreateListingScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Form Fields", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "${customFields.size} field${if (customFields.size != 1) "s" else ""}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Text("What do you need to know from the buyer?", style = MaterialTheme.typography.titleMedium)
                 }
                 Text(
-                    "Add fields buyers must fill in before submitting.",
+                    "Add questions they must answer before ordering.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -323,7 +262,7 @@ fun CreateListingScreen(
             }
             Column {
                 SwiftPrimaryButton(
-                    text = if (canPublish) "Publish Listing" else "Limit Reached",
+                    text = if (canPublish) "Put my hustle live" else "Limit Reached",
                     isLoading = uiState is CreateListingUiState.Loading,
                     enabled = canPublish,
                     onClick = { viewModel.submit() },

@@ -24,7 +24,10 @@ sealed class Screen(val route: String) {
     }
     data object CreatePost : Screen("create_post")
     data object CreateReel : Screen("create_reel")
-    data object CreateListing : Screen("create_listing")
+    data object CreateListing : Screen("create_listing/{listingType}") {
+        fun createRoute(type: String) = "create_listing/$type"
+    }
+    data object SellGateway : Screen("sell_gateway")
     data object CreateAd : Screen("create_ad/{contentId}/{contentType}") {
         fun createRoute(contentId: String, type: String) = "create_ad/$contentId/$type"
     }
