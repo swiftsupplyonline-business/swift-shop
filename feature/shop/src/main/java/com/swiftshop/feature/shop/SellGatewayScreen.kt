@@ -10,7 +10,13 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.animation.core.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -19,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.swiftshop.core.model.ListingType
 import com.swiftshop.core.ui.components.SwiftCard
+import com.swiftshop.core.ui.theme.swiftColors
 
 data class SellOption(
     val title: String,
@@ -69,7 +76,7 @@ fun SellGatewayScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Sell something", fontWeight = FontWeight.Bold) },
+                title = { Text("Sell something", fontWeight = FontWeight.Bold, color = MaterialTheme.swiftColors.brandBlue) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, "Back")
@@ -84,15 +91,50 @@ fun SellGatewayScreen(
                 .padding(padding)
                 .padding(16.dp)
         ) {
+            val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
+            val shimmerOffset by infiniteTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(1500, easing = LinearEasing),
+                    initialStartOffset = StartOffset(180000, StartOffsetType.Delay),
+                    repeatMode = RepeatMode.Restart
+                ),
+                label = "shimmer_offset"
+            )
             Text(
                 text = "What are you selling today?",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp)
+                style = MaterialTheme.typography.displaySmall,
+                modifier = Modifier
+                    .padding(bottom = 8.dp)
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .drawWithCache {
+                        val brush = Brush.linearGradient(
+                            colors = listOf(
+                                androidx.compose.ui.graphics.Color(0xFF1D6BF3),
+                                androidx.compose.ui.graphics.Color(0xFF00C2FF),
+                                androidx.compose.ui.graphics.Color(0xAAD0E8FF),
+                                androidx.compose.ui.graphics.Color(0xFF00C2FF),
+                                androidx.compose.ui.graphics.Color(0xFF1D6BF3)
+                            ),
+                            start = androidx.compose.ui.geometry.Offset(
+                                x = size.width * (shimmerOffset - 1f),
+                                y = 0f
+                            ),
+                            end = androidx.compose.ui.geometry.Offset(
+                                x = size.width * (shimmerOffset + 1f),
+                                y = size.height
+                            )
+                        )
+                        onDrawWithContent {
+                            drawContent()
+                            drawRect(brush = brush, blendMode = BlendMode.SrcAtop)
+                        }
+                    }
             )
             Text(
                 text = "Let's get it in front of people.",
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 24.dp)
             )
@@ -122,7 +164,7 @@ private fun SellOptionCard(
     ) {
         Row(
             modifier = Modifier
-                .padding(20.dp)
+                .padding(16.dp)
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -145,12 +187,12 @@ private fun SellOptionCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = option.title,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
                 )
                 Text(
                     text = option.description,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
