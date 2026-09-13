@@ -1,6 +1,8 @@
 package com.swiftshop.feature.shop
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -124,19 +126,20 @@ private fun SellOptionCard(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.size(56.dp)
+            val iconGradient = Brush.linearGradient(listOf(
+                    MaterialTheme.colorScheme.primary,
+                    androidx.compose.ui.graphics.Color(0xFF00C2FF)
+                ))
+            Box(
+                modifier = Modifier.size(56.dp).background(iconGradient, MaterialTheme.shapes.medium),
+                contentAlignment = Alignment.Center
             ) {
-                Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = option.icon,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(32.dp)
+                        tint = androidx.compose.ui.graphics.Color.White,
+                        modifier = Modifier.size(28.dp)
                     )
-                }
             }
             Spacer(Modifier.width(20.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -154,7 +157,7 @@ private fun SellOptionCard(
             Icon(
                 Icons.Default.ChevronRight,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.outline
+                tint = MaterialTheme.colorScheme.primary
             )
         }
     }

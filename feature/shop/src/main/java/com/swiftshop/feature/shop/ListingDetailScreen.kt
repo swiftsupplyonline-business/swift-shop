@@ -1,4 +1,4 @@
-﻿package com.swiftshop.feature.shop
+package com.swiftshop.feature.shop
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -23,7 +23,7 @@ import com.swiftshop.core.ui.components.*
 import com.swiftshop.core.ui.theme.swiftColors
 import com.swiftshop.core.ui.navigation.Screen
 
-// â”€â”€â”€ CTA Configuration Engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── CTA Configuration Engine ─────────────────────────────────────────────────
 
 data class CtaConfig(
     val label: String,
@@ -42,7 +42,7 @@ fun ctaForListingType(type: ListingType, brandColor: Color): CtaConfig = when (t
     ListingType.TAKE_ME_THERE -> CtaConfig("Take Me There", Icons.Default.Navigation, brandColor)
 }
 
-// â”€â”€â”€ Listing Detail Screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Listing Detail Screen ────────────────────────────────────────────────────
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -53,10 +53,13 @@ fun ListingDetailScreen(
     val uiState by viewModel.uiState.collectAsState()
     val quantity by viewModel.quantity.collectAsState()
     val isAdding by viewModel.isAddingToCart.collectAsState()
+    val isOwner by viewModel.isOwner.collectAsState()
+    val isDeleting by viewModel.isDeleting.collectAsState()
     val actionState by viewModel.actionState.collectAsState()
     val colors = MaterialTheme.swiftColors
     val snackbarHostState = remember { SnackbarHostState() }
     var activeSheet by remember { mutableStateOf<ListingType?>(null) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(actionState) {
         when (val state = actionState) {
@@ -82,6 +85,25 @@ fun ListingDetailScreen(
         }
     }
 
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete listing?") },
+            text = { Text("This will permanently remove your listing. This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        viewModel.deleteListing { navController.popBackStack() }
+                    }
+                ) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
     when (val state = uiState) {
         is ListingDetailState.Loading -> LoadingState()
         is ListingDetailState.Error -> ErrorState(state.message, onRetry = { viewModel.load() })
@@ -100,6 +122,11 @@ fun ListingDetailScreen(
                             }
                         },
                         actions = {
+                            if (isOwner) {
+                                IconButton(onClick = { showDeleteDialog = true }) {
+                                    Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
                             IconButton(onClick = { /* share */ }) {
                                 Icon(Icons.Default.Share, "Share")
                             }
@@ -223,6 +250,25 @@ fun ListingDetailScreen(
                         Spacer(Modifier.height(4.dp))
                         Text(listing.title, style = MaterialTheme.typography.titleLarge)
 
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { viewModel.toggleLike() },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    if (listing.isLikedByMe) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    contentDescription = if (listing.isLikedByMe) "Unlike" else "Like",
+                                    tint = if (listing.isLikedByMe) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                "${listing.likeCount}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
                         // Shop Info
                         Spacer(Modifier.height(16.dp))
                         Row(
@@ -330,7 +376,7 @@ fun ListingDetailScreen(
 
 
 
-// ─── Action Sheets ────────────────────────────────────────────────────────────
+// --- Action Sheets ------------------------------------------------------------
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

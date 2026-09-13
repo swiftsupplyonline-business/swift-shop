@@ -160,7 +160,8 @@ fun SwiftGradientButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    isLoading: Boolean = false
+    isLoading: Boolean = false,
+    icon: (@Composable () -> Unit)? = null
 ) {
     val colors = MaterialTheme.swiftColors
     Box(
@@ -182,7 +183,16 @@ fun SwiftGradientButton(
                 strokeWidth = 2.dp
             )
         } else {
-            Text(text, style = MaterialTheme.typography.labelLarge, color = Color.White)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                if (icon != null) {
+                    icon()
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(text, style = MaterialTheme.typography.labelLarge, color = Color.White)
+            }
         }
     }
 }

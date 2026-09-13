@@ -41,7 +41,10 @@ class ListingDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val getListing: GetListingUseCase,
     private val observeCurrentUser: ObserveCurrentUserUseCase,
-    private val addToCartUseCase: com.swiftshop.domain.commerce.AddToCartUseCase
+    private val addToCartUseCase: com.swiftshop.domain.commerce.AddToCartUseCase,
+    private val likeListingUseCase: com.swiftshop.domain.commerce.LikeListingUseCase,
+    private val unlikeListingUseCase: com.swiftshop.domain.commerce.UnlikeListingUseCase,
+    private val commerceRepository: CommerceRepository
 ) : ViewModel() {
 
     private val listingId: String = checkNotNull(savedStateHandle["listingId"])
@@ -64,6 +67,13 @@ class ListingDetailViewModel @Inject constructor(
     init { load() }
 
     fun load() {
+        viewModelScope.launch {
+            val user = observeCurrentUser().first()
+            val state = _uiState.value
+            if (state is ListingDetailState.Loaded) {
+                _isOwner.value = user?.uid == state.listing.sellerId
+            }
+        }
         viewModelScope.launch {
             _uiState.value = ListingDetailState.Loading
             getListing(listingId).fold(
@@ -120,4 +130,45 @@ class ListingDetailViewModel @Inject constructor(
             }
         }
     }
+    private val _isOwner = MutableStateFlow(false)
+    val isOwner = _isOwner.asStateFlow()
+
+    private val _isDeleting = MutableStateFlow(false)
+    val isDeleting = _isDeleting.asStateFlow()
+
+
+
+    fun toggleLike() {
+        val state = _uiState.value as? ListingDetailState.Loaded ?: return
+        val listing = state.listing
+        val wasLiked = listing.isLikedByMe
+
+        // Optimistic update
+        _uiState.value = ListingDetailState.Loaded(
+            listing.copy(
+                isLikedByMe = !wasLiked,
+                likeCount = if (wasLiked) (listing.likeCount - 1).coerceAtLeast(0) else listing.likeCount + 1
+            )
+        )
+
+        viewModelScope.launch {
+            val result = if (wasLiked) unlikeListingUseCase(listing.id) else likeListingUseCase(listing.id)
+            result.onFailure {
+                // Revert on failure
+                _uiState.value = ListingDetailState.Loaded(listing)
+                _actionState.value = ActionState.Error("Couldn't update like — try again")
+            }
+        }
+    }
+    fun deleteListing(onDeleted: () -> Unit) {
+        viewModelScope.launch {
+            _isDeleting.value = true
+            commerceRepository.deleteListing(listingId).fold(
+                onSuccess = { onDeleted() },
+                onFailure = { _actionState.value = ActionState.Error(it.message ?: "Failed to delete") }
+            )
+            _isDeleting.value = false
+        }
+    }
+
 }

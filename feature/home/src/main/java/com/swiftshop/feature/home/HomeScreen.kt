@@ -149,17 +149,21 @@ private fun HomeHeader(
             )
 
             // Action icons
+            val iconTint = MaterialTheme.swiftColors.brandBlue
             IconButton(onClick = onCartClick) {
                 Icon(Icons.Default.ShoppingCart, "Cart",
-                    tint = MaterialTheme.colorScheme.onSurface)
+                    modifier = Modifier.size(24.dp),
+                    tint = iconTint)
             }
             IconButton(onClick = onMessagesClick) {
                 Icon(Icons.Default.Message, "Messages",
-                    tint = MaterialTheme.colorScheme.onSurface)
+                    modifier = Modifier.size(24.dp),
+                    tint = iconTint)
             }
             IconButton(onClick = onNotificationsClick) {
                 Icon(Icons.Default.Notifications, "Notifications",
-                    tint = MaterialTheme.colorScheme.onSurface)
+                    modifier = Modifier.size(24.dp),
+                    tint = iconTint)
             }
         }
     }

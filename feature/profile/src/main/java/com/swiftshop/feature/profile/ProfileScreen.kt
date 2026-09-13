@@ -239,33 +239,24 @@ private fun ProfileContent(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedButton(
+                    SwiftGradientButton(
+                        text = "Post",
                         onClick = onCreatePost,
-                        modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Icon(Icons.Default.AddPhotoAlternate, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Post")
-                    }
-                    OutlinedButton(
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        icon = { Icon(Icons.Default.AddPhotoAlternate, null, modifier = Modifier.size(16.dp), tint = androidx.compose.ui.graphics.Color.White) }
+                    )
+                    SwiftGradientButton(
+                        text = "Sell",
                         onClick = onCreateListing,
-                        modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Icon(Icons.Default.AddShoppingCart, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Listing")
-                    }
-                    OutlinedButton(
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        icon = { Icon(Icons.Default.AddShoppingCart, null, modifier = Modifier.size(16.dp), tint = androidx.compose.ui.graphics.Color.White) }
+                    )
+                    SwiftGradientButton(
+                        text = "Hustle",
                         onClick = onCreateShop,
-                        modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Icon(Icons.Default.Storefront, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Shop")
-                    }
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        icon = { Icon(Icons.Default.Storefront, null, modifier = Modifier.size(16.dp), tint = androidx.compose.ui.graphics.Color.White) }
+                    )
                 }
             }
         }
@@ -331,6 +322,7 @@ private fun ProfileContent(
             }
         }
 
+            item { Spacer(Modifier.height(8.dp)) }
         // -- My Orders Button --
         if (isOwnProfile) {
             item {
@@ -458,7 +450,7 @@ fun WalletCard(
 ) {
     val colors = MaterialTheme.swiftColors
     val cardGradient = when (tier) {
-        UserTier.BASIC -> listOf(colors.brandBlue, colors.deepNavy)
+        UserTier.BASIC -> listOf(colors.premiumGradientStart, colors.premiumGradientEnd)
         UserTier.PREMIUM -> listOf(colors.premiumGradientStart, colors.premiumGradientEnd)
         UserTier.ELITE -> listOf(colors.eliteObsidian, Color(0xFF1A1A2E))
     }

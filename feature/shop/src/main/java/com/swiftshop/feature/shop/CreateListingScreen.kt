@@ -1,4 +1,4 @@
-﻿package com.swiftshop.feature.shop
+package com.swiftshop.feature.shop
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,6 +25,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.swiftshop.core.model.ListingType
 import com.swiftshop.core.ui.components.SwiftPrimaryButton
+import com.swiftshop.core.ui.components.SwiftGradientButton
 
 private fun ListingType.displayName(): String = when (this) {
     ListingType.BUY             -> "Buy / Purchase"
@@ -261,12 +262,13 @@ fun CreateListingScreen(
                 )
             }
             Column {
-                SwiftPrimaryButton(
+                SwiftGradientButton(
                     text = if (canPublish) "Put my hustle live" else "Limit Reached",
                     isLoading = uiState is CreateListingUiState.Loading,
                     enabled = canPublish,
                     onClick = { viewModel.submit() },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    icon = { Icon(Icons.Default.RocketLaunch, null, modifier = Modifier.size(16.dp), tint = androidx.compose.ui.graphics.Color.White) }
                 )
                 if (usageText.isNotEmpty()) {
                     Text(

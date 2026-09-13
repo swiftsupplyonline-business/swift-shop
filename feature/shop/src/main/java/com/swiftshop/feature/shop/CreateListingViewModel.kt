@@ -99,14 +99,15 @@ class CreateListingViewModel @Inject constructor(
                         .catch { e -> Timber.e(e, "Error observing profile in CreateListing") }
                 }
                 .collect { (user, profile) ->
-                    val limit = if (user.tier == UserTier.BASIC) 3 else Int.MAX_VALUE
+                    val entitlement = com.swiftshop.domain.commerce.TierEntitlements.forTier(user.tier)
+                    val limit = if (entitlement.totalIncludedListings == -1) Int.MAX_VALUE else entitlement.totalIncludedListings
                     val usage = profile.activeListingCount
                     if (limit == Int.MAX_VALUE) {
                         _listingUsageText.value = "Unlimited listings"
                         _canPublish.value = true
                     } else {
                         val remaining = (limit - usage).coerceAtLeast(0)
-                        _listingUsageText.value = "You have $remaining free sells remaining!"
+                        _listingUsageText.value = "You have $remaining of $limit free sells remaining"
                         _canPublish.value = usage < limit
                     }
                 }
