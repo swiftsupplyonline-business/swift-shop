@@ -110,6 +110,30 @@ class FirebaseCommerceRepository @Inject constructor(
         Unit
     }
 
+    override suspend fun likeListing(listingId: String): Result<Unit> = runCatching {
+        firestore.collection("listings").document(listingId)
+            .update("likeCount", com.google.firebase.firestore.FieldValue.increment(1))
+            .await()
+    }
+
+    override suspend fun unlikeListing(listingId: String): Result<Unit> = runCatching {
+        firestore.collection("listings").document(listingId)
+            .update("likeCount", com.google.firebase.firestore.FieldValue.increment(-1))
+            .await()
+    }
+
+    override suspend fun getSimilarListings(category: String, excludeListingId: String, limit: Int): Result<List<Listing>> = runCatching {
+        firestore.collection("listings")
+            .whereEqualTo("category", category)
+            .whereEqualTo("isAvailable", true)
+            .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit((limit + 1).toLong())
+            .get().await()
+            .toObjects(FirestoreListing::class.java).map { it.toDomain() }
+            .filter { it.id != excludeListingId }
+            .take(limit)
+    }
+
     // â”€â”€â”€ Cart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     override fun observeCart(userId: String): Flow<List<CartItem>> = callbackFlow {
@@ -311,10 +335,12 @@ data class FirestoreListing(
     val stockQuantity: Int = 1,
     val commitmentCount: Int = 0,
     val deliveryEstimateDays: Int = 0,
+    val likeCount: Int = 0,
+    val commentCount: Int = 0,
     val createdAt: Any? = null,
     val updatedAt: Any? = null
 ) {
-    fun toDomain() = Listing(id, shopId, sellerId, title, description, MoneyAmount(priceCurrency, priceMinorUnits), imageUrls, videoUrl, category, tags, runCatching { ListingType.valueOf(listingType) }.getOrDefault(ListingType.BUY), isAvailable, isSponsored, stockQuantity, commitmentCount, deliveryEstimateDays, emptyList(), tsToLong(createdAt), tsToLong(updatedAt))
+    fun toDomain() = Listing(id, shopId, sellerId, title, description, MoneyAmount(priceCurrency, priceMinorUnits), imageUrls, videoUrl, category, tags, runCatching { ListingType.valueOf(listingType) }.getOrDefault(ListingType.BUY), isAvailable, isSponsored, stockQuantity, commitmentCount, deliveryEstimateDays, emptyList(), tsToLong(createdAt), tsToLong(updatedAt), likeCount, commentCount, false)
 }
 
 fun Listing.toFirestore() = mapOf(

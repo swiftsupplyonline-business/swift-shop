@@ -126,6 +126,30 @@ class FirebaseFeedRepository @Inject constructor(
             .update("bookmarkCount", com.google.firebase.firestore.FieldValue.increment(-1))
             .await()
     }
+
+    override fun observeListingComments(listingId: String): Flow<List<Comment>> = callbackFlow {
+        val subscription = firestore.collection("comments")
+            .whereEqualTo("listingId", listingId)
+            .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.ASCENDING)
+            .addSnapshotListener { snapshot, _ ->
+                trySend(snapshot?.toObjects(Comment::class.java) ?: emptyList())
+            }
+        awaitClose { subscription.remove() }
+    }
+
+    override suspend fun postListingComment(comment: Comment): Result<String> = runCatching {
+        val doc = firestore.collection("comments").document()
+        val data = comment.copy(id = doc.id, createdAt = System.currentTimeMillis())
+        doc.set(data).await()
+        firestore.collection("listings").document(comment.listingId)
+            .update("commentCount", com.google.firebase.firestore.FieldValue.increment(1))
+            .await()
+        doc.id
+    }
+
+    override suspend fun deleteListingComment(commentId: String): Result<Unit> = runCatching {
+        firestore.collection("comments").document(commentId).delete().await()
+    }
 }
 
 fun FeedPost.toFirestore() = mapOf(

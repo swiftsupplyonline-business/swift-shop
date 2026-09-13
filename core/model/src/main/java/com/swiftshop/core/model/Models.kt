@@ -174,7 +174,10 @@ data class Listing(
     val deliveryEstimateDays: Int = 0,
     val customFields: List<CustomField> = emptyList(),
     val createdAt: Long = 0L,
-    val updatedAt: Long = 0L
+    val updatedAt: Long = 0L,
+    val likeCount: Int = 0,
+    val commentCount: Int = 0,
+    val isLikedByMe: Boolean = false
 ) : Parcelable
 
 @Serializable
@@ -228,6 +231,7 @@ data class FeedPost(
 data class Comment(
     val id: String = "",
     val postId: String = "",
+    val listingId: String = "",
     val authorId: String = "",
     val authorName: String = "",
     val authorAvatarUrl: String = "",

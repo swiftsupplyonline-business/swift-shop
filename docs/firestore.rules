@@ -77,9 +77,15 @@ service cloud.firestore {
       // Created and deleted via Cloud Function only to enforce tier limits
       allow create: if false;
       allow update: if isSignedIn()
-        && resource.data.sellerId == request.auth.uid
-        && !request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny(['sellerId', 'isSponsored', 'commitmentCount']);
+        && (
+          (resource.data.sellerId == request.auth.uid
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['sellerId', 'isSponsored', 'commitmentCount']))
+          // Allow like/comment count updates from any signed-in, active user
+          || (isActive()
+              && request.resource.data.diff(resource.data).affectedKeys()
+                  .hasOnly(['likeCount', 'commentCount']))
+        );
       allow delete: if false;
     }
 
@@ -99,7 +105,10 @@ service cloud.firestore {
     // ── Comments ───────────────────────────────────────────────────────────
     match /comments/{commentId} {
       allow read: if true;
-      allow create: if isSignedIn() && isActive();
+      allow create: if isSignedIn() && isActive()
+        && request.resource.data.authorId == request.auth.uid
+        && ((request.resource.data.postId is string && request.resource.data.postId != "")
+            != (request.resource.data.listingId is string && request.resource.data.listingId != ""));
       allow update: if isSignedIn() && resource.data.authorId == request.auth.uid;
       allow delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
     }

@@ -25,6 +25,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.swiftshop.core.model.ListingType
 import com.swiftshop.core.ui.components.SwiftCard
+import com.swiftshop.core.ui.components.SwiftIcon3D
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import com.swiftshop.core.ui.theme.swiftColors
 
 data class SellOption(
@@ -102,6 +106,14 @@ fun SellGatewayScreen(
                 ),
                 label = "shimmer_offset"
             )
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                SwiftIcon3D(
+                    modifier = Modifier.size(120.dp)
+                )
+            }
             Text(
                 text = "What are you selling today?",
                 style = MaterialTheme.typography.displaySmall,

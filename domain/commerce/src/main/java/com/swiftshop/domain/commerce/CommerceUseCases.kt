@@ -105,6 +105,9 @@ interface CommerceRepository {
     suspend fun createListing(listing: Listing): Result<String>
     suspend fun updateListing(listing: Listing): Result<Unit>
     suspend fun deleteListing(listingId: String): Result<Unit>
+    suspend fun likeListing(listingId: String): Result<Unit>
+    suspend fun unlikeListing(listingId: String): Result<Unit>
+    suspend fun getSimilarListings(category: String, excludeListingId: String, limit: Int = 10): Result<List<Listing>>
 
     // Cart
     fun observeCart(userId: String): Flow<List<CartItem>>
@@ -169,6 +172,19 @@ class GetUserListingsUseCase(private val repository: CommerceRepository) {
 
 class SearchListingsUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(query: String): Result<List<Listing>> = repository.searchListings(query)
+}
+
+class LikeListingUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(listingId: String): Result<Unit> = repository.likeListing(listingId)
+}
+
+class UnlikeListingUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(listingId: String): Result<Unit> = repository.unlikeListing(listingId)
+}
+
+class GetSimilarListingsUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(category: String, excludeListingId: String, limit: Int = 10): Result<List<Listing>> =
+        repository.getSimilarListings(category, excludeListingId, limit)
 }
 
 class ObserveCartUseCase(private val repository: CommerceRepository) {

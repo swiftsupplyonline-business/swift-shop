@@ -172,6 +172,15 @@ object CommerceModule {
     fun provideGetListingUseCase(repo: CommerceRepository) = GetListingUseCase(repo)
 
     @Provides
+    fun provideLikeListingUseCase(repo: CommerceRepository) = LikeListingUseCase(repo)
+
+    @Provides
+    fun provideUnlikeListingUseCase(repo: CommerceRepository) = UnlikeListingUseCase(repo)
+
+    @Provides
+    fun provideGetSimilarListingsUseCase(repo: CommerceRepository) = GetSimilarListingsUseCase(repo)
+
+    @Provides
     fun provideGetUserListingsUseCase(repo: CommerceRepository) = GetUserListingsUseCase(repo)
 
     @Provides
@@ -232,6 +241,15 @@ object SocialModule {
 
     @Provides
     fun provideLikePostUseCase(repo: FeedRepository) = LikePostUseCase(repo)
+
+    @Provides
+    fun provideObserveListingCommentsUseCase(repo: FeedRepository) = ObserveListingCommentsUseCase(repo)
+
+    @Provides
+    fun providePostListingCommentUseCase(repo: FeedRepository) = PostListingCommentUseCase(repo)
+
+    @Provides
+    fun provideDeleteListingCommentUseCase(repo: FeedRepository) = DeleteListingCommentUseCase(repo)
 }
 
 @Module

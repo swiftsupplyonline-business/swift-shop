@@ -2,6 +2,7 @@ package com.swiftshop.feature.shop
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -14,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import android.net.Uri
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -57,9 +59,11 @@ fun ListingDetailScreen(
     val isDeleting by viewModel.isDeleting.collectAsState()
     val actionState by viewModel.actionState.collectAsState()
     val colors = MaterialTheme.swiftColors
+    val context = androidx.compose.ui.platform.LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var activeSheet by remember { mutableStateOf<ListingType?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showCommentSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(actionState) {
         when (val state = actionState) {
@@ -111,6 +115,23 @@ fun ListingDetailScreen(
             val listing = state.listing
             val cta = ctaForListingType(listing.listingType, colors.brandBlue)
 
+            if (showCommentSheet) {
+                val comments by viewModel.comments.collectAsState()
+                val currentUserId by viewModel.currentUserId.collectAsState()
+                val topLevel = comments.filter { it.parentCommentId.isEmpty() }
+                val repliesMap = comments.filter { it.parentCommentId.isNotEmpty() }.groupBy { it.parentCommentId }
+
+                CommentBottomSheet(
+                    targetId = state.listing.id,
+                    onDismissRequest = { showCommentSheet = false },
+                    comments = topLevel,
+                    replies = repliesMap,
+                    onSendComment = { text, parentId -> viewModel.postComment(text, parentId) },
+                    onDeleteComment = { viewModel.deleteComment(it) },
+                    currentUserId = currentUserId
+                )
+            }
+
             Scaffold(
                 snackbarHost = { SnackbarHost(snackbarHostState) },
                 topBar = {
@@ -127,7 +148,14 @@ fun ListingDetailScreen(
                                     Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
                                 }
                             }
-                            IconButton(onClick = { /* share */ }) {
+                            IconButton(onClick = {
+                                val shareUrl = "https://swift-dev-3d3ae.web.app/listing/${listing.id}"
+                                val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(android.content.Intent.EXTRA_TEXT, "Check out ${listing.title} on SwiftShop: $shareUrl")
+                                }
+                                context.startActivity(android.content.Intent.createChooser(sendIntent, "Share listing"))
+                            }) {
                                 Icon(Icons.Default.Share, "Share")
                             }
                             IconButton(onClick = { /* bookmark */ }) {
@@ -267,9 +295,29 @@ fun ListingDetailScreen(
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+
+                            Spacer(Modifier.width(16.dp))
+                            IconButton(
+                                onClick = {
+                                    showCommentSheet = true
+                                    viewModel.loadComments()
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.ChatBubbleOutline,
+                                    contentDescription = "Comments"
+                                )
+                            }
+                            Text(
+                                "${listing.commentCount}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
 
                         // Shop Info
+                        val shop by viewModel.shop.collectAsState()
                         Spacer(Modifier.height(16.dp))
                         Row(
                             modifier = Modifier
@@ -280,19 +328,31 @@ fun ListingDetailScreen(
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Default.Store, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                            if (!shop?.logoUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = shop?.logoUrl,
+                                    contentDescription = "Shop logo",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(40.dp).clip(CircleShape)
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.Store, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                                }
                             }
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Sold by", style = MaterialTheme.typography.labelSmall)
-                                Text("Official Shop", style = MaterialTheme.typography.titleSmall) // Replace with real name if available in DTO
+                                Text(
+                                    shop?.name?.ifBlank { "Shop" } ?: "Loading…",
+                                    style = MaterialTheme.typography.titleSmall
+                                )
                             }
                             Text("Visit Shop", 
                                 style = MaterialTheme.typography.labelLarge,
@@ -300,6 +360,37 @@ fun ListingDetailScreen(
                             Icon(Icons.Default.ChevronRight, null, 
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(16.dp))
+                        }
+
+                        val shopLocation = shop?.location
+                        if (shopLocation != null && (shopLocation.lat != 0.0 || shopLocation.lng != 0.0)) {
+                            val context = androidx.compose.ui.platform.LocalContext.current
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(MaterialTheme.shapes.medium)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                    .clickable {
+                                        val label = Uri.encode(shop?.name?.ifBlank { "Shop" } ?: "Shop")
+                                        val uri = Uri.parse("geo:${shopLocation.lat},${shopLocation.lng}?q=${shopLocation.lat},${shopLocation.lng}($label)")
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
+                                        runCatching { context.startActivity(intent) }
+                                    }
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.LocationOn, null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    shop?.locationAddress?.ifBlank { "View shop location" } ?: "View shop location",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text("Directions",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary)
+                            }
                         }
 
 
@@ -362,6 +453,44 @@ fun ListingDetailScreen(
                                 modifier = Modifier.horizontalScroll(rememberScrollState())) {
                                 listing.tags.forEach { tag ->
                                     SuggestionChip(onClick = {}, label = { Text("#$tag") })
+                                }
+                            }
+                        }
+
+                        val moreFromShop by viewModel.moreFromShop.collectAsState()
+                        if (moreFromShop.isNotEmpty()) {
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+                            Text("More from this shop", style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(12.dp))
+                            androidx.compose.foundation.lazy.LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(moreFromShop, key = { it.id }) { suggested ->
+                                    Box(modifier = Modifier.width(160.dp)) {
+                                        ListingCard(
+                                            listing = suggested,
+                                            onClick = { navController.navigate(Screen.ListingDetail.createRoute(suggested.id)) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        val similarListings by viewModel.similarListings.collectAsState()
+                        if (similarListings.isNotEmpty()) {
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+                            Text("You might also like", style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(12.dp))
+                            androidx.compose.foundation.lazy.LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(similarListings, key = { it.id }) { suggested ->
+                                    Box(modifier = Modifier.width(160.dp)) {
+                                        ListingCard(
+                                            listing = suggested,
+                                            onClick = { navController.navigate(Screen.ListingDetail.createRoute(suggested.id)) }
+                                        )
+                                    }
                                 }
                             }
                         }

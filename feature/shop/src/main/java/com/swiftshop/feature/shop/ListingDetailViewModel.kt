@@ -7,6 +7,7 @@ import com.swiftshop.core.model.Listing
 import com.swiftshop.domain.auth.ObserveCurrentUserUseCase
 import com.swiftshop.domain.commerce.CartItem
 import com.swiftshop.domain.commerce.CommerceRepository
+import com.swiftshop.core.model.Comment
 import com.swiftshop.domain.commerce.GetListingUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,6 +45,12 @@ class ListingDetailViewModel @Inject constructor(
     private val addToCartUseCase: com.swiftshop.domain.commerce.AddToCartUseCase,
     private val likeListingUseCase: com.swiftshop.domain.commerce.LikeListingUseCase,
     private val unlikeListingUseCase: com.swiftshop.domain.commerce.UnlikeListingUseCase,
+    private val observeListingCommentsUseCase: com.swiftshop.domain.feed.ObserveListingCommentsUseCase,
+    private val postListingCommentUseCase: com.swiftshop.domain.feed.PostListingCommentUseCase,
+    private val deleteListingCommentUseCase: com.swiftshop.domain.feed.DeleteListingCommentUseCase,
+    private val getShopUseCase: com.swiftshop.domain.commerce.GetShopUseCase,
+    private val getShopListingsUseCase: com.swiftshop.domain.commerce.GetShopListingsUseCase,
+    private val getSimilarListingsUseCase: com.swiftshop.domain.commerce.GetSimilarListingsUseCase,
     private val commerceRepository: CommerceRepository
 ) : ViewModel() {
 
@@ -64,11 +71,29 @@ class ListingDetailViewModel @Inject constructor(
     private val _navigationEvents = MutableSharedFlow<ListingDetailNavigation>()
     val navigationEvents: SharedFlow<ListingDetailNavigation> = _navigationEvents.asSharedFlow()
 
+    private val _comments = MutableStateFlow<List<Comment>>(emptyList())
+    val comments: StateFlow<List<Comment>> = _comments.asStateFlow()
+
+    private val _currentUserId = MutableStateFlow<String?>(null)
+    val currentUserId: StateFlow<String?> = _currentUserId.asStateFlow()
+
+    private var commentsJob: kotlinx.coroutines.Job? = null
+
+    private val _shop = MutableStateFlow<com.swiftshop.core.model.Shop?>(null)
+    val shop: StateFlow<com.swiftshop.core.model.Shop?> = _shop.asStateFlow()
+
+    private val _moreFromShop = MutableStateFlow<List<Listing>>(emptyList())
+    val moreFromShop: StateFlow<List<Listing>> = _moreFromShop.asStateFlow()
+
+    private val _similarListings = MutableStateFlow<List<Listing>>(emptyList())
+    val similarListings: StateFlow<List<Listing>> = _similarListings.asStateFlow()
+
     init { load() }
 
     fun load() {
         viewModelScope.launch {
             val user = observeCurrentUser().first()
+            _currentUserId.value = user?.uid
             val state = _uiState.value
             if (state is ListingDetailState.Loaded) {
                 _isOwner.value = user?.uid == state.listing.sellerId
@@ -77,9 +102,32 @@ class ListingDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = ListingDetailState.Loading
             getListing(listingId).fold(
-                onSuccess = { _uiState.value = ListingDetailState.Loaded(it) },
+                onSuccess = { listing ->
+                    _uiState.value = ListingDetailState.Loaded(listing)
+                    loadShop(listing.shopId)
+                    loadSuggestions(listing)
+                },
                 onFailure = { _uiState.value = ListingDetailState.Error(it.message ?: "Failed to load") }
             )
+        }
+    }
+
+    private fun loadSuggestions(listing: Listing) {
+        viewModelScope.launch {
+            getShopListingsUseCase(listing.shopId, page = 0, pageSize = 11).collect { shopListings ->
+                _moreFromShop.value = shopListings.filter { it.id != listing.id }.take(10)
+            }
+        }
+        viewModelScope.launch {
+            getSimilarListingsUseCase(listing.category, listing.id, limit = 10).onSuccess {
+                _similarListings.value = it
+            }
+        }
+    }
+
+    private fun loadShop(shopId: String) {
+        viewModelScope.launch {
+            getShopUseCase(shopId).onSuccess { _shop.value = it }
         }
     }
 
@@ -168,6 +216,41 @@ class ListingDetailViewModel @Inject constructor(
                 onFailure = { _actionState.value = ActionState.Error(it.message ?: "Failed to delete") }
             )
             _isDeleting.value = false
+        }
+    }
+
+    fun loadComments() {
+        if (commentsJob != null) return
+        commentsJob = viewModelScope.launch {
+            observeListingCommentsUseCase(listingId).collect { _comments.value = it }
+        }
+    }
+
+    fun postComment(text: String, parentCommentId: String?) {
+        viewModelScope.launch {
+            val user = observeCurrentUser().first() ?: run {
+                _actionState.value = ActionState.Error("Sign in to comment")
+                return@launch
+            }
+            val comment = Comment(
+                listingId = listingId,
+                authorId = user.uid,
+                authorName = user.displayName,
+                authorAvatarUrl = user.photoUrl,
+                text = text,
+                parentCommentId = parentCommentId ?: ""
+            )
+            postListingCommentUseCase(comment).onFailure {
+                _actionState.value = ActionState.Error("Couldn't post comment")
+            }
+        }
+    }
+
+    fun deleteComment(comment: Comment) {
+        viewModelScope.launch {
+            deleteListingCommentUseCase(comment.id).onFailure {
+                _actionState.value = ActionState.Error("Couldn't delete comment")
+            }
         }
     }
 

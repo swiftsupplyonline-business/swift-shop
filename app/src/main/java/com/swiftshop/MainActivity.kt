@@ -20,16 +20,25 @@ class MainActivity : FragmentActivity() {
     @Inject
     lateinit var biometricGuard: BiometricGuard
 
+    private val deepLinkIntent = androidx.compose.runtime.mutableStateOf<android.content.Intent?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        deepLinkIntent.value = intent
         setContent {
             SwiftShopTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    SwiftShopNavHost(biometricGuard = biometricGuard)
+                    SwiftShopNavHost(biometricGuard = biometricGuard, deepLinkIntent = deepLinkIntent.value)
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        deepLinkIntent.value = intent
     }
 }

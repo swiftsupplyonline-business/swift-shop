@@ -15,5 +15,18 @@
   },
   "storage": {
     "rules": "docs/storage.rules"
+  },
+  "hosting": {
+    "public": "hosting",
+    "ignore": [
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/listing/**",
+        "function": "renderListingPreview"
+      }
+    ]
   }
 }

@@ -155,6 +155,7 @@ dependencies {
 
     // Timber
     implementation(libs.timber)
+    implementation(libs.sceneview)
 
     // Testing
     testImplementation(libs.bundles.testing)

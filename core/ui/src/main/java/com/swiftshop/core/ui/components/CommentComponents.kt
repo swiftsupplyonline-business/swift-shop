@@ -164,7 +164,7 @@ fun CommentComposer(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CommentBottomSheet(
-    postId: String,
+    targetId: String,
     onDismissRequest: () -> Unit,
     comments: List<Comment>,
     replies: Map<String, List<Comment>>,

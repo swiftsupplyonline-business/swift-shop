@@ -12,6 +12,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import com.swiftshop.core.model.Listing
+import com.swiftshop.core.model.Comment
 import com.swiftshop.core.model.PagingState
 import kotlinx.coroutines.flow.Flow
 
@@ -80,6 +81,9 @@ interface FeedRepository {
     suspend fun unlikePost(postId: String): Result<Unit>
     suspend fun bookmarkPost(postId: String): Result<Unit>
     suspend fun unbookmarkPost(postId: String): Result<Unit>
+    fun observeListingComments(listingId: String): Flow<List<Comment>>
+    suspend fun postListingComment(comment: Comment): Result<String>
+    suspend fun deleteListingComment(commentId: String): Result<Unit>
 }
 
 // â”€â”€â”€ Use Cases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -97,6 +101,18 @@ class GetPostFeedUseCase(private val repository: FeedRepository) {
 class GetUserPostsUseCase(private val repository: FeedRepository) {
     operator fun invoke(userId: String) =
         repository.getUserPosts(userId)
+}
+
+class ObserveListingCommentsUseCase(private val repository: FeedRepository) {
+    operator fun invoke(listingId: String): Flow<List<Comment>> = repository.observeListingComments(listingId)
+}
+
+class PostListingCommentUseCase(private val repository: FeedRepository) {
+    suspend operator fun invoke(comment: Comment): Result<String> = repository.postListingComment(comment)
+}
+
+class DeleteListingCommentUseCase(private val repository: FeedRepository) {
+    suspend operator fun invoke(commentId: String): Result<Unit> = repository.deleteListingComment(commentId)
 }
 
 class CreatePostUseCase(

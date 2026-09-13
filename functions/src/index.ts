@@ -24,3 +24,6 @@ export * from "./logistics";
 // Advertising Functions
 export * from "./advertising";
 
+// Share Preview Functions
+export * from "./sharePreview";
+

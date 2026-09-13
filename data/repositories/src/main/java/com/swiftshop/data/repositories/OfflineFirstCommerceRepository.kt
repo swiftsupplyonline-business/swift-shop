@@ -73,6 +73,13 @@ class OfflineFirstCommerceRepository @Inject constructor(
     override suspend fun getUserListings(userId: String): Result<List<Listing>> = 
         remote.getUserListings(userId)
 
+    override suspend fun likeListing(listingId: String): Result<Unit> = remote.likeListing(listingId)
+
+    override suspend fun unlikeListing(listingId: String): Result<Unit> = remote.unlikeListing(listingId)
+
+    override suspend fun getSimilarListings(category: String, excludeListingId: String, limit: Int): Result<List<Listing>> =
+        remote.getSimilarListings(category, excludeListingId, limit)
+
     override suspend fun searchListings(query: String): Result<List<Listing>> = 
         remote.searchListings(query)
 

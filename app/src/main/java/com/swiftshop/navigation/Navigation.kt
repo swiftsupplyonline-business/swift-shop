@@ -57,6 +57,7 @@ val bottomNavItems = listOf(
 @Composable
 fun SwiftShopNavHost(
     biometricGuard: BiometricGuard,
+    deepLinkIntent: android.content.Intent? = null,
     observeCurrentUser: ObserveCurrentUserUseCase = hiltViewModel<AuthNavViewModel>().observeCurrentUser
 ) {
     val navController = rememberNavController()
@@ -73,6 +74,10 @@ fun SwiftShopNavHost(
             CircularProgressIndicator()
         }
         return
+    }
+
+    LaunchedEffect(deepLinkIntent, startDestination) {
+        deepLinkIntent?.let { navController.handleDeepLink(it) }
     }
 
     NavHost(
@@ -103,12 +108,14 @@ fun SwiftShopNavHost(
         }
         composable(
             route = Screen.PostDetail.route,
-            arguments = listOf(navArgument("postId") { type = NavType.StringType })
+            arguments = listOf(navArgument("postId") { type = NavType.StringType }),
+            deepLinks = listOf(navDeepLink { uriPattern = "swiftshop://post/{postId}" })
         ) { PostDetailScreen(navController = navController) }
 
         composable(
             route = Screen.ListingDetail.route,
-            arguments = listOf(navArgument("listingId") { type = NavType.StringType })
+            arguments = listOf(navArgument("listingId") { type = NavType.StringType }),
+            deepLinks = listOf(navDeepLink { uriPattern = "swiftshop://listing/{listingId}" })
         ) { ListingDetailScreen(navController = navController) }
 
         composable(
@@ -175,7 +182,8 @@ fun SwiftShopNavHost(
         }
         composable(
             route = Screen.Conversation.route,
-            arguments = listOf(navArgument("conversationId") { type = NavType.StringType })
+            arguments = listOf(navArgument("conversationId") { type = NavType.StringType }),
+            deepLinks = listOf(navDeepLink { uriPattern = "swiftshop://conversation/{conversationId}" })
         ) { ConversationScreen(navController = navController) }
 
         composable(
