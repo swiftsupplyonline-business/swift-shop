@@ -384,9 +384,11 @@ data class FirestoreOrder(
     val status: String = "PENDING",
     val deliveryAddress: FirestoreDeliveryAddress? = null,
     val paymentId: String = "",
+    val deliveryRequestId: String = "",
+    val notes: String = "",
     val createdAt: Any? = null
 ) {
-    fun toDomain() = Order(id, buyerId, sellerId, shopId, items.map { it.toDomain() }, MoneyAmount(currency, subtotalMinorUnits), MoneyAmount(currency, deliveryFeeMinorUnits), MoneyAmount(currency, platformFeeMinorUnits), MoneyAmount(currency, totalMinorUnits), runCatching { OrderStatus.valueOf(status) }.getOrDefault(OrderStatus.PENDING), deliveryAddress?.toDomain() ?: DeliveryAddress(), paymentId, "", tsToLong(createdAt), 0L)
+    fun toDomain() = Order(id, buyerId, sellerId, shopId, items.map { it.toDomain() }, MoneyAmount(currency, subtotalMinorUnits), MoneyAmount(currency, deliveryFeeMinorUnits), MoneyAmount(currency, platformFeeMinorUnits), MoneyAmount(currency, totalMinorUnits), runCatching { OrderStatus.valueOf(status) }.getOrDefault(OrderStatus.PENDING), deliveryAddress?.toDomain() ?: DeliveryAddress(), paymentId, deliveryRequestId, notes, tsToLong(createdAt), 0L)
 }
 
 data class FirestoreOrderItem(
@@ -417,6 +419,7 @@ fun Order.toFirestore() = mapOf(
     "subtotalMinorUnits" to subtotal.minorUnits, "deliveryFeeMinorUnits" to deliveryFee.minorUnits,
     "platformFeeMinorUnits" to platformFee.minorUnits, "totalMinorUnits" to total.minorUnits,
     "currency" to total.currency, "status" to status.name, "paymentId" to paymentId,
+    "deliveryRequestId" to deliveryRequestId, "notes" to notes,
     "deliveryAddress" to deliveryAddress.toFirestore(),
     "createdAt" to createdAt
 )

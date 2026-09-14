@@ -85,7 +85,7 @@ class CreateListingViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     val showDeliveryEstimate: StateFlow<Boolean> = _listingType.map { type ->
-        type in listOf(ListingType.BUY, ListingType.PLACE_ORDER, ListingType.DELIVER)
+        type in listOf(ListingType.BUY, ListingType.PLACE_ORDER)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     init {

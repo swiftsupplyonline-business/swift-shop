@@ -27,9 +27,33 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import coil.compose.AsyncImage
 import com.swiftshop.core.model.FeedPost
 import com.swiftshop.core.model.Listing
+import com.swiftshop.core.model.PostType
+
+private fun formatRelativeTime(createdAt: Long): String {
+    val diff = System.currentTimeMillis() - createdAt
+    val diffSecs = diff / 1000
+    if (diffSecs < 60) return "just now"
+    val diffMins = diffSecs / 60
+    if (diffMins < 60) return "${diffMins}m"
+    val diffHours = diffMins / 60
+    if (diffHours < 24) return "${diffHours}h"
+    val diffDays = diffHours / 24
+    if (diffDays < 7) return "${diffDays}d"
+    val diffWeeks = diffDays / 7
+    return "${diffWeeks}w"
+}
 
 @Composable
 fun ListingCard(listing: Listing, onClick: () -> Unit) {
@@ -95,7 +119,7 @@ fun PostCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(post.authorName, style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "just now", style = MaterialTheme.typography.labelSmall,
+                        formatRelativeTime(post.createdAt), style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -107,7 +131,50 @@ fun PostCard(
                 }
             }
 
-            if (post.mediaUrls.isNotEmpty()) {
+            if (post.type == PostType.REEL) {
+                var hasStarted by remember { mutableStateOf(false) }
+                var isPlaying by remember { mutableStateOf(false) }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .background(Color.Black)
+                        .clickable(enabled = hasStarted) { isPlaying = !isPlaying },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (hasStarted) {
+                        SwiftVideoPlayer(
+                            url = post.videoUrl,
+                            isActive = isPlaying,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        AsyncImage(
+                            model = post.thumbnailUrl,
+                            contentDescription = "Reel thumbnail",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize().clickable {
+                                hasStarted = true
+                                isPlaying = true
+                            }
+                        )
+                        IconButton(
+                            onClick = {
+                                hasStarted = true
+                                isPlaying = true
+                            },
+                            modifier = Modifier.size(64.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Play video",
+                                tint = Color.White,
+                                modifier = Modifier.size(48.dp)
+                            )
+                        }
+                    }
+                }
+            } else if (post.mediaUrls.isNotEmpty()) {
                 AsyncImage(
                     model = post.mediaUrls.first(),
                     contentDescription = "Post image",

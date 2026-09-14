@@ -119,6 +119,11 @@ fun SwiftShopNavHost(
         ) { ListingDetailScreen(navController = navController) }
 
         composable(
+            route = Screen.RequestDelivery.route,
+            arguments = listOf(navArgument("listingId") { type = NavType.StringType })
+        ) { com.swiftshop.feature.delivery.RequestDeliveryScreen(navController = navController) }
+
+        composable(
             route = Screen.ShopDetail.route,
             arguments = listOf(navArgument("shopId") { type = NavType.StringType })
         ) { ShopDetailScreen(navController = navController) }

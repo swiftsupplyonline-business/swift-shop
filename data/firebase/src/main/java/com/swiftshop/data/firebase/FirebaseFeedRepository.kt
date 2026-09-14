@@ -150,6 +150,39 @@ class FirebaseFeedRepository @Inject constructor(
     override suspend fun deleteListingComment(commentId: String): Result<Unit> = runCatching {
         firestore.collection("comments").document(commentId).delete().await()
     }
+
+    override suspend fun getPost(postId: String): Result<FeedPost?> = runCatching {
+        val snapshot = firestore.collection("posts").document(postId).get().await()
+        if (snapshot.exists()) {
+            snapshot.toObject(FirestoreFeedPost::class.java)?.toDomain()
+        } else {
+            null
+        }
+    }
+
+    override fun observePostComments(postId: String): Flow<List<Comment>> = callbackFlow {
+        val subscription = firestore.collection("comments")
+            .whereEqualTo("postId", postId)
+            .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.ASCENDING)
+            .addSnapshotListener { snapshot, _ ->
+                trySend(snapshot?.toObjects(Comment::class.java) ?: emptyList())
+            }
+        awaitClose { subscription.remove() }
+    }
+
+    override suspend fun postPostComment(comment: Comment): Result<String> = runCatching {
+        val doc = firestore.collection("comments").document()
+        val data = comment.copy(id = doc.id, createdAt = System.currentTimeMillis())
+        doc.set(data).await()
+        firestore.collection("posts").document(comment.postId)
+            .update("commentCount", com.google.firebase.firestore.FieldValue.increment(1))
+            .await()
+        doc.id
+    }
+
+    override suspend fun deletePostComment(commentId: String): Result<Unit> = runCatching {
+        firestore.collection("comments").document(commentId).delete().await()
+    }
 }
 
 fun FeedPost.toFirestore() = mapOf(

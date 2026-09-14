@@ -264,6 +264,7 @@ data class Order(
     val deliveryAddress: DeliveryAddress = DeliveryAddress(),
     val paymentId: String = "",
     val notes: String = "",
+    val deliveryRequestId: String = "",
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
 ) : Parcelable
@@ -402,6 +403,29 @@ data class DeliveryRoute(
     val driverCurrentLocation: GeoPoint? = null,
     val conversationId: String = "",
     val createdAt: Long = 0L
+) : Parcelable
+
+enum class DeliveryRequestStatus {
+    PENDING, ACCEPTED, DECLINED, EXPIRED, CANCELLED
+}
+
+@Serializable
+@Parcelize
+data class DeliveryRequest(
+    val id: String = "",
+    val listingId: String = "",
+    val merchantId: String = "",
+    val requesterId: String = "",
+    val pickup: GeoPoint = GeoPoint(),
+    val dropoff: GeoPoint = GeoPoint(),
+    val pickupLabel: String = "",
+    val dropoffLabel: String = "",
+    val deliveryFee: MoneyAmount = MoneyAmount.ZERO,
+    val status: DeliveryRequestStatus = DeliveryRequestStatus.PENDING,
+    val expiresAt: Long = 0L,
+    val relatedOrderId: String = "",
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L
 ) : Parcelable
 
 @Serializable

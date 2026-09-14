@@ -264,6 +264,12 @@ object LogisticsModule {
 
     @Provides
     fun provideRequestDeliveryUseCase(repo: DeliveryRepository) = RequestDeliveryUseCase(repo)
+
+    @Provides
+    fun provideCreateDeliveryRequestUseCase(repo: DeliveryRepository) = CreateDeliveryRequestUseCase(repo)
+
+    @Provides
+    fun provideObserveDeliveryRequestUseCase(repo: DeliveryRepository) = ObserveDeliveryRequestUseCase(repo)
 }
 
 @Module

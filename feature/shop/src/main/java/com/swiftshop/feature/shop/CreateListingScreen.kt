@@ -188,18 +188,20 @@ fun CreateListingScreen(
                 OutlinedTextField(
                     value = price,
                     onValueChange = viewModel::onPriceChange,
-                    label = { Text("Price (M)") },
+                    label = { Text(if (listingType == ListingType.DELIVER) "Delivery fee (M)" else "Price (M)") },
                     modifier = Modifier.weight(1f),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     prefix = { Text("M") }
                 )
-                OutlinedTextField(
-                    value = stock,
-                    onValueChange = viewModel::onStockChange,
-                    label = { Text("Quantity") },
-                    modifier = Modifier.weight(1f),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
+                if (listingType != ListingType.DELIVER) {
+                    OutlinedTextField(
+                        value = stock,
+                        onValueChange = viewModel::onStockChange,
+                        label = { Text("Quantity") },
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
             }
 
             // Delivery estimate

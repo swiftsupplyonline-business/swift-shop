@@ -84,6 +84,10 @@ interface FeedRepository {
     fun observeListingComments(listingId: String): Flow<List<Comment>>
     suspend fun postListingComment(comment: Comment): Result<String>
     suspend fun deleteListingComment(commentId: String): Result<Unit>
+    suspend fun getPost(postId: String): Result<FeedPost?>
+    fun observePostComments(postId: String): Flow<List<Comment>>
+    suspend fun postPostComment(comment: Comment): Result<String>
+    suspend fun deletePostComment(commentId: String): Result<Unit>
 }
 
 // â”€â”€â”€ Use Cases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -195,6 +199,22 @@ class GetReelFeedUseCase(private val repository: FeedRepository) {
 class LikePostUseCase(private val repository: FeedRepository) {
     suspend operator fun invoke(postId: String, isLiked: Boolean): Result<Unit> =
         if (isLiked) repository.likePost(postId) else repository.unlikePost(postId)
+}
+
+class GetPostUseCase(private val repository: FeedRepository) {
+    suspend operator fun invoke(postId: String): Result<FeedPost?> = repository.getPost(postId)
+}
+
+class ObservePostCommentsUseCase(private val repository: FeedRepository) {
+    operator fun invoke(postId: String): Flow<List<Comment>> = repository.observePostComments(postId)
+}
+
+class PostPostCommentUseCase(private val repository: FeedRepository) {
+    suspend operator fun invoke(comment: Comment): Result<String> = repository.postPostComment(comment)
+}
+
+class DeletePostCommentUseCase(private val repository: FeedRepository) {
+    suspend operator fun invoke(commentId: String): Result<Unit> = repository.deletePostComment(commentId)
 }
 
 

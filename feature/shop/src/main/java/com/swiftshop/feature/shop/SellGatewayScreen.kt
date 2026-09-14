@@ -68,6 +68,12 @@ private val sellOptions = listOf(
         description = "Sourced products, wholesale goods, reselling.",
         icon = Icons.Default.Sync,
         type = ListingType.BUY
+    ),
+    SellOption(
+        title = "Delivery service",
+        description = "Move things for people, point A to point B.",
+        icon = Icons.Default.LocalShipping,
+        type = ListingType.DELIVER
     )
 )
 

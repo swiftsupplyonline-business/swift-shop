@@ -205,8 +205,8 @@ fun ListingDetailScreen(
                                         ListingType.BUY, ListingType.PLACE_ORDER -> {
                                             viewModel.buyNow()
                                         }
-                                        ListingType.DELIVER, ListingType.TAKE_ME_THERE ->
-                                            navController.navigate(Screen.DeliveryTracking.createRoute(listing.id))
+                                        ListingType.DELIVER ->
+                                            navController.navigate(Screen.RequestDelivery.createRoute(listing.id))
                                         else -> { activeSheet = listing.listingType }
                                     }
                                 },
@@ -364,7 +364,6 @@ fun ListingDetailScreen(
 
                         val shopLocation = shop?.location
                         if (shopLocation != null && (shopLocation.lat != 0.0 || shopLocation.lng != 0.0)) {
-                            val context = androidx.compose.ui.platform.LocalContext.current
                             Spacer(Modifier.height(8.dp))
                             Row(
                                 modifier = Modifier

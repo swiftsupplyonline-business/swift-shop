@@ -1,5 +1,8 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as admin from "firebase-admin";
+
+const DELIVERY_REQUEST_WINDOW_MS = 120_000; // 120 seconds, server-authoritative
 
 /**
  * Creates a delivery route for a paid order.
@@ -166,4 +169,88 @@ export const updateDeliveryStatus = onCall(async (request) => {
     } catch (error: any) {
         throw new HttpsError("failed-precondition", error.message);
     }
+});
+
+/**
+ * Creates a delivery job request against a DELIVER-type listing.
+ *
+ * Contract (matches FirebaseDeliveryRepository.createDeliveryRequest on Android):
+ * - Request: { listingId: string, pickup: {lat, lng}, dropoff: {lat, lng} }
+ * - Response: requestId (string)
+ *
+ * The merchant has DELIVERY_REQUEST_WINDOW_MS to respond (see
+ * respondToDeliveryRequest, not yet implemented — B6/B7). expiresAt is set
+ * here, server-side, and is the sole source of truth for the countdown.
+ */
+export const createDeliveryRequest = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { listingId, pickup, dropoff } = request.data;
+    if (
+        !listingId || !pickup || !dropoff ||
+        typeof pickup.lat !== "number" || typeof pickup.lng !== "number" ||
+        typeof dropoff.lat !== "number" || typeof dropoff.lng !== "number"
+    ) {
+        throw new HttpsError("invalid-argument", "listingId, pickup, and dropoff ({lat, lng}) are required");
+    }
+
+    const db = admin.firestore();
+    const listingDoc = await db.collection("listings").doc(listingId).get();
+    if (!listingDoc.exists) {
+        throw new HttpsError("not-found", "Listing not found");
+    }
+    const listing = listingDoc.data()!;
+    if (listing.listingType !== "DELIVER") {
+        throw new HttpsError("failed-precondition", "Listing is not a delivery listing");
+    }
+    if (listing.isAvailable !== true) {
+        throw new HttpsError("failed-precondition", "This delivery listing is not currently available");
+    }
+
+    const now = Date.now();
+    const requestRef = db.collection("deliveryRequests").doc();
+    const newRequest = {
+        id: requestRef.id,
+        listingId,
+        merchantId: listing.sellerId,
+        requesterId: auth.uid,
+        pickup,
+        dropoff,
+        pickupLabel: "",
+        dropoffLabel: "",
+        deliveryFeeMinorUnits: listing.priceMinorUnits ?? 0,
+        deliveryFeeCurrency: listing.priceCurrency ?? "LSL",
+        status: "PENDING",
+        expiresAt: now + DELIVERY_REQUEST_WINDOW_MS,
+        relatedOrderId: "",
+        createdAt: now,
+        updatedAt: now
+    };
+
+    await requestRef.set(newRequest);
+    return requestRef.id;
+});
+
+/**
+ * Scheduled sweep: flips any PENDING request whose window has elapsed to
+ * EXPIRED. Runs every minute. This is what makes "merchant never responded"
+ * actually resolve for the requester even if the merchant's device never
+ * calls respondToDeliveryRequest at all.
+ */
+export const expireDeliveryRequests = onSchedule("every 1 minutes", async () => {
+    const db = admin.firestore();
+    const now = Date.now();
+    const staleSnapshot = await db.collection("deliveryRequests")
+        .where("status", "==", "PENDING")
+        .where("expiresAt", "<=", now)
+        .get();
+
+    if (staleSnapshot.empty) return;
+
+    const batch = db.batch();
+    staleSnapshot.docs.forEach((doc) => {
+        batch.update(doc.ref, { status: "EXPIRED", updatedAt: now });
+    });
+    await batch.commit();
 });

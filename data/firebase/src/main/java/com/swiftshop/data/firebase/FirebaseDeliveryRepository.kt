@@ -37,6 +37,25 @@ class FirebaseDeliveryRepository @Inject constructor(
         result.data as String
     }
 
+    override suspend fun createDeliveryRequest(listingId: String, pickup: GeoPoint, dropoff: GeoPoint): Result<String> = runCatching {
+        val data = mapOf(
+            "listingId" to listingId,
+            "pickup" to mapOf("lat" to pickup.lat, "lng" to pickup.lng),
+            "dropoff" to mapOf("lat" to dropoff.lat, "lng" to dropoff.lng)
+        )
+        val result = functions.getHttpsCallable("createDeliveryRequest").call(data).await()
+        result.data as String
+    }
+
+    override fun observeDeliveryRequest(requestId: String): Flow<DeliveryRequest> = callbackFlow {
+        val subscription = firestore.collection("deliveryRequests").document(requestId)
+            .addSnapshotListener { snapshot, _ ->
+                val request = snapshot?.toObject(FirestoreDeliveryRequest::class.java)?.toDomain(requestId)
+                if (request != null) trySend(request)
+            }
+        awaitClose { subscription.remove() }
+    }
+
     override suspend fun updateDriverLocation(routeId: String, location: GeoPoint): Result<Unit> = runCatching {
         // Direct write allowed for drivers to update their own location for real-time tracking
         firestore.collection("deliveryRoutes").document(routeId)
@@ -92,5 +111,39 @@ data class FirestoreDeliveryRoute(
             GeoPoint(driverCurrentLocationLat, driverCurrentLocationLng) else null,
         conversationId = conversationId,
         createdAt = createdAt.time
+    )
+}
+
+data class FirestoreDeliveryRequest(
+    val listingId: String = "",
+    val merchantId: String = "",
+    val requesterId: String = "",
+    val pickup: Map<String, Double> = emptyMap(),
+    val dropoff: Map<String, Double> = emptyMap(),
+    val pickupLabel: String = "",
+    val dropoffLabel: String = "",
+    val deliveryFeeMinorUnits: Long = 0L,
+    val deliveryFeeCurrency: String = "LSL",
+    val status: String = "PENDING",
+    val expiresAt: Long = 0L,
+    val relatedOrderId: String = "",
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L
+) {
+    fun toDomain(id: String) = com.swiftshop.core.model.DeliveryRequest(
+        id = id,
+        listingId = listingId,
+        merchantId = merchantId,
+        requesterId = requesterId,
+        pickup = com.swiftshop.core.model.GeoPoint(pickup["lat"] ?: 0.0, pickup["lng"] ?: 0.0),
+        dropoff = com.swiftshop.core.model.GeoPoint(dropoff["lat"] ?: 0.0, dropoff["lng"] ?: 0.0),
+        pickupLabel = pickupLabel,
+        dropoffLabel = dropoffLabel,
+        deliveryFee = com.swiftshop.core.model.MoneyAmount(deliveryFeeCurrency, deliveryFeeMinorUnits),
+        status = runCatching { com.swiftshop.core.model.DeliveryRequestStatus.valueOf(status) }
+            .getOrDefault(com.swiftshop.core.model.DeliveryRequestStatus.PENDING),
+        relatedOrderId = relatedOrderId,
+        createdAt = createdAt,
+        updatedAt = updatedAt
     )
 }

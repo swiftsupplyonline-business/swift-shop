@@ -1,5 +1,6 @@
 package com.swiftshop.domain.delivery
 
+import com.swiftshop.core.model.DeliveryRequest
 import com.swiftshop.core.model.DeliveryRoute
 import com.swiftshop.core.model.DeliveryStatus
 import com.swiftshop.core.model.GeoPoint
@@ -11,4 +12,6 @@ interface DeliveryRepository {
     suspend fun updateDriverLocation(routeId: String, location: GeoPoint): Result<Unit>
     suspend fun updateDeliveryStatus(routeId: String, status: DeliveryStatus): Result<Unit>
     fun getActiveDeliveriesForDriver(driverId: String): Flow<List<DeliveryRoute>>
+    suspend fun createDeliveryRequest(listingId: String, pickup: GeoPoint, dropoff: GeoPoint): Result<String>
+    fun observeDeliveryRequest(requestId: String): Flow<DeliveryRequest>
 }

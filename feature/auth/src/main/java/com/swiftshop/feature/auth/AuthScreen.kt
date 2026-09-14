@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import com.swiftshop.core.ui.components.SwiftIcon3D
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -53,16 +54,10 @@ fun AuthScreen(
         ) {
             Spacer(Modifier.height(80.dp))
 
-            // Logo area
-            Box(
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color.White.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("✦", style = MaterialTheme.typography.headlineLarge, color = Color.White)
-            }
+            // Logo area - 3D icon
+            SwiftIcon3D(
+                modifier = Modifier.size(240.dp)
+            )
             Spacer(Modifier.height(16.dp))
             Text(
                 "Swift Shop",

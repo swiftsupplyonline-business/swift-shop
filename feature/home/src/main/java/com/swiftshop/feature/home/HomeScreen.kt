@@ -26,6 +26,13 @@ import com.swiftshop.core.ui.theme.swiftColors
 import com.swiftshop.core.ui.navigation.Screen
 import androidx.compose.foundation.shape.RoundedCornerShape
 import kotlinx.coroutines.launch
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 
 enum class HomeTab(val label: String) {
     SHOP("Shop"),
@@ -313,6 +320,8 @@ fun ReelsTabContent(
     onLoadMore: () -> Unit,
     onCreateReel: () -> Unit
 ) {
+    var activeCommentPostId by remember { mutableStateOf<String?>(null) }
+
     Box(modifier = Modifier.fillMaxSize()) {
         when (state) {
             is PagingState.Loading -> LoadingState()
@@ -329,7 +338,7 @@ fun ReelsTabContent(
                     else -> emptyList()
                 }
                 // Full-screen vertical pager for reels
-                VerticalReelsPager(reels = items, onLoadMore = onLoadMore)
+                VerticalReelsPager(reels = items, onLoadMore = onLoadMore, onCommentClick = { activeCommentPostId = it.id })
             }
             else -> Unit
         }
@@ -341,12 +350,16 @@ fun ReelsTabContent(
         ) {
             Icon(Icons.Default.VideoCall, "Upload reel", tint = Color.White)
         }
+
+        if (activeCommentPostId != null) {
+            CommentBottomSheet(postId = activeCommentPostId!!, onDismiss = { activeCommentPostId = null })
+        }
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun VerticalReelsPager(reels: List<FeedPost>, onLoadMore: () -> Unit) {
+fun VerticalReelsPager(reels: List<FeedPost>, onLoadMore: () -> Unit, onCommentClick: (FeedPost) -> Unit) {
     val pagerState = rememberPagerState(pageCount = { reels.size })
 
     VerticalPager(
@@ -356,18 +369,16 @@ fun VerticalReelsPager(reels: List<FeedPost>, onLoadMore: () -> Unit) {
         if (index >= reels.size - 2) {
             LaunchedEffect(Unit) { onLoadMore() }
         }
-        ReelItem(reel = reels[index], isActive = index == pagerState.currentPage)
+        ReelItem(reel = reels[index], isActive = index == pagerState.currentPage, onCommentClick = onCommentClick)
     }
 }
 
 @Composable
-fun ReelItem(reel: FeedPost, isActive: Boolean) {
+fun ReelItem(reel: FeedPost, isActive: Boolean, onCommentClick: (FeedPost) -> Unit) {
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        // Thumbnail placeholder — ExoPlayer integration wires here
-        AsyncImage(
-            model = reel.thumbnailUrl,
-            contentDescription = "Reel thumbnail",
-            contentScale = ContentScale.Crop,
+        SwiftVideoPlayer(
+            url = reel.videoUrl,
+            isActive = isActive,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -393,12 +404,12 @@ fun ReelItem(reel: FeedPost, isActive: Boolean) {
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(16.dp),
+                .padding(end = 16.dp, bottom = 88.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             ReelAction(Icons.Default.Favorite, reel.likeCount.toString())
             Spacer(Modifier.height(20.dp))
-            ReelAction(Icons.Default.ChatBubble, reel.commentCount.toString())
+            ReelAction(Icons.Default.ChatBubble, reel.commentCount.toString(), onClick = { onCommentClick(reel) })
             Spacer(Modifier.height(20.dp))
             ReelAction(Icons.Default.Share, "Share")
             Spacer(Modifier.height(20.dp))
@@ -408,9 +419,139 @@ fun ReelItem(reel: FeedPost, isActive: Boolean) {
 }
 
 @Composable
-private fun ReelAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun ReelAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit = {}) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable { onClick() }
+    ) {
         Icon(icon, null, tint = Color.White, modifier = Modifier.size(28.dp))
         Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White)
+    }
+}
+
+@HiltViewModel
+class ReelCommentViewModel @Inject constructor(
+    private val observePostComments: com.swiftshop.domain.feed.ObservePostCommentsUseCase,
+    private val postPostComment: com.swiftshop.domain.feed.PostPostCommentUseCase,
+    private val deletePostComment: com.swiftshop.domain.feed.DeletePostCommentUseCase,
+    private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase
+) : ViewModel() {
+    private val _comments = MutableStateFlow<List<Comment>>(emptyList())
+    val comments = _comments.asStateFlow()
+
+    private var currentPostId: String? = null
+    private var collectJob: kotlinx.coroutines.Job? = null
+
+    fun setPostId(id: String) {
+        if (currentPostId == id) return
+        currentPostId = id
+        collectJob?.cancel()
+        collectJob = viewModelScope.launch {
+            observePostComments(id).collect {
+                _comments.value = it
+            }
+        }
+    }
+
+    fun addComment(text: String) {
+        val id = currentPostId ?: return
+        if (text.isBlank()) return
+        viewModelScope.launch {
+            val user = observeCurrentUser().first() ?: return@launch
+            val comment = Comment(
+                postId = id,
+                authorId = user.uid,
+                authorName = user.displayName,
+                authorAvatarUrl = user.photoUrl,
+                text = text.trim()
+            )
+            postPostComment(comment)
+        }
+    }
+
+    fun deleteComment(commentId: String) {
+        viewModelScope.launch {
+            deletePostComment(commentId)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CommentBottomSheet(
+    postId: String,
+    onDismiss: () -> Unit,
+    viewModel: ReelCommentViewModel = hiltViewModel()
+) {
+    LaunchedEffect(postId) {
+        viewModel.setPostId(postId)
+    }
+
+    val comments by viewModel.comments.collectAsState()
+    var commentText by remember { mutableStateOf("") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.7f)
+                .padding(horizontal = 16.dp)
+        ) {
+            Text(
+                text = "Comments",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(vertical = 8.dp)
+            ) {
+                items(comments, key = { it.id }) { comment ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        SwiftAvatar(url = comment.authorAvatarUrl, tier = UserTier.BASIC, modifier = Modifier.size(36.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = comment.authorName, style = MaterialTheme.typography.titleSmall)
+                            Text(text = comment.text, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp)
+                    .navigationBarsPadding(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = commentText,
+                    onValueChange = { commentText = it },
+                    placeholder = { Text("Add a comment…") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+                Spacer(Modifier.width(8.dp))
+                IconButton(
+                    onClick = {
+                        if (commentText.isNotBlank()) {
+                            viewModel.addComment(commentText)
+                            commentText = ""
+                        }
+                    }
+                ) {
+                    Icon(Icons.Default.Send, "Send")
+                }
+            }
+        }
     }
 }

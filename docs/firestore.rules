@@ -126,6 +126,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ── Delivery Requests ──────────────────────────────────────────────────
+    match /deliveryRequests/{requestId} {
+      allow read: if isSignedIn()
+        && (resource.data.requesterId == request.auth.uid
+            || resource.data.merchantId == request.auth.uid
+            || isAdmin());
+      // Created, accepted, declined, and expired via Cloud Function only —
+      // the 120-second window is server-authoritative, not client-trusted.
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
     // ── Wallets ────────────────────────────────────────────────────────────
     match /wallets/{uid} {
       allow read: if isOwner(uid) || isAdmin();

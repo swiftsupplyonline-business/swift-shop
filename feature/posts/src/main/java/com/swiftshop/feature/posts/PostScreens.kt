@@ -28,11 +28,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.swiftshop.core.ui.components.SwiftPrimaryButton
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.delay
+import com.swiftshop.core.ui.components.PostCard
+import com.swiftshop.core.ui.components.SwiftAvatar
+import com.swiftshop.core.model.UserTier
+import androidx.compose.foundation.lazy.LazyColumn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -296,13 +300,105 @@ fun CreatePostScreen(
     }
 }
 
+@HiltViewModel
+class PostDetailViewModel @Inject constructor(
+    private val getPost: com.swiftshop.domain.feed.GetPostUseCase,
+    private val observePostComments: com.swiftshop.domain.feed.ObservePostCommentsUseCase,
+    private val postPostComment: com.swiftshop.domain.feed.PostPostCommentUseCase,
+    private val deletePostComment: com.swiftshop.domain.feed.DeletePostCommentUseCase,
+    private val likePost: com.swiftshop.domain.feed.LikePostUseCase,
+    private val observeCurrentUser: com.swiftshop.domain.auth.ObserveCurrentUserUseCase
+) : ViewModel() {
+    private val _post = MutableStateFlow<com.swiftshop.core.model.FeedPost?>(null)
+    val post = _post.asStateFlow()
+
+    private val _comments = MutableStateFlow<List<com.swiftshop.core.model.Comment>>(emptyList())
+    val comments = _comments.asStateFlow()
+
+    private var currentPostId: String? = null
+    private var commentsJob: kotlinx.coroutines.Job? = null
+
+    fun loadPost(postId: String) {
+        if (currentPostId == postId) return
+        currentPostId = postId
+        
+        viewModelScope.launch {
+            getPost(postId).onSuccess {
+                _post.value = it
+            }
+        }
+
+        commentsJob?.cancel()
+        commentsJob = viewModelScope.launch {
+            observePostComments(postId).collect {
+                _comments.value = it
+            }
+        }
+    }
+
+    fun toggleLike() {
+        val current = _post.value ?: return
+        viewModelScope.launch {
+            val nextLiked = !current.isLikedByMe
+            likePost(current.id, nextLiked).onSuccess {
+                _post.value = current.copy(
+                    isLikedByMe = nextLiked,
+                    likeCount = if (nextLiked) current.likeCount + 1 else current.likeCount - 1
+                )
+            }
+        }
+    }
+
+    fun addComment(text: String) {
+        val postId = currentPostId ?: return
+        if (text.isBlank()) return
+        viewModelScope.launch {
+            val user = observeCurrentUser().first() ?: return@launch
+            val comment = com.swiftshop.core.model.Comment(
+                postId = postId,
+                authorId = user.uid,
+                authorName = user.displayName,
+                authorAvatarUrl = user.photoUrl,
+                text = text.trim()
+            )
+            postPostComment(comment).onSuccess {
+                getPost(postId).onSuccess { _post.value = it }
+            }
+        }
+    }
+
+    fun deleteComment(commentId: String) {
+        val postId = currentPostId ?: return
+        viewModelScope.launch {
+            deletePostComment(commentId).onSuccess {
+                getPost(postId).onSuccess { _post.value = it }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PostDetailScreen(navController: androidx.navigation.NavController) {
+fun PostDetailScreen(
+    navController: androidx.navigation.NavController,
+    viewModel: PostDetailViewModel = hiltViewModel()
+) {
+    val postId = remember { navController.currentBackStackEntry?.arguments?.getString("postId").orEmpty() }
+    
+    LaunchedEffect(postId) {
+        if (postId.isNotEmpty()) {
+            viewModel.loadPost(postId)
+        }
+    }
+
+    val post by viewModel.post.collectAsState()
+    val comments by viewModel.comments.collectAsState()
+    var commentText by remember { mutableStateOf("") }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Post") },
+                title = { Text("Post Details") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Default.ArrowBack, "Back")
@@ -311,8 +407,91 @@ fun PostDetailScreen(navController: androidx.navigation.NavController) {
             )
         }
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            Text("Post Detail", modifier = Modifier.padding(16.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(bottom = 16.dp)
+            ) {
+                post?.let { currentPost ->
+                    item {
+                        PostCard(
+                            post = currentPost,
+                            onClick = {},
+                            onUserClick = {},
+                            onLikeClick = { viewModel.toggleLike() }
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            text = "Comments (${comments.size})",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+
+                items(comments, key = { it.id }) { comment ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        SwiftAvatar(url = comment.authorAvatarUrl, tier = UserTier.BASIC, modifier = Modifier.size(36.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = comment.authorName, style = MaterialTheme.typography.titleSmall)
+                            Text(text = comment.text, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp)
+                    .navigationBarsPadding(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = commentText,
+                    onValueChange = { commentText = it },
+                    placeholder = { Text("Add a comment…") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+                Spacer(Modifier.width(8.dp))
+                IconButton(
+                    onClick = {
+                        if (commentText.isNotBlank()) {
+                            viewModel.addComment(commentText)
+                            commentText = ""
+                        }
+                    }
+                ) {
+                    Icon(Icons.Default.Send, "Send")
+                }
+            }
         }
     }
+}
+
+@dagger.Module
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+object PostSocialModule {
+    @dagger.Provides
+    fun provideGetPostUseCase(repo: com.swiftshop.domain.feed.FeedRepository) = com.swiftshop.domain.feed.GetPostUseCase(repo)
+
+    @dagger.Provides
+    fun provideObservePostCommentsUseCase(repo: com.swiftshop.domain.feed.FeedRepository) = com.swiftshop.domain.feed.ObservePostCommentsUseCase(repo)
+
+    @dagger.Provides
+    fun providePostPostCommentUseCase(repo: com.swiftshop.domain.feed.FeedRepository) = com.swiftshop.domain.feed.PostPostCommentUseCase(repo)
+
+    @dagger.Provides
+    fun provideDeletePostCommentUseCase(repo: com.swiftshop.domain.feed.FeedRepository) = com.swiftshop.domain.feed.DeletePostCommentUseCase(repo)
 }

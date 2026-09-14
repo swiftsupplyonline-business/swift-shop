@@ -40,6 +40,5 @@ dependencies {
     implementation(libs.hilt.android)
     kapt(libs.hilt.android.compiler)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.osmdroid.android)
     implementation(libs.timber)
 }
