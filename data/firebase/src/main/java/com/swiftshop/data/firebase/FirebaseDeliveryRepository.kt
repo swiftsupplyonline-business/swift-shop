@@ -56,6 +56,26 @@ class FirebaseDeliveryRepository @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
+    override fun observePendingDeliveryRequestsForMerchant(merchantId: String): Flow<List<DeliveryRequest>> = callbackFlow {
+        // Uses the existing merchantId + status + createdAt composite index.
+        val subscription = firestore.collection("deliveryRequests")
+            .whereEqualTo("merchantId", merchantId)
+            .whereEqualTo("status", "PENDING")
+            .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, _ ->
+                val list = snapshot?.documents?.mapNotNull { it.toObject(FirestoreDeliveryRequest::class.java)?.toDomain(it.id) } ?: emptyList()
+                trySend(list)
+            }
+        awaitClose { subscription.remove() }
+    }
+
+    override suspend fun respondToDeliveryRequest(requestId: String, accept: Boolean): Result<Unit> = runCatching {
+        // The callable is authoritative; this client never mutates status directly.
+        val data = mapOf("requestId" to requestId, "accept" to accept)
+        functions.getHttpsCallable("respondToDeliveryRequest").call(data).await()
+        Unit
+    }
+
     override suspend fun updateDriverLocation(routeId: String, location: GeoPoint): Result<Unit> = runCatching {
         // Direct write allowed for drivers to update their own location for real-time tracking
         firestore.collection("deliveryRoutes").document(routeId)

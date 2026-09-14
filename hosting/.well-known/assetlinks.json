@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.swiftshop.client.dev.debug",
+      "sha256_cert_fingerprints": [
+        "29:62:C6:87:E0:97:D8:8A:0C:E4:DE:B7:17:4C:7E:8D:EF:B6:AF:81:67:D4:FF:02:CA:3A:39:95:DC:57:CE:84"
+      ]
+    }
+  }
+]

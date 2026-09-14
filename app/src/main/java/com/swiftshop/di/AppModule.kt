@@ -270,6 +270,13 @@ object LogisticsModule {
 
     @Provides
     fun provideObserveDeliveryRequestUseCase(repo: DeliveryRepository) = ObserveDeliveryRequestUseCase(repo)
+
+    @Provides
+    fun provideObservePendingDeliveryRequestsForMerchantUseCase(repo: DeliveryRepository) =
+        ObservePendingDeliveryRequestsForMerchantUseCase(repo)
+
+    @Provides
+    fun provideRespondToDeliveryRequestUseCase(repo: DeliveryRepository) = RespondToDeliveryRequestUseCase(repo)
 }
 
 @Module

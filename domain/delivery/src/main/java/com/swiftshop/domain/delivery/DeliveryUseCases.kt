@@ -22,3 +22,13 @@ class CreateDeliveryRequestUseCase(private val repository: DeliveryRepository) {
 class ObserveDeliveryRequestUseCase(private val repository: DeliveryRepository) {
     operator fun invoke(requestId: String): Flow<DeliveryRequest> = repository.observeDeliveryRequest(requestId)
 }
+
+class ObservePendingDeliveryRequestsForMerchantUseCase(private val repository: DeliveryRepository) {
+    operator fun invoke(merchantId: String): Flow<List<DeliveryRequest>> =
+        repository.observePendingDeliveryRequestsForMerchant(merchantId)
+}
+
+class RespondToDeliveryRequestUseCase(private val repository: DeliveryRepository) {
+    suspend operator fun invoke(requestId: String, accept: Boolean): Result<Unit> =
+        repository.respondToDeliveryRequest(requestId, accept)
+}

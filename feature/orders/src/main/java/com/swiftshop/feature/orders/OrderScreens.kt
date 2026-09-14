@@ -27,6 +27,7 @@ fun OrdersScreen(
     viewModel: OrdersViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val isSellerMode by viewModel.isSellerMode.collectAsState()
 
     Scaffold(
         topBar = {
@@ -36,11 +37,17 @@ fun OrdersScreen(
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Default.ArrowBack, "Back")
                     }
+                },
+                actions = {
+                    if (isSellerMode) {
+                        IconButton(onClick = { navController.navigate(Screen.IncomingDeliveryRequests.route) }) {
+                            Icon(Icons.Default.LocalShipping, "Delivery requests")
+                        }
+                    }
                 }
             )
         }
     ) { padding ->
-        val isSellerMode by viewModel.isSellerMode.collectAsState()
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             TabRow(selectedTabIndex = if (isSellerMode) 1 else 0) {
                 Tab(selected = !isSellerMode, onClick = { viewModel.setSellerMode(false) }, text = { Text("Purchases") })

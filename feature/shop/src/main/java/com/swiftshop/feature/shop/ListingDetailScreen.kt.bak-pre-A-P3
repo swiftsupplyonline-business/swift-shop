@@ -10,7 +10,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,7 +64,6 @@ fun ListingDetailScreen(
     var activeSheet by remember { mutableStateOf<ListingType?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showCommentSheet by remember { mutableStateOf(false) }
-    var showShopMap by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(actionState) {
         when (val state = actionState) {
@@ -372,7 +370,12 @@ fun ListingDetailScreen(
                                     .fillMaxWidth()
                                     .clip(MaterialTheme.shapes.medium)
                                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                    .clickable { showShopMap = !showShopMap }
+                                    .clickable {
+                                        val label = Uri.encode(shop?.name?.ifBlank { "Shop" } ?: "Shop")
+                                        val uri = Uri.parse("geo:${shopLocation.lat},${shopLocation.lng}?q=${shopLocation.lat},${shopLocation.lng}($label)")
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
+                                        runCatching { context.startActivity(intent) }
+                                    }
                                     .padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -383,22 +386,9 @@ fun ListingDetailScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                     modifier = Modifier.weight(1f)
                                 )
-                                Text(
-                                    if (showShopMap) "Hide map" else "Show map",
+                                Text("Directions",
                                     style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            if (showShopMap) {
-                                Spacer(Modifier.height(8.dp))
-                                OsmPinDropMap(
-                                    initialLocation = shopLocation,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(220.dp)
-                                        .clip(MaterialTheme.shapes.medium),
-                                    onLocationSelected = { /* intentionally ignored — view-only */ }
-                                )
+                                    color = MaterialTheme.colorScheme.primary)
                             }
                         }
 

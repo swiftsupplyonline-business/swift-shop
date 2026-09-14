@@ -179,8 +179,8 @@ export const updateDeliveryStatus = onCall(async (request) => {
  * - Response: requestId (string)
  *
  * The merchant has DELIVERY_REQUEST_WINDOW_MS to respond (see
- * respondToDeliveryRequest, not yet implemented — B6/B7). expiresAt is set
- * here, server-side, and is the sole source of truth for the countdown.
+ * respondToDeliveryRequest below, B6/B7). expiresAt is set here,
+ * server-side, and is the sole source of truth for the countdown.
  */
 export const createDeliveryRequest = onCall(async (request) => {
     const auth = request.auth;
@@ -230,6 +230,65 @@ export const createDeliveryRequest = onCall(async (request) => {
 
     await requestRef.set(newRequest);
     return requestRef.id;
+});
+
+/**
+ * Merchant response (accept/decline) to a pending delivery job request.
+ *
+ * Contract (matches FirebaseDeliveryRepository.respondToDeliveryRequest on Android):
+ * - Request: { requestId: string, accept: boolean }
+ * - Response: { success: true, status: "ACCEPTED" | "DECLINED" }
+ *
+ * Scope note: ACCEPTED/DECLINED here means only that the merchant has
+ * responded to the job request. This function intentionally does not
+ * create an order, touch payment, wallet, ledger, inventory, escrow, or
+ * deliveryRoutes — the handoff from an accepted request into those systems
+ * is separate, not-yet-designed work.
+ */
+export const respondToDeliveryRequest = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { requestId, accept } = request.data;
+    if (!requestId || typeof accept !== "boolean") {
+        throw new HttpsError("invalid-argument", "requestId and accept (boolean) are required");
+    }
+
+    const db = admin.firestore();
+    const newStatus = accept ? "ACCEPTED" : "DECLINED";
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const requestRef = db.collection("deliveryRequests").doc(requestId);
+            const requestDoc = await transaction.get(requestRef);
+            if (!requestDoc.exists) throw new Error("Delivery request not found");
+            const deliveryRequest = requestDoc.data()!;
+
+            // Strict ownership check only — no admin bypass, no new role model.
+            if (deliveryRequest.merchantId !== auth.uid) {
+                throw new Error("Only the requested merchant can respond to this delivery request");
+            }
+
+            // Fail closed: any non-PENDING status (ACCEPTED, DECLINED, EXPIRED,
+            // CANCELLED) rejects a second response, including a double-tap of
+            // the same action or Accept racing the expiry sweep.
+            if (deliveryRequest.status !== "PENDING") {
+                throw new Error(`Cannot respond to a request that is already ${deliveryRequest.status}`);
+            }
+
+            if (deliveryRequest.expiresAt <= Date.now()) {
+                throw new Error("This delivery request has expired");
+            }
+
+            transaction.update(requestRef, {
+                status: newStatus,
+                updatedAt: Date.now()
+            });
+        });
+        return { success: true, status: newStatus };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
 });
 
 /**

@@ -14,4 +14,6 @@ interface DeliveryRepository {
     fun getActiveDeliveriesForDriver(driverId: String): Flow<List<DeliveryRoute>>
     suspend fun createDeliveryRequest(listingId: String, pickup: GeoPoint, dropoff: GeoPoint): Result<String>
     fun observeDeliveryRequest(requestId: String): Flow<DeliveryRequest>
+    fun observePendingDeliveryRequestsForMerchant(merchantId: String): Flow<List<DeliveryRequest>>
+    suspend fun respondToDeliveryRequest(requestId: String, accept: Boolean): Result<Unit>
 }
