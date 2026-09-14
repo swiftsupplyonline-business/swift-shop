@@ -2,7 +2,7 @@
 <resources>
     <style name="Theme.SwiftShop" parent="Theme.Material3.DayNight.NoActionBar" />
     <style name="Theme.SwiftShop.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">#0D1B3E</item>
+        <item name="windowSplashScreenBackground">#FFFFFF</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/swift_icon_splash</item>
         <item name="postSplashScreenTheme">@style/Theme.SwiftShop</item>
     </style>

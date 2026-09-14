@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
-        android:drawable="@drawable/swift_icon"
-        android:width="288dp"
-        android:height="288dp"
-        android:gravity="center" />
+        android:width="200dp"
+        android:height="200dp"
+        android:gravity="center">
+        <bitmap
+            android:src="@drawable/swift_icon_flat"
+            android:tint="#1D6BF3" />
+    </item>
 </layer-list>

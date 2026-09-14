@@ -158,6 +158,7 @@ fun CreatePostScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .imePadding()
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -454,7 +455,7 @@ fun PostDetailScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(12.dp)
-                    .navigationBarsPadding(),
+                    .imePadding(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(

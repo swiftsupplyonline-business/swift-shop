@@ -120,7 +120,7 @@ fun CommentComposer(
     var text by remember { mutableStateOf("") }
     
     Surface(tonalElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(8.dp).navigationBarsPadding()) {
+        Column(modifier = Modifier.padding(8.dp).imePadding()) {
             if (replyingTo != null) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
