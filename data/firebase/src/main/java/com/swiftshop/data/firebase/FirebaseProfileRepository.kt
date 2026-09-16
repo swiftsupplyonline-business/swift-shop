@@ -1,4 +1,4 @@
-﻿package com.swiftshop.data.firebase
+package com.swiftshop.data.firebase
 
 import com.google.firebase.auth.FirebaseAuth
 import java.util.Date
@@ -41,7 +41,7 @@ class FirebaseProfileRepository @Inject constructor(
 
     override suspend fun updateProfile(profile: UserProfile): Result<Unit> = runCatching {
         firestore.collection("profiles").document(profile.uid)
-            .update(profile.toFirestoreUpdateMap())
+            .set(profile.toFirestoreUpdateMap(), com.google.firebase.firestore.SetOptions.merge())
             .await()
         Unit
     }
@@ -127,7 +127,7 @@ class FirebaseProfileRepository @Inject constructor(
     }
 }
 
-// â”€â”€â”€ DTOs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── DTOs ────────────────────────────────────────────────────────────────────
 
 data class FirestoreUserProfile(
     val displayName: String = "",

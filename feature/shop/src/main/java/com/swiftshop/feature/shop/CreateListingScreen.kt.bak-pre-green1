@@ -73,50 +73,8 @@ fun CreateListingScreen(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris -> viewModel.addImages(uris) }
 
-    // -- Post-publish success overlay -------------------------------------
-    if (uiState is CreateListingUiState.Success) {
-        val listingId = (uiState as CreateListingUiState.Success).listingId
-        val context = androidx.compose.ui.platform.LocalContext.current
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { onCreated() },
-            icon = {
-                androidx.compose.material3.Icon(
-                    Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = com.swiftshop.core.ui.theme.SwiftShopColors.Success,
-                    modifier = androidx.compose.ui.Modifier.size(48.dp)
-                )
-            },
-            title = { androidx.compose.material3.Text("Your hustle is live! ??") },
-            text = {
-                androidx.compose.material3.Text(
-                    "Your sell is published and people can find it now.",
-                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium
-                )
-            },
-            confirmButton = {
-                androidx.compose.material3.TextButton(onClick = {
-                    val shareUrl = "https://swift-dev-3d3ae.web.app/listing/$listingId"
-                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(android.content.Intent.EXTRA_TEXT, "Check out my hustle on Swift: $shareUrl")
-                    }
-                    context.startActivity(android.content.Intent.createChooser(intent, "Share your sell"))
-                }) { androidx.compose.material3.Text("Share") }
-            },
-            dismissButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    androidx.compose.material3.TextButton(onClick = {
-                        onCreated()
-                    }) { androidx.compose.material3.Text("Keep selling") }
-                    androidx.compose.material3.TextButton(onClick = {
-                        onCreated()
-                        // Navigation to listing detail handled by caller via listingId if needed
-                    }) { androidx.compose.material3.Text("View sell") }
-                }
-            }
-        )
-        return
+    LaunchedEffect(uiState) {
+        if (uiState is CreateListingUiState.Success) onCreated()
     }
 
     Scaffold(

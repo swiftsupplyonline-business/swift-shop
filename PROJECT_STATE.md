@@ -98,7 +98,7 @@ a batch to continue.
 
 | File | Last reviewed commit/state | Status as of this writing | Notes |
 |---|---|---|---|
-| `functions/src/commerce.ts` | `ebfae2c` (checkpoint) | **DIRTY, UNREVIEWED** — local diff adds `selectedDeliveryListingId` handling to `calculateOrderFees`/`createOrder`, and a seller status-transition matrix to `updateOrderStatus` | Not authorized through RED cycle by any session in this document's history. Needs review before touching further. Contains the fix target for Bug 1 (Section 3). |
+| `functions/src/commerce.ts` | Reviewed 2026-09-16 | Reviewed + partially fixed — 2 items still open (see Section 5) | Three layers reconciled 2026-09-16: (1) original Incident-1 diff (delivery-listing selection + seller status-transition matrix) — traced line-by-line, retroactively authorized by human operator; (2) Bug 1 fix (named-item "not found" error) — implemented + build-verified, see Batch 3; (3) shop-mismatch `shopId` ownership check — implemented + build-verified, see Batch 3. Open: fallback-path arbitrary pick when 2+ DELIVER listings exist and none selected (Section 5); `SELLER_TRANSITIONS` matrix not yet adversarially tested. |
 | `functions/src/finance.ts` | `ebfae2c` | Clean | No known pending work |
 | `functions/src/mopay.ts` | `ebfae2c` | Clean | No known pending work |
 | `core/model/Models.kt` | `ebfae2c` | **DIRTY, UNREVIEWED** — adds `requiresDelivery: Boolean` and `selectedDeliveryListingId: String` to `Order` | Same unauthorized change set as commerce.ts above |
@@ -108,6 +108,8 @@ a batch to continue.
 **If you are an agent and you find a RED file dirty with no row here
 explaining why: STOP. Add a row documenting exactly what you found, flag it
 to the human operator, and do not build on top of it until reviewed.**
+
+**Update 2026-09-16:** the code content introduced in this incident (delivery-listing selection logic + seller status-transition matrix in commerce.ts) has since been traced line-by-line and retroactively authorized by the human operator. This resolves the was-this-code-sound question but NOT the how-did-a-commit-get-pushed question — that remains open.
 
 ---
 
@@ -183,10 +185,18 @@ to the human operator, and do not build on top of it until reviewed.**
 
 ## 5. PROPOSED / AWAITING REVIEW (nothing here is authorized to implement)
 
-- Bug 1 fix in `commerce.ts` (RED) — awaiting product decision (drop item
-  vs. name it in the error) + human authorization
-- Delivery-listing shop-mismatch fix in `commerce.ts` (RED) — awaiting
-  scoping + authorization
+- Delivery-listing fallback ordering gap in `commerce.ts` (RED) — when
+  `requiresDelivery` is true, no `selectedDeliveryListingId` is given, and
+  a shop has 2+ DELIVER listings, the fallback path takes
+  `deliverySnap.docs[0]` with no defined ordering. Not a security issue
+  (already shop-scoped), but "which delivery option did the buyer get" is
+  effectively undefined. A proposed diff exists in `RED_PROPOSALS.md`,
+  added 2026-09-16 — note it likely requires a new Firestore composite
+  index, flagged in the proposal itself.
+- Adversarial edge-case testing of the `SELLER_TRANSITIONS` matrix in
+  `updateOrderStatus` (implemented as part of the authorized Incident-1
+  diff, never stress-tested — e.g. behavior on PENDING, whether a seller
+  can skip straight to READY)
 - FCM/push notifications — no infrastructure exists anywhere in the
   project yet (checked exhaustively across `functions/src/`); needed for
   the delivery-request flow to be genuinely usable, not yet scoped as its
@@ -196,12 +206,33 @@ to the human operator, and do not build on top of it until reviewed.**
 
 ## AUTHORIZED / IN PROGRESS
 
-- Bug 2 fix in `CheckoutViewModel`/`CheckoutScreen` (AMBER, client-only) —
-  authorized to scope and implement next
+(none)
 
 ---
 
 ## 6. BATCH LOG (append a new entry every time a batch closes — never delete history)
+
+### Batch 4 — CartStep/Error state cosmetic fix (2026-09-16)
+- **Classification:** GREEN (presentation-only, no logic change)
+- **Files:** `feature/checkout/src/main/java/com/swiftshop/feature/checkout/CheckoutScreen.kt`
+- **Fix:** `CartStep`'s empty-items branch previously showed "Your cart is empty, add items to get started" for BOTH a genuinely empty cart AND an `Error` state, contradicting the real error already shown in the footer. Replaced the if/else with a three-way `when` on state; `Error` now shows a neutral "Something went wrong / see the message below" placeholder instead.
+- **Status:** implemented, build-verified (`gradlew.bat assembleDevDebug` PASS, `feature:checkout` recompiled cleanly, 1m 16s). NOT committed, NOT deployed.
+
+### Batch 3 — Bug 1 fix + shop-mismatch fix in commerce.ts (2026-09-16)
+- **Classification:** RED (functions/src/commerce.ts)
+- **Files:** `functions/src/commerce.ts`, `domain/commerce/CommerceUseCases.kt`, `data/firebase/FirebaseCommerceRepository.kt`, `data/repositories/OfflineFirstCommerceRepository.kt`, `feature/checkout/CheckoutViewModel.kt`
+- **Bug 1 fix:** both listing-existence checks now throw a named-item error instead of a bare `Listing {id} not found`.
+- **Shop-mismatch fix:** both sites verify `deliveryListing.shopId === shopId`, threaded through the full repository chain; `CheckoutViewModel` restructured to source `shopId` reactively from the cart via `_cartShopId` + `flatMapLatest`.
+- **Verification:** `tsc --noEmit` PASS, `npm run build` PASS, `gradlew.bat assembleDevDebug` PASS — confirmed as a genuine full recompile (8m 58s, 130 tasks executed).
+- **Explicitly not done:** fallback-ordering gap, `SELLER_TRANSITIONS` adversarial testing — see Section 5.
+- **Status:** implemented, build-verified. NOT committed, NOT deployed.
+
+### Batch 2 — Bug 2 Fix: Checkout Fee Recalculation State (2026-09-15)
+- **Classification:** AMBER (client-only logic change to presentation state)
+- **Files:** `feature/checkout/src/main/java/com/swiftshop/feature/checkout/CheckoutViewModel.kt`, `feature/checkout/src/main/java/com/swiftshop/feature/checkout/CheckoutScreen.kt`
+- **Verification:** `analyze_file` semantic check PASS for both modified files. `gradlew.bat` build attempt initially reported an environment error, later confirmed to be a PowerShell invocation issue (missing `.\` prefix), not a real build failure — reconfirmed passing in Batch 3.
+- **Explicitly not done:** Live device runtime verification.
+- **Status:** Implemented and build-verified (confirmed in Batch 3's full recompile). NOT committed, NOT deployed.
 
 ### Batch 1 — Delivery Response vertical (W2.4 B6/B7): merchant accept/decline
 - **Classification:** AMBER+ (authority-sensitive: changes ownership/status

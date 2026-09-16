@@ -62,6 +62,8 @@ class OfflineFirstCommerceRepository @Inject constructor(
             remote.getShopListings(shopId, page, pageSize).onEach { local.cacheListings(it) }
         ).catch { emitAll(local.observeShopListings(shopId)) }
 
+    override fun getDeliveryListings(shopId: String): Flow<List<Listing>> = remote.getDeliveryListings(shopId)
+
     override suspend fun getListing(listingId: String) = runCatching {
         remote.getListing(listingId).getOrThrow()
     }.recoverCatching {
@@ -96,8 +98,12 @@ class OfflineFirstCommerceRepository @Inject constructor(
 
     override suspend fun initiateSubscription(targetTier: com.swiftshop.core.model.UserTier) = remote.initiateSubscription(targetTier)
 
-    override suspend fun calculateOrderFees(items: List<com.swiftshop.core.model.OrderItem>, requiresDelivery: Boolean, address: com.swiftshop.core.model.DeliveryAddress?) =
-        remote.calculateOrderFees(items, requiresDelivery, address)
+    override suspend fun calculateOrderFees(
+        items: List<com.swiftshop.core.model.OrderItem>,
+        requiresDelivery: Boolean,
+        address: com.swiftshop.core.model.DeliveryAddress?,
+        selectedDeliveryListingId: String?
+    ) = remote.calculateOrderFees(items, requiresDelivery, address, selectedDeliveryListingId)
 
     override suspend fun placeOrder(
         items: List<com.swiftshop.core.model.OrderItem>,
@@ -106,8 +112,9 @@ class OfflineFirstCommerceRepository @Inject constructor(
         paymentMethod: com.swiftshop.core.model.PaymentMethod,
         provider: String?,
         phoneNumber: String,
-        idempotencyKey: String
-    ) = remote.placeOrder(items, requiresDelivery, address, paymentMethod, provider, phoneNumber, idempotencyKey)
+        idempotencyKey: String,
+        selectedDeliveryListingId: String?
+    ) = remote.placeOrder(items, requiresDelivery, address, paymentMethod, provider, phoneNumber, idempotencyKey, selectedDeliveryListingId)
 
     override suspend fun verifyMopayPayment(sessionId: String) = remote.verifyMopayPayment(sessionId)
 

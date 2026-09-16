@@ -18,7 +18,11 @@ import javax.inject.Inject
 
 sealed interface CheckoutUiState {
     data object Loading : CheckoutUiState
-    data class CartLoaded(val items: List<CartItem>, val summary: OrderSummary) : CheckoutUiState
+    data class CartLoaded(
+        val items: List<CartItem>,
+        val summary: OrderSummary,
+        val isRecalculating: Boolean = false
+    ) : CheckoutUiState
     data object PlacingOrder : CheckoutUiState
     data class OrderPlaced(val orderId: String) : CheckoutUiState
     data class AwaitingPayment(val orderId: String, val paymentUrl: String, val sessionId: String) : CheckoutUiState
@@ -31,6 +35,7 @@ class CheckoutViewModel @Inject constructor(
     private val observeCurrentUser: ObserveCurrentUserUseCase,
     private val observeCart: ObserveCartUseCase,
     private val calculateOrderFees: CalculateOrderFeesUseCase,
+    private val getDeliveryListings: GetDeliveryListingsUseCase,
     private val placeOrder: PlaceOrderUseCase,
     private val verifyMopayPayment: VerifyMopayPaymentUseCase,
     private val removeFromCartUseCase: RemoveFromCartUseCase,
@@ -41,6 +46,7 @@ class CheckoutViewModel @Inject constructor(
     val uiState: StateFlow<CheckoutUiState> = _uiState.asStateFlow()
 
     private var currentCartItems: List<CartItem> = emptyList()
+    private val _cartShopId = MutableStateFlow("")
     
     private val _deliveryAddress = MutableStateFlow(DeliveryAddress(city = "Maseru", country = "Lesotho"))
     var deliveryAddress by mutableStateOf(_deliveryAddress.value)
@@ -48,6 +54,12 @@ class CheckoutViewModel @Inject constructor(
 
     private val _requiresDelivery = MutableStateFlow(false)
     var requiresDelivery by mutableStateOf(_requiresDelivery.value)
+        private set
+
+    private val _deliveryListings = MutableStateFlow<List<Listing>>(emptyList())
+    val deliveryListings = _deliveryListings.asStateFlow()
+
+    var selectedDeliveryListingId by mutableStateOf<String?>(null)
         private set
 
     var paymentMethod by mutableStateOf(PaymentMethod.MOPAY)
@@ -62,6 +74,7 @@ class CheckoutViewModel @Inject constructor(
             observeCurrentUser().filterNotNull().collect { user ->
                 currentUserId = user.uid
                 observeCart(user.uid).collect { items ->
+                    _cartShopId.value = items.firstOrNull()?.shopId ?: ""
                     currentCartItems = items
                     updateFees()
                 }
@@ -82,6 +95,20 @@ class CheckoutViewModel @Inject constructor(
                 .distinctUntilChanged()
                 .collect { updateFees() }
         }
+
+        viewModelScope.launch {
+            _cartShopId
+                .filter { it.isNotBlank() }
+                .distinctUntilChanged()
+                .flatMapLatest { shopId -> getDeliveryListings(shopId) }
+                .collect { listings ->
+                _deliveryListings.value = listings
+                if (selectedDeliveryListingId == null && listings.isNotEmpty()) {
+                    selectedDeliveryListingId = listings.first().id
+                    updateFees()
+                }
+            }
+        }
     }
 
     fun updateAddress(address: DeliveryAddress) {
@@ -94,6 +121,11 @@ class CheckoutViewModel @Inject constructor(
         _requiresDelivery.value = value
     }
 
+    fun updateSelectedDeliveryListing(listingId: String) {
+        selectedDeliveryListingId = listingId
+        updateFees()
+    }
+
     private fun updateFees() {
         if (currentCartItems.isEmpty()) {
             _uiState.value = CheckoutUiState.Error("Cart is empty")
@@ -102,7 +134,13 @@ class CheckoutViewModel @Inject constructor(
 
         feeCalculationJob?.cancel()
         feeCalculationJob = viewModelScope.launch {
-            _uiState.value = CheckoutUiState.Loading
+            val currentState = _uiState.value
+            if (currentState is CheckoutUiState.CartLoaded) {
+                _uiState.value = currentState.copy(isRecalculating = true)
+            } else {
+                _uiState.value = CheckoutUiState.Loading
+            }
+
             val orderItems = currentCartItems.map {
                 OrderItem(
                     listingId = it.listingId,
@@ -112,9 +150,14 @@ class CheckoutViewModel @Inject constructor(
                     selectedOptions = it.selectedOptions
                 )
             }
-            calculateOrderFees(orderItems, requiresDelivery, if (requiresDelivery) deliveryAddress else null).fold(
+            calculateOrderFees(
+                orderItems,
+                requiresDelivery,
+                if (requiresDelivery) deliveryAddress else null,
+                if (requiresDelivery) selectedDeliveryListingId else null
+            ).fold(
                 onSuccess = { summary ->
-                    _uiState.value = CheckoutUiState.CartLoaded(currentCartItems, summary)
+                    _uiState.value = CheckoutUiState.CartLoaded(currentCartItems, summary, isRecalculating = false)
                 },
                 onFailure = { 
                     _uiState.value = CheckoutUiState.Error(it.message ?: "Failed to calculate fees")
@@ -151,7 +194,8 @@ class CheckoutViewModel @Inject constructor(
                 paymentMethod = paymentMethod,
                 provider = paymentProvider,
                 phoneNumber = paymentPhone,
-                idempotencyKey = idempotencyKey
+                idempotencyKey = idempotencyKey,
+                selectedDeliveryListingId = if (requiresDelivery) selectedDeliveryListingId else null
             ).fold(
                 onSuccess = { initiation ->
                     clearCartUseCase(currentUserId)

@@ -68,6 +68,18 @@ class FirebaseCommerceRepository @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
+    override fun getDeliveryListings(shopId: String): Flow<List<Listing>> = callbackFlow {
+        val subscription = firestore.collection("listings")
+            .whereEqualTo("listingType", "DELIVER")
+            .whereEqualTo("shopId", shopId)
+            .whereEqualTo("isAvailable", true)
+            .addSnapshotListener { snapshot, _ ->
+                val list = snapshot?.toObjects(FirestoreListing::class.java)?.map { it.toDomain() } ?: emptyList()
+                trySend(list)
+            }
+        awaitClose { subscription.remove() }
+    }
+
     override suspend fun getListing(listingId: String): Result<Listing> = runCatching {
         firestore.collection("listings").document(listingId).get().await()
             .toObject(FirestoreListing::class.java)?.toDomain() ?: throw NoSuchElementException("Listing not found")
@@ -180,11 +192,17 @@ class FirebaseCommerceRepository @Inject constructor(
 
     // â”€â”€â”€ Orders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-    override suspend fun calculateOrderFees(items: List<OrderItem>, requiresDelivery: Boolean, address: DeliveryAddress?): Result<OrderSummary> = runCatching {
+    override suspend fun calculateOrderFees(
+        items: List<OrderItem>,
+        requiresDelivery: Boolean,
+        address: DeliveryAddress?,
+        selectedDeliveryListingId: String?
+    ): Result<OrderSummary> = runCatching {
         val data = mapOf(
             "items" to items.map { it.toFirestore() },
             "requiresDelivery" to requiresDelivery,
-            "deliveryAddress" to address?.toFirestore()
+            "deliveryAddress" to address?.toFirestore(),
+            "selectedDeliveryListingId" to selectedDeliveryListingId
         )
         val result = functions.getHttpsCallable("calculateOrderFees").call(data).await()
         val resMap = result.data as Map<String, Any>
@@ -205,7 +223,8 @@ class FirebaseCommerceRepository @Inject constructor(
         paymentMethod: PaymentMethod,
         provider: String?,
         phoneNumber: String,
-        idempotencyKey: String
+        idempotencyKey: String,
+        selectedDeliveryListingId: String?
     ): Result<OrderInitiation> = runCatching {
         val data = mapOf(
             "items" to items.map { it.toFirestore() },
@@ -214,7 +233,8 @@ class FirebaseCommerceRepository @Inject constructor(
             "paymentMethod" to paymentMethod.name,
             "provider" to provider,
             "phoneNumber" to phoneNumber,
-            "idempotencyKey" to idempotencyKey
+            "idempotencyKey" to idempotencyKey,
+            "selectedDeliveryListingId" to selectedDeliveryListingId
         )
         val result = functions.getHttpsCallable("createOrder").call(data).await()
         val resMap = result.data as Map<String, Any>
@@ -301,8 +321,7 @@ fun Shop.toFirestore() = mapOf(
     "logoUrl" to logoUrl, "coverUrl" to coverUrl, "category" to category,
     "locationLat" to location.lat, "locationLng" to location.lng, "locationAddress" to locationAddress,
     "isVerified" to isVerified, "isActive" to isActive, "rating" to rating,
-    "reviewCount" to reviewCount, "followerCount" to followerCount, "listingCount" to listingCount,
-    "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+    "reviewCount" to reviewCount, "followerCount" to followerCount, "listingCount" to listingCount
 )
 
 fun Shop.toUpdateMap() = mapOf(
@@ -383,12 +402,14 @@ data class FirestoreOrder(
     val currency: String = "LSL",
     val status: String = "PENDING",
     val deliveryAddress: FirestoreDeliveryAddress? = null,
+    @get:PropertyName("requiresDelivery") @set:PropertyName("requiresDelivery") var requiresDelivery: Boolean = false,
+    val selectedDeliveryListingId: String = "",
     val paymentId: String = "",
     val deliveryRequestId: String = "",
     val notes: String = "",
     val createdAt: Any? = null
 ) {
-    fun toDomain() = Order(id, buyerId, sellerId, shopId, items.map { it.toDomain() }, MoneyAmount(currency, subtotalMinorUnits), MoneyAmount(currency, deliveryFeeMinorUnits), MoneyAmount(currency, platformFeeMinorUnits), MoneyAmount(currency, totalMinorUnits), runCatching { OrderStatus.valueOf(status) }.getOrDefault(OrderStatus.PENDING), deliveryAddress?.toDomain() ?: DeliveryAddress(), paymentId, deliveryRequestId, notes, tsToLong(createdAt), 0L)
+    fun toDomain() = Order(id, buyerId, sellerId, shopId, items.map { it.toDomain() }, MoneyAmount(currency, subtotalMinorUnits), MoneyAmount(currency, deliveryFeeMinorUnits), MoneyAmount(currency, platformFeeMinorUnits), MoneyAmount(currency, totalMinorUnits), runCatching { OrderStatus.valueOf(status) }.getOrDefault(OrderStatus.PENDING), deliveryAddress?.toDomain() ?: DeliveryAddress(), requiresDelivery, selectedDeliveryListingId, paymentId, deliveryRequestId, notes, tsToLong(createdAt), 0L)
 }
 
 data class FirestoreOrderItem(
@@ -419,6 +440,8 @@ fun Order.toFirestore() = mapOf(
     "subtotalMinorUnits" to subtotal.minorUnits, "deliveryFeeMinorUnits" to deliveryFee.minorUnits,
     "platformFeeMinorUnits" to platformFee.minorUnits, "totalMinorUnits" to total.minorUnits,
     "currency" to total.currency, "status" to status.name, "paymentId" to paymentId,
+    "requiresDelivery" to requiresDelivery,
+    "selectedDeliveryListingId" to selectedDeliveryListingId,
     "deliveryRequestId" to deliveryRequestId, "notes" to notes,
     "deliveryAddress" to deliveryAddress.toFirestore(),
     "createdAt" to createdAt

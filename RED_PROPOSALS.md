@@ -99,3 +99,30 @@ deliveryFee = deliveryListing.priceMinorUnits || 0;
              .whereEqualTo("isAvailable", true)
              .addSnapshotListener { snapshot, _ ->
 ```
+
+
+---
+
+## 3. FALLBACK DELIVERY-LISTING ORDERING GAP (proposed 2026-09-16)
+
+**Issue:** When `requiresDelivery` is true, no `selectedDeliveryListingId` is given, and a shop has 2+ DELIVER listings, both `calculateOrderFees` and `createOrder` fall back to `deliverySnap.docs[0]` with no defined ordering. Not a security issue (already shop-scoped), but "which delivery option did the buyer get" is effectively undefined.
+
+**Proposed Fix:** add a deterministic ordering — cheapest first:
+
+```diff
+--- a/functions/src/commerce.ts
++++ b/functions/src/commerce.ts
+@@ -50,6 +50,7 @@
+             const deliverySnap = await db.collection("listings")
+                 .where("shopId", "==", shopId)
+                 .where("listingType", "==", "DELIVER")
+                 .where("isAvailable", "==", true)
++                .orderBy("priceMinorUnits", "asc")
+                 .get();
+ 
+             if (deliverySnap.empty) {
+```
+
+*(Identical addition to the equivalent query inside the `createOrder` transaction.)*
+
+**Caveat before implementing:** adding `.orderBy()` alongside three equality `.where()` filters will very likely require a new Firestore composite index (`shopId + listingType + isAvailable + priceMinorUnits`). Confirm against `docs/firestore.indexes.json` first — an undeployed index means the query fails at runtime.

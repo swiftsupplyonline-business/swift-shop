@@ -98,6 +98,7 @@ interface CommerceRepository {
 
     // Listings
     fun getShopListings(shopId: String, page: Int, pageSize: Int): Flow<List<Listing>>
+    fun getDeliveryListings(shopId: String): Flow<List<Listing>> = kotlinx.coroutines.flow.emptyFlow()
     suspend fun getListing(listingId: String): Result<Listing>
     suspend fun getUserListings(userId: String): Result<List<Listing>>
     fun observeUserListings(userId: String): Flow<List<Listing>> = kotlinx.coroutines.flow.emptyFlow()
@@ -123,7 +124,12 @@ interface CommerceRepository {
     fun observeSubscription(userId: String): Flow<Subscription?> = kotlinx.coroutines.flow.emptyFlow()
 
     // Orders
-    suspend fun calculateOrderFees(items: List<OrderItem>, requiresDelivery: Boolean, address: DeliveryAddress?): Result<OrderSummary>
+    suspend fun calculateOrderFees(
+        items: List<OrderItem>,
+        requiresDelivery: Boolean,
+        address: DeliveryAddress?,
+        selectedDeliveryListingId: String? = null
+    ): Result<OrderSummary>
     suspend fun placeOrder(
         items: List<OrderItem>,
         requiresDelivery: Boolean,
@@ -131,7 +137,8 @@ interface CommerceRepository {
         paymentMethod: PaymentMethod,
         provider: String?,
         phoneNumber: String,
-        idempotencyKey: String
+        idempotencyKey: String,
+        selectedDeliveryListingId: String? = null
     ): Result<OrderInitiation>
     suspend fun verifyMopayPayment(sessionId: String): Result<Unit>
     fun observeUserOrders(userId: String): Flow<List<Order>>
@@ -160,6 +167,10 @@ class GetShopUseCase(private val repository: CommerceRepository) {
 class GetShopListingsUseCase(private val repository: CommerceRepository) {
     operator fun invoke(shopId: String, page: Int = 0, pageSize: Int = 20): Flow<List<Listing>> =
         repository.getShopListings(shopId, page, pageSize)
+}
+
+class GetDeliveryListingsUseCase(private val repository: CommerceRepository) {
+    operator fun invoke(shopId: String): Flow<List<Listing>> = repository.getDeliveryListings(shopId)
 }
 
 class GetListingUseCase(private val repository: CommerceRepository) {
@@ -204,8 +215,12 @@ class ClearCartUseCase(private val repository: CommerceRepository) {
 }
 
 class CalculateOrderFeesUseCase(private val repository: CommerceRepository) {
-    suspend operator fun invoke(items: List<OrderItem>, requiresDelivery: Boolean, address: DeliveryAddress?): Result<OrderSummary> =
-        repository.calculateOrderFees(items, requiresDelivery, address)
+    suspend operator fun invoke(
+        items: List<OrderItem>,
+        requiresDelivery: Boolean,
+        address: DeliveryAddress?,
+        selectedDeliveryListingId: String? = null
+    ): Result<OrderSummary> = repository.calculateOrderFees(items, requiresDelivery, address, selectedDeliveryListingId)
 }
 
 class PlaceOrderUseCase(private val repository: CommerceRepository) {
@@ -216,13 +231,14 @@ class PlaceOrderUseCase(private val repository: CommerceRepository) {
         paymentMethod: PaymentMethod,
         provider: String?,
         phoneNumber: String,
-        idempotencyKey: String
+        idempotencyKey: String,
+        selectedDeliveryListingId: String? = null
     ): Result<OrderInitiation> {
         if (items.isEmpty()) return Result.failure(IllegalArgumentException("Cart is empty"))
         if (idempotencyKey.isBlank()) return Result.failure(IllegalArgumentException("Idempotency key required"))
         if (requiresDelivery && address == null) return Result.failure(IllegalArgumentException("Delivery address required when delivery is requested"))
         // Server-side will re-validate all prices and calculate authoritative fees
-        return repository.placeOrder(items, requiresDelivery, address, paymentMethod, provider, phoneNumber, idempotencyKey)
+        return repository.placeOrder(items, requiresDelivery, address, paymentMethod, provider, phoneNumber, idempotencyKey, selectedDeliveryListingId)
     }
 }
 

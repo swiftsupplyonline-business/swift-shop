@@ -150,6 +150,17 @@ fun OrderDetailScreen(
     viewModel: OrdersViewModel = hiltViewModel()
 ) {
     val detailState by viewModel.detailState.collectAsState()
+    val isSellerMode by viewModel.isSellerMode.collectAsState()
+    val fulfillmentState by viewModel.fulfillmentState.collectAsState()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(fulfillmentState) {
+        if (fulfillmentState is FulfillmentState.Error) {
+            snackbarHostState.showSnackbar((fulfillmentState as FulfillmentState.Error).message)
+            viewModel.resetFulfillmentState()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -161,7 +172,8 @@ fun OrderDetailScreen(
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         when (val state = detailState) {
             is OrderDetailState.Loading -> LoadingState()
@@ -258,6 +270,54 @@ fun OrderDetailScreen(
                     }
 
                     // Actions
+                    if (isSellerMode) {
+                        when (order.status) {
+                            OrderStatus.CONFIRMED -> {
+                                item {
+                                    SwiftPrimaryButton(
+                                        text = "Start preparing",
+                                        onClick = { viewModel.fulfillOrder() },
+                                        isLoading = fulfillmentState is FulfillmentState.Processing,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+                            OrderStatus.PROCESSING -> {
+                                item {
+                                    SwiftPrimaryButton(
+                                        text = "Mark as ready",
+                                        onClick = { viewModel.fulfillOrder() },
+                                        isLoading = fulfillmentState is FulfillmentState.Processing,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+                            else -> {}
+                        }
+                    }
+
+                    if (!isSellerMode && order.requiresDelivery &&
+                        order.selectedDeliveryListingId.isNotBlank() &&
+                        (order.status == OrderStatus.CONFIRMED || order.status == OrderStatus.READY)) {
+                        item {
+                            OutlinedButton(
+                                onClick = {
+                                    val listingId = viewModel.getDeliveryListingId()
+                                    if (listingId != null) {
+                                        navController.navigate(Screen.RequestDelivery.createRoute(listingId))
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = MaterialTheme.shapes.medium
+                            ) {
+                                Icon(Icons.Default.LocalShipping, null,
+                                    modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Arrange delivery")
+                            }
+                        }
+                    }
+
                     if (order.status == OrderStatus.DISPATCHED) {
                         item {
                             SwiftPrimaryButton(

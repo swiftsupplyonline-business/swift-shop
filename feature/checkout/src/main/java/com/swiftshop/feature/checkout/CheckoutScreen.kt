@@ -3,6 +3,7 @@ package com.swiftshop.feature.checkout
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -11,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.KeyboardType
@@ -148,6 +150,14 @@ fun CheckoutScreen(
                         requiresDelivery = viewModel.requiresDelivery,
                         onChange = { viewModel.updateRequiresDelivery(it) }
                     )
+                    if (viewModel.requiresDelivery) {
+                        val providers by viewModel.deliveryListings.collectAsState()
+                        DeliveryProviderSelector(
+                            providers = providers,
+                            selectedProviderId = viewModel.selectedDeliveryListingId,
+                            onProviderSelected = { viewModel.updateSelectedDeliveryListing(it) }
+                        )
+                    }
                     CartStep(
                         state = uiState,
                         onRemoveItem = { viewModel.removeItem(it) }
@@ -251,6 +261,54 @@ private fun DeliveryChoiceToggle(requiresDelivery: Boolean, onChange: (Boolean) 
 }
 
 @Composable
+private fun DeliveryProviderSelector(
+    providers: List<Listing>,
+    selectedProviderId: String?,
+    onProviderSelected: (String) -> Unit
+) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text("Choose a delivery provider", style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(8.dp))
+        if (providers.isEmpty()) {
+            Text("No delivery providers available right now.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error)
+        } else {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(end = 16.dp)
+            ) {
+                items(providers) { provider ->
+                    val isSelected = provider.id == selectedProviderId
+                    SwiftCard(
+                        modifier = Modifier
+                            .width(160.dp)
+                            .clickable { onProviderSelected(provider.id) }
+                            .border(
+                                width = if (isSelected) 2.dp else 0.dp,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                shape = MaterialTheme.shapes.medium
+                            )
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(provider.title, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                            Text(provider.price.toDisplayString(),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary)
+                            if (isSelected) {
+                                Icon(Icons.Default.CheckCircle, null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp).align(Alignment.End))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun CheckoutStepIndicator(currentStep: CheckoutStep, requiresDelivery: Boolean) {
     val steps = if (requiresDelivery) listOf("Cart", "Address", "Payment") else listOf("Cart", "Payment")
     val currentIndex = if (!requiresDelivery && currentStep == CheckoutStep.PAYMENT) 1 else currentStep.ordinal.coerceAtMost(steps.size - 1)
@@ -303,13 +361,20 @@ private fun CartStep(
     state: CheckoutUiState,
     onRemoveItem: (String) -> Unit
 ) {
-    val items = (state as? CheckoutUiState.CartLoaded)?.items ?: emptyList()
-    val summary = (state as? CheckoutUiState.CartLoaded)?.summary
+    val cartLoaded = state as? CheckoutUiState.CartLoaded
+    val items = cartLoaded?.items ?: emptyList()
+    val summary = cartLoaded?.summary
+    val isRecalculating = cartLoaded?.isRecalculating ?: false
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (items.isEmpty()) {
-            EmptyState("Your cart is empty", "Add items to get started",
-                modifier = Modifier.weight(1f))
+            when (state) {
+                is CheckoutUiState.Loading -> LoadingState(modifier = Modifier.weight(1f))
+                is CheckoutUiState.Error -> EmptyState("Something went wrong", "See the message below",
+                    modifier = Modifier.weight(1f))
+                else -> EmptyState("Your cart is empty", "Add items to get started",
+                    modifier = Modifier.weight(1f))
+            }
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f),
@@ -325,15 +390,25 @@ private fun CartStep(
         // Order summary
         if (summary != null) {
             Surface(tonalElevation = 2.dp) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    OrderSummaryRow("Subtotal", summary.subtotal.toDisplayString())
-                    OrderSummaryRow("Delivery", summary.deliveryFee.toDisplayString())
-                    OrderSummaryRow("Platform fee", summary.platformFee.toDisplayString())
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
-                    OrderSummaryRow("Total", summary.total.toDisplayString(), isTotal = true)
+                Box(contentAlignment = Alignment.Center) {
+                    Column(
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .alpha(if (isRecalculating) 0.5f else 1f)
+                    ) {
+                        OrderSummaryRow("Subtotal", summary.subtotal.toDisplayString())
+                        OrderSummaryRow("Delivery", summary.deliveryFee.toDisplayString())
+                        OrderSummaryRow("Platform fee", summary.platformFee.toDisplayString())
+                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                        OrderSummaryRow("Total", summary.total.toDisplayString(), isTotal = true)
+                    }
+                    if (isRecalculating) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    }
                 }
             }
-        } else if (state is CheckoutUiState.Loading) {
+        } else if (state is CheckoutUiState.Loading && items.isNotEmpty()) {
+            // This case shouldn't happen with our preserved state logic, but safety first
             LoadingState(modifier = Modifier.weight(1f))
         }
     }

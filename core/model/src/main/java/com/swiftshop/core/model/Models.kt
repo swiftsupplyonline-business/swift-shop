@@ -262,6 +262,8 @@ data class Order(
     val total: MoneyAmount = MoneyAmount.ZERO,
     val status: OrderStatus = OrderStatus.PENDING,
     val deliveryAddress: DeliveryAddress = DeliveryAddress(),
+    val requiresDelivery: Boolean = false,
+    val selectedDeliveryListingId: String = "",
     val paymentId: String = "",
     val notes: String = "",
     val deliveryRequestId: String = "",

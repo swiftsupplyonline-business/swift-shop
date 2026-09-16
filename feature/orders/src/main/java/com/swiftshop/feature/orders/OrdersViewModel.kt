@@ -25,6 +25,13 @@ sealed interface OrderDetailState {
     data class Error(val message: String) : OrderDetailState
 }
 
+sealed interface FulfillmentState {
+    data object Idle : FulfillmentState
+    data object Processing : FulfillmentState
+    data object Success : FulfillmentState
+    data class Error(val message: String) : FulfillmentState
+}
+
 @HiltViewModel
 class OrdersViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -39,6 +46,9 @@ class OrdersViewModel @Inject constructor(
 
     private val _detailState = MutableStateFlow<OrderDetailState>(OrderDetailState.Loading)
     val detailState: StateFlow<OrderDetailState> = _detailState.asStateFlow()
+
+    private val _fulfillmentState = MutableStateFlow<FulfillmentState>(FulfillmentState.Idle)
+    val fulfillmentState: StateFlow<FulfillmentState> = _fulfillmentState.asStateFlow()
 
     private val _isSellerMode = MutableStateFlow(false)
     val isSellerMode = _isSellerMode.asStateFlow()
@@ -83,5 +93,40 @@ class OrdersViewModel @Inject constructor(
         viewModelScope.launch {
             commerceRepository.cancelOrder(orderId, "User requested cancellation")
         }
+    }
+
+    fun fulfillOrder() {
+        val currentOrder = (detailState.value as? OrderDetailState.Loaded)?.order ?: return
+        if (_fulfillmentState.value is FulfillmentState.Processing) return
+
+        val nextStatus = when (currentOrder.status) {
+            OrderStatus.CONFIRMED -> OrderStatus.PROCESSING
+            OrderStatus.PROCESSING -> OrderStatus.READY
+            else -> return
+        }
+
+        viewModelScope.launch {
+            _fulfillmentState.value = FulfillmentState.Processing
+            commerceRepository.updateOrderStatus(currentOrder.id, nextStatus).fold(
+                onSuccess = {
+                    _fulfillmentState.value = FulfillmentState.Success
+                    loadDetail() // Refresh detail to reflect new status
+                },
+                onFailure = {
+                    _fulfillmentState.value = FulfillmentState.Error(it.message ?: "Failed to update order")
+                }
+            )
+        }
+    }
+
+    fun resetFulfillmentState() {
+        _fulfillmentState.value = FulfillmentState.Idle
+    }
+
+    fun getDeliveryListingId(): String? {
+        val order = (detailState.value as? OrderDetailState.Loaded)?.order ?: return null
+        if (!order.requiresDelivery) return null
+        if (order.selectedDeliveryListingId.isBlank()) return null
+        return order.selectedDeliveryListingId
     }
 }
