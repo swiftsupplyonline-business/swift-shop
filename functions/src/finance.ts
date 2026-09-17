@@ -1,5 +1,6 @@
-import { onCall, HttpsError } from "firebase-functions/v2/https";
+﻿import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
+import { MopayClient, MOPAY_API_KEY } from "./mopay";
 
 /**
  * Initiates a withdrawal from the user's wallet to an external destination.
@@ -78,9 +79,15 @@ export const initiateWithdrawal = onCall(async (request) => {
 });
 
 /**
- * Initiates a deposit into the user's wallet.
+ * Initiates a deposit into the user's wallet via MoPay.
+ *
+ * Creates a PENDING walletTransaction and opens a MoPay payment session.
+ * Does NOT credit the wallet or write a ledger entry — that happens only
+ * after confirmDeposit verifies the external payment server-side.
+ *
+ * Returns: { transactionId, paymentUrl, sessionId }
  */
-export const initiateDeposit = onCall(async (request) => {
+export const initiateDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (request) => {
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
@@ -94,49 +101,230 @@ export const initiateDeposit = onCall(async (request) => {
     const activeGateway = gateway || "MOPAY";
     const db = admin.firestore();
 
+    let transactionId = "";
+
     try {
-        return await db.runTransaction(async (transaction) => {
+        // Step 1: Create PENDING walletTransaction atomically with idempotency guard.
+        // No wallet balance mutation. No ledger entry. Payment not yet verified.
+        transactionId = await db.runTransaction(async (transaction) => {
             const idempotencyRef = db.collection("idempotencyKeys").doc(idempotencyKey);
             const idempotencyDoc = await transaction.get(idempotencyRef);
-            if (idempotencyDoc.exists) return idempotencyDoc.data()?.transactionId;
+            if (idempotencyDoc.exists) return idempotencyDoc.data()?.transactionId as string;
 
             const walletRef = db.collection("wallets").doc(uid);
             const walletDoc = await transaction.get(walletRef);
             if (!walletDoc.exists) throw new Error("Wallet not found.");
 
-            const transactionId = db.collection("walletTransactions").doc().id;
-            const ledgerEntryId = db.collection("ledgerEntries").doc().id;
+            const txId = db.collection("walletTransactions").doc().id;
 
-            const newPending = (walletDoc.data()!.pendingBalanceMinorUnits || 0) + amount.minorUnits;
-
-            transaction.set(db.collection("walletTransactions").doc(transactionId), {
-                transactionId, userId: uid, type: "DEPOSIT",
+            transaction.set(db.collection("walletTransactions").doc(txId), {
+                transactionId: txId, userId: uid, type: "DEPOSIT",
                 amountMinorUnits: amount.minorUnits, feeMinorUnits: 0,
                 currency: amount.currency || "LSL", status: "PENDING",
                 description: `Deposit via ${activeGateway} (${provider}) from ${phoneNumber}`,
                 gateway: activeGateway, provider: provider || "UNKNOWN",
                 sourceAccount: phoneNumber, idempotencyKey,
+                mopaySessionId: null,
+                gatewayTransactionId: null,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
 
-            transaction.set(db.collection("ledgerEntries").doc(ledgerEntryId), {
-                id: ledgerEntryId, transactionId, debitAccount: "system_deposit_clearing",
-                creditAccount: `user_${uid}`, amountMinorUnits: amount.minorUnits,
-                currency: amount.currency || "LSL", reference: `DEPOSIT_${transactionId}`,
-                timestamp: admin.firestore.FieldValue.serverTimestamp()
+            transaction.set(idempotencyRef, {
+                transactionId: txId, userId: uid,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
             });
 
-            transaction.update(walletRef, {
-                pendingBalanceMinorUnits: newPending,
+            return txId;
+        });
+
+        // Step 2: Open MoPay payment session (outside transaction — external API call).
+        const mopayRequest = {
+            amount: amount.minorUnits / 100,
+            reference: transactionId,
+            redirectUrl: "swiftshop://wallet/verify",
+            description: `Wallet deposit of M${(amount.minorUnits / 100).toFixed(2)}`,
+            notificationPhoneNumber: phoneNumber,
+        };
+
+        const mopayResponse = await MopayClient.initiatePaymentSession(mopayRequest);
+
+        if (mopayResponse.success && mopayResponse.sessionId) {
+            // Store sessionId on the walletTransaction for later verification lookup.
+            await db.collection("walletTransactions").doc(transactionId).update({
+                mopaySessionId: mopayResponse.sessionId,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
 
-            transaction.set(idempotencyRef, { transactionId, userId: uid, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+            return {
+                transactionId,
+                paymentUrl: mopayResponse.paymentUrl,
+                sessionId: mopayResponse.sessionId
+            };
+        } else {
+            // MoPay session creation failed — mark transaction FAILED.
+            await db.collection("walletTransactions").doc(transactionId).update({
+                status: "FAILED",
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            throw new Error(mopayResponse.message || "Failed to initiate payment gateway");
+        }
 
-            return transactionId;
-        });
     } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
+ * Verifies a MoPay deposit session and atomically credits the wallet on success.
+ *
+ * Server-authoritative: the client supplies only the sessionId from the deep-link
+ * return. All amount, currency, and ownership checks are performed server-side.
+ *
+ * Idempotent: repeated calls with the same sessionId produce exactly one
+ * wallet credit and one ledger entry.
+ *
+ * Financial flow on SUCCESS:
+ *   system_deposit_clearing → user_{uid}   (ledger entry)
+ *   pendingBalanceMinorUnits -= amount
+ *   availableBalanceMinorUnits += amount
+ *   walletTransaction.status → COMPLETED
+ */
+export const confirmDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const uid = auth.uid;
+    const { sessionId } = request.data;
+    if (!sessionId) throw new HttpsError("invalid-argument", "Missing sessionId");
+
+    const db = admin.firestore();
+
+    try {
+        // 1. Locate the walletTransaction by MoPay sessionId, scoped to this user.
+        const txQuery = await db.collection("walletTransactions")
+            .where("mopaySessionId", "==", sessionId)
+            .where("userId", "==", uid)
+            .limit(1)
+            .get();
+
+        if (txQuery.empty) throw new HttpsError("not-found", "Deposit transaction not found for this session.");
+
+        const txDoc = txQuery.docs[0];
+        const txData = txDoc.data();
+
+        // Ownership double-check (defense in depth beyond the query filter).
+        if (txData.userId !== uid) throw new HttpsError("permission-denied", "Deposit does not belong to this user.");
+
+        // 2. Server-side MoPay verification — never trust client-supplied status.
+        const mopaySession = await MopayClient.verifyPaymentSession(sessionId);
+        if (!mopaySession) throw new HttpsError("unavailable", "Could not verify session with MoPay.");
+
+        // 3. Reference integrity: MoPay reference must match our transactionId.
+        if (mopaySession.reference !== txData.transactionId) {
+            throw new HttpsError("failed-precondition", "Payment reference mismatch.");
+        }
+
+        // 4. Amount integrity: MoPay returns major units; convert to minor units.
+        const mopayAmountMinor = Math.round(mopaySession.amount * 100);
+        if (mopayAmountMinor !== txData.amountMinorUnits) {
+            throw new HttpsError("failed-precondition",
+                `Amount mismatch. Expected: ${txData.amountMinorUnits}, Got: ${mopayAmountMinor}`);
+        }
+
+        // 5. Handle by MoPay transaction status.
+        if (mopaySession.transactionStatus === "SUCCESS") {
+            // 6. Atomic financial confirmation — idempotent via status guard.
+            await db.runTransaction(async (transaction) => {
+                const freshTxDoc = await transaction.get(txDoc.ref);
+                const freshTx = freshTxDoc.data()!;
+
+                // Idempotency guard: if already COMPLETED, do nothing.
+                if (freshTx.status === "COMPLETED") return;
+
+                // Only process PENDING deposits — reject any other state.
+                if (freshTx.status !== "PENDING") {
+                    throw new Error(`Deposit is in state ${freshTx.status}, cannot confirm.`);
+                }
+
+                const walletRef = db.collection("wallets").doc(uid);
+                const walletDoc = await transaction.get(walletRef);
+                if (!walletDoc.exists) throw new Error("Wallet not found.");
+
+                const walletData = walletDoc.data()!;
+                const now = admin.firestore.Timestamp.now();
+                const amountMinorUnits = freshTx.amountMinorUnits as number;
+
+                // Credit wallet: pending → available.
+                const newAvailable = (walletData.availableBalanceMinorUnits || 0) + amountMinorUnits;
+                const newPending = Math.max(0, (walletData.pendingBalanceMinorUnits || 0) - amountMinorUnits);
+
+                transaction.update(walletRef, {
+                    availableBalanceMinorUnits: newAvailable,
+                    pendingBalanceMinorUnits: newPending,
+                    updatedAt: now
+                });
+
+                // Immutable ledger entry: external MoPay clearing → user wallet.
+                const ledgerId = db.collection("ledgerEntries").doc().id;
+                transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
+                    id: ledgerId,
+                    transactionId: txData.transactionId,
+                    debitAccount: "system_deposit_clearing",
+                    creditAccount: `user_${uid}`,
+                    amountMinorUnits: amountMinorUnits,
+                    currency: freshTx.currency || "LSL",
+                    reference: `DEPOSIT_CONFIRM_${txData.transactionId}`,
+                    gatewayTransactionId: mopaySession.transactionId || `MOPAY_${sessionId}`,
+                    timestamp: now
+                });
+
+                // Mark transaction COMPLETED.
+                transaction.update(txDoc.ref, {
+                    status: "COMPLETED",
+                    gatewayTransactionId: mopaySession.transactionId || `MOPAY_${sessionId}`,
+                    completedAt: now,
+                    updatedAt: now
+                });
+            });
+
+            return { status: "SUCCESS", transactionId: txData.transactionId };
+
+        } else if (mopaySession.transactionStatus === "FAILED" || mopaySession.transactionStatus === "CANCELLED") {
+            // Terminal failure: mark FAILED, release pending balance.
+            await db.runTransaction(async (transaction) => {
+                const freshTxDoc = await transaction.get(txDoc.ref);
+                const freshTx = freshTxDoc.data()!;
+                if (freshTx.status !== "PENDING") return; // Already resolved.
+
+                const walletRef = db.collection("wallets").doc(uid);
+                const walletDoc = await transaction.get(walletRef);
+                const now = admin.firestore.Timestamp.now();
+
+                if (walletDoc.exists) {
+                    const walletData = walletDoc.data()!;
+                    transaction.update(walletRef, {
+                        pendingBalanceMinorUnits: Math.max(0,
+                            (walletData.pendingBalanceMinorUnits || 0) - (freshTx.amountMinorUnits as number)),
+                        updatedAt: now
+                    });
+                }
+
+                transaction.update(txDoc.ref, {
+                    status: "FAILED",
+                    updatedAt: now
+                });
+            });
+
+            return { status: mopaySession.transactionStatus, transactionId: txData.transactionId };
+
+        } else {
+            // PENDING or unknown — payment not yet resolved. Do not credit. Preserve state.
+            return { status: mopaySession.transactionStatus, transactionId: txData.transactionId };
+        }
+
+    } catch (error: any) {
+        if (error instanceof HttpsError) throw error;
         throw new HttpsError("failed-precondition", error.message);
     }
 });
@@ -179,19 +367,16 @@ export const initiateP2PTransfer = onCall(async (request) => {
 
             const transactionId = db.collection("walletTransactions").doc().id;
 
-            // Debit Source
             transaction.update(sourceRef, {
                 availableBalanceMinorUnits: sourceData.availableBalanceMinorUnits - totalDebit,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
 
-            // Credit Destination
             transaction.update(destRef, {
                 availableBalanceMinorUnits: (destDoc.data()?.availableBalanceMinorUnits || 0) + amount.minorUnits,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
 
-            // Transactions
             transaction.set(db.collection("walletTransactions").doc(transactionId), {
                 transactionId, userId: fromUid, recipientUserId: toUserId,
                 type: "TRANSFER_OUT", amountMinorUnits: amount.minorUnits,
@@ -201,7 +386,6 @@ export const initiateP2PTransfer = onCall(async (request) => {
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
 
-            // Ledger
             const ledgerId = db.collection("ledgerEntries").doc().id;
             transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
                 id: ledgerId, transactionId, debitAccount: `user_${fromUid}`,
@@ -210,7 +394,6 @@ export const initiateP2PTransfer = onCall(async (request) => {
                 timestamp: admin.firestore.FieldValue.serverTimestamp()
             });
 
-            // Fee Ledger
             if (feeMinorUnits > 0) {
                 const feeLedgerId = db.collection("ledgerEntries").doc().id;
                 transaction.set(db.collection("ledgerEntries").doc(feeLedgerId), {

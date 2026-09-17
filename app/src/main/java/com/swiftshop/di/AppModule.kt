@@ -143,6 +143,9 @@ object WalletModule {
 
     @Provides
     fun provideInitiateP2PTransferUseCase(repo: WalletRepository) = InitiateP2PTransferUseCase(repo)
+
+    @Provides
+    fun provideConfirmDepositUseCase(repo: WalletRepository) = ConfirmDepositUseCase(repo)
 }
 
 @Module
@@ -209,6 +212,9 @@ object CommerceModule {
 
     @Provides
     fun provideVerifyMopayPaymentUseCase(repo: CommerceRepository) = VerifyMopayPaymentUseCase(repo)
+
+    @Provides
+    fun provideConfirmDeliveryUseCase(repo: CommerceRepository) = ConfirmDeliveryUseCase(repo)
 
     @Provides
     fun provideInitiateSubscriptionUseCase(repo: CommerceRepository) = InitiateSubscriptionUseCase(repo)

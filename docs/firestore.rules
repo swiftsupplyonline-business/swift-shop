@@ -1,9 +1,9 @@
-rules_version = '2';
+﻿rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helpers ────────────────────────────────────────────────────────────
+    // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     function isSignedIn() {
       return request.auth != null;
     }
@@ -20,7 +20,7 @@ service cloud.firestore {
               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('accountStatus', 'ACTIVE') == 'ACTIVE');
     }
 
-    // ── Users ──────────────────────────────────────────────────────────────
+    // â”€â”€ Users â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /users/{uid} {
       // P0: Private Account Data - restricted to Owner/Admin
       allow read: if isOwner(uid) || isAdmin();
@@ -49,7 +49,7 @@ service cloud.firestore {
       }
     }
 
-    // ── Profiles ───────────────────────────────────────────────────────────
+    // â”€â”€ Profiles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /profiles/{uid} {
       allow read: if isSignedIn();
       allow write: if isOwner(uid) && isActive()
@@ -59,7 +59,7 @@ service cloud.firestore {
                      'activeListingCount', 'reputationScore', 'tier', 'totalDeliveries']);
     }
 
-    // ── Shops ──────────────────────────────────────────────────────────────
+    // â”€â”€ Shops â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /shops/{shopId} {
       allow read: if true;  // public
       // Created via Cloud Function only to enforce tier limits
@@ -71,7 +71,7 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ── Listings ───────────────────────────────────────────────────────────
+    // â”€â”€ Listings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /listings/{listingId} {
       allow read: if true;  // public
       // Created and deleted via Cloud Function only to enforce tier limits
@@ -89,7 +89,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── Posts ──────────────────────────────────────────────────────────────
+    // â”€â”€ Posts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /posts/{postId} {
       allow read: if true;
       allow create: if isSignedIn() && isActive()
@@ -102,7 +102,7 @@ service cloud.firestore {
       allow delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
     }
 
-    // ── Comments ───────────────────────────────────────────────────────────
+    // â”€â”€ Comments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /comments/{commentId} {
       allow read: if true;
       allow create: if isSignedIn() && isActive()
@@ -113,7 +113,7 @@ service cloud.firestore {
       allow delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
     }
 
-    // ── Orders ─────────────────────────────────────────────────────────────
+    // â”€â”€ Orders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /orders/{orderId} {
       allow read: if isSignedIn()
         && (resource.data.buyerId == request.auth.uid
@@ -126,36 +126,36 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── Delivery Requests ──────────────────────────────────────────────────
+    // â”€â”€ Delivery Requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /deliveryRequests/{requestId} {
       allow read: if isSignedIn()
         && (resource.data.requesterId == request.auth.uid
             || resource.data.merchantId == request.auth.uid
             || isAdmin());
-      // Created, accepted, declined, and expired via Cloud Function only —
+      // Created, accepted, declined, and expired via Cloud Function only â€”
       // the 120-second window is server-authoritative, not client-trusted.
       allow create: if false;
       allow update: if false;
       allow delete: if false;
     }
 
-    // ── Wallets ────────────────────────────────────────────────────────────
+    // â”€â”€ Wallets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /wallets/{uid} {
       allow read: if isOwner(uid) || isAdmin();
-      // All writes server-side only — no client wallet mutation
+      // All writes server-side only â€” no client wallet mutation
       allow write: if false;
     }
 
-    // ── Ledger Entries ─────────────────────────────────────────────────────
+    // â”€â”€ Ledger Entries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /ledgerEntries/{entryId} {
       allow read: if isAdmin()
         || resource.data.debitAccount == request.auth.uid
         || resource.data.creditAccount == request.auth.uid;
-      // Immutable — write only from admin SDK (Cloud Functions)
+      // Immutable â€” write only from admin SDK (Cloud Functions)
       allow write: if false;
     }
 
-    // ── Wallet Transactions ────────────────────────────────────────────────
+    // â”€â”€ Wallet Transactions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /walletTransactions/{txId} {
       allow read: if isSignedIn()
         && resource.data.userId == request.auth.uid;
@@ -163,7 +163,7 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // ── Conversations ──────────────────────────────────────────────────────
+    // â”€â”€ Conversations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /conversations/{conversationId} {
       allow read: if isSignedIn()
         && request.auth.uid in resource.data.participantIds;
@@ -174,7 +174,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── Messages ───────────────────────────────────────────────────────────
+    // â”€â”€ Messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /messages/{messageId} {
       allow read: if isSignedIn()
         && get(/databases/$(database)/documents/conversations/$(resource.data.conversationId))
@@ -186,7 +186,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── Delivery Routes ────────────────────────────────────────────────────
+    // â”€â”€ Delivery Routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /deliveryRoutes/{routeId} {
       allow read: if isSignedIn()
         && (resource.data.buyerId == request.auth.uid
@@ -194,7 +194,7 @@ service cloud.firestore {
             || isAdmin());
       allow create: if false;  // Cloud Function only
       allow update: if isSignedIn()
-        // Driver can update their own live location (flat lat/lng fields —
+        // Driver can update their own live location (flat lat/lng fields â€”
         // matches FirestoreDeliveryRoute on Android, not a nested map)
         && resource.data.driverId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys()
@@ -202,7 +202,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── Advertising Campaigns ──────────────────────────────────────────────
+    // â”€â”€ Advertising Campaigns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /advertisingCampaigns/{campaignId} {
       allow read: if isSignedIn()
         && (resource.data.ownerId == request.auth.uid || isAdmin());
@@ -217,25 +217,25 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── Subscriptions ──────────────────────────────────────────────────────
+    // â”€â”€ Subscriptions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /subscriptions/{subscriptionId} {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow write: if false;  // Cloud Function only
     }
 
-    // ── Entitlements ────────────────────────────────────────────────────────
+    // â”€â”€ Entitlements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /entitlements/{entitlementId} {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow write: if false;  // Server only
     }
 
-    // ── Audit Logs ─────────────────────────────────────────────────────────
+    // â”€â”€ Audit Logs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /auditLogs/{logId} {
       allow read: if isAdmin();
       allow write: if false;  // Admin SDK only
     }
 
-    // ── Reports ────────────────────────────────────────────────────────────
+    // â”€â”€ Reports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /reports/{reportId} {
       allow create: if isSignedIn() && isActive();
       allow read: if isAdmin();
@@ -243,7 +243,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── Follows ────────────────────────────────────────────────────────────
+    // â”€â”€ Follows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /follows/{followId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isActive()
@@ -252,10 +252,21 @@ service cloud.firestore {
         && resource.data.followerId == request.auth.uid;
     }
 
-    // ── Idempotency ────────────────────────────────────────────────────────
+    // â”€â”€ Idempotency â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /idempotencyKeys/{key} {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow write: if false;
+    }
+
+    // â”€â”€ Reservations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Reservations are an internal server implementation detail.
+    // Documents carry: id, orderId, listingId, quantity, status, expiresAt, createdAt.
+    // No buyerId/sellerId fields exist on reservation documents.
+    // All reads and writes are performed by Cloud Functions via admin SDK.
+    // Client apps read order status from the orders collection, not here.
+    match /reservations/{resId} {
+      allow read: if isAdmin();
+      allow write: if false; // Cloud Function only
     }
   }
 }

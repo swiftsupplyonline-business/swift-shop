@@ -1,4 +1,4 @@
-package com.swiftshop.feature.wallet
+﻿package com.swiftshop.feature.wallet
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -39,6 +39,7 @@ class WalletViewModel @Inject constructor(
     private val observeTransactions: ObserveTransactionsUseCase,
     private val initiateWithdrawal: InitiateWithdrawalUseCase,
     private val initiateP2PTransfer: InitiateP2PTransferUseCase,
+    private val confirmDepositUseCase: ConfirmDepositUseCase,
     private val walletRepository: WalletRepository
 ) : ViewModel() {
 
@@ -65,6 +66,9 @@ class WalletViewModel @Inject constructor(
 
     private val _withdrawalIntent = MutableSharedFlow<WithdrawalIntent>()
     val withdrawalIntent = _withdrawalIntent.asSharedFlow()
+    data class DepositIntent(val paymentUrl: String, val sessionId: String)
+    private val _depositIntent = MutableSharedFlow<DepositIntent>()
+    val depositIntent = _depositIntent.asSharedFlow()
 
     data class WithdrawalIntent(val amount: MoneyAmount, val gateway: String, val provider: String, val destination: String)
 
@@ -75,26 +79,25 @@ class WalletViewModel @Inject constructor(
             observeCurrentUser()
                 .filterNotNull()
                 .filter { it.uid.isNotBlank() }
-                .collect { user ->
+                .flatMapLatest { user ->
                     observeWallet(user.uid)
-                        .catch { _walletState.value = WalletScreenState.Error(it.message ?: "Error") }
-                        .collect { wallet ->
-                            _walletState.value = WalletScreenState.Loaded(wallet, user.tier)
-                        }
+                        .map { wallet -> WalletScreenState.Loaded(wallet, user.tier) as WalletScreenState }
+                        .catch { emit(WalletScreenState.Error(it.message ?: "Error")) }
                 }
+                .collect { _walletState.value = it }
         }
         viewModelScope.launch {
             observeCurrentUser()
                 .filterNotNull()
                 .filter { it.uid.isNotBlank() }
-                .collect { user ->
+                .flatMapLatest { user ->
                     observeTransactions(user.uid)
-                        .catch { _transactions.value = TransactionListState.Error(it.message ?: "Error") }
-                        .collect { txs ->
-                            _transactions.value = if (txs.isEmpty()) TransactionListState.Empty
-                            else TransactionListState.Loaded(txs)
+                        .map { txs ->
+                            (if (txs.isEmpty()) TransactionListState.Empty else TransactionListState.Loaded(txs)) as TransactionListState
                         }
+                        .catch { emit(TransactionListState.Error(it.message ?: "Error")) }
                 }
+                .collect { _transactions.value = it }
         }
     }
 
@@ -110,16 +113,38 @@ class WalletViewModel @Inject constructor(
             val userId = user.uid
             val idempotencyKey = UUID.randomUUID().toString()
             walletRepository.initiateDeposit(userId, amount, "MOPAY", provider, phone, idempotencyKey).fold(
-                onSuccess = { _actionState.value = ActionState.Success("Deposit initiated") },
+                onSuccess = { result ->
+                    val paymentUrl = result["paymentUrl"]
+                    val sessionId = result["sessionId"]
+                    if (paymentUrl != null && sessionId != null) {
+                        _depositIntent.emit(DepositIntent(paymentUrl, sessionId))
+                        _actionState.value = ActionState.Idle
+                    } else {
+                        _actionState.value = ActionState.Error("Failed to get payment URL")
+                    }
+                },
                 onFailure = { _actionState.value = ActionState.Error(it.message ?: "Deposit failed") }
             )
         }
     }
 
-    /**
-     * Withdrawal logic protected by biometric gate in the UI layer.
-     * Emits an intent for the UI to handle the security challenge.
-     */
+    fun confirmDeposit(sessionId: String) {
+        viewModelScope.launch {
+            _actionState.value = ActionState.Loading
+            confirmDepositUseCase(sessionId).fold(
+                onSuccess = { result ->
+                    val status = result["status"]
+                    when (status) {
+                        "SUCCESS" -> _actionState.value = ActionState.Success("Deposit confirmed! Funds added to wallet.")
+                        "FAILED", "CANCELLED" -> _actionState.value = ActionState.Error("Payment was not successful")
+                        else -> _actionState.value = ActionState.Error("Payment still pending — please wait")
+                    }
+                },
+                onFailure = { _actionState.value = ActionState.Error(it.message ?: "Confirmation failed") }
+            )
+        }
+    }
+
     fun withdraw(amount: MoneyAmount, provider: String, destination: String) {
         viewModelScope.launch {
             _showWithdrawSheet.value = false

@@ -36,17 +36,24 @@ import org.osmdroid.views.overlay.Overlay
 
 import androidx.compose.ui.platform.LocalUriHandler
 
-enum class CheckoutStep { CART, ADDRESS, PAYMENT, VERIFICATION, CONFIRMATION }
+enum class CheckoutStep { CART, ADDRESS, PAYMENT, DELIVERY_WAITING, VERIFICATION, CONFIRMATION }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CheckoutScreen(
     navController: NavController,
+    sessionId: String? = null,
     viewModel: CheckoutViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var step by remember { mutableStateOf(CheckoutStep.CART) }
     val uriHandler = LocalUriHandler.current
+
+    LaunchedEffect(sessionId) {
+        if (sessionId != null) {
+            viewModel.verifyPayment(sessionId)
+        }
+    }
 
     LaunchedEffect(uiState) {
         when (uiState) {
@@ -56,6 +63,7 @@ fun CheckoutScreen(
                 step = CheckoutStep.VERIFICATION
                 uriHandler.openUri(state.paymentUrl)
             }
+            is CheckoutUiState.AwaitingDeliveryAcceptance -> step = CheckoutStep.DELIVERY_WAITING
             else -> {}
         }
     }
@@ -69,6 +77,7 @@ fun CheckoutScreen(
                             CheckoutStep.CART -> "My Cart"
                             CheckoutStep.ADDRESS -> "Delivery Address"
                             CheckoutStep.PAYMENT -> "Payment"
+                            CheckoutStep.DELIVERY_WAITING -> "Waiting for Provider"
                             CheckoutStep.VERIFICATION -> "Verifying Payment"
                             CheckoutStep.CONFIRMATION -> "Order Confirmed"
                         },
@@ -76,7 +85,7 @@ fun CheckoutScreen(
                     )
                 },
                 navigationIcon = {
-                    if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION) {
+                    if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION && step != CheckoutStep.DELIVERY_WAITING) {
                         IconButton(onClick = {
                             when (step) {
                                 CheckoutStep.CART -> navController.popBackStack()
@@ -91,7 +100,7 @@ fun CheckoutScreen(
             )
         },
         bottomBar = {
-            if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION) {
+            if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION && step != CheckoutStep.DELIVERY_WAITING) {
                 Surface(tonalElevation = 8.dp) {
                     Column(modifier = Modifier.padding(16.dp).navigationBarsPadding()) {
                         if (uiState is CheckoutUiState.Error) {
@@ -106,7 +115,7 @@ fun CheckoutScreen(
                         val buttonText = when (step) {
                             CheckoutStep.CART -> "Proceed to Address"
                             CheckoutStep.ADDRESS -> "Continue to Payment"
-                            CheckoutStep.PAYMENT -> "Place Order"
+                            CheckoutStep.PAYMENT -> if (viewModel.requiresDelivery) "Request Delivery" else "Place Order"
                             else -> ""
                         }
 
@@ -140,7 +149,7 @@ fun CheckoutScreen(
                 .background(MaterialTheme.colorScheme.background)
         ) {
             // Step indicator
-            if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION) {
+            if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION && step != CheckoutStep.DELIVERY_WAITING) {
                 CheckoutStepIndicator(currentStep = step, requiresDelivery = viewModel.requiresDelivery)
             }
 
@@ -178,6 +187,9 @@ fun CheckoutScreen(
                     },
                     onPhoneChange = { viewModel.paymentPhone = it }
                 )
+                CheckoutStep.DELIVERY_WAITING -> DeliveryWaitingStep(
+                    onCancel = { /* TODO: Implement cancellation */ }
+                )
                 CheckoutStep.VERIFICATION -> VerificationStep(
                     state = uiState,
                     onVerify = { 
@@ -201,6 +213,30 @@ fun CheckoutScreen(
                     }
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun DeliveryWaitingStep(
+    onCancel: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(64.dp))
+        Spacer(Modifier.height(32.dp))
+        Text("Waiting for Provider", style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(16.dp))
+        Text("We've sent your request to the delivery provider. Please wait while they accept your delivery.",
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(48.dp))
+        OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
+            Text("Cancel Request")
         }
     }
 }

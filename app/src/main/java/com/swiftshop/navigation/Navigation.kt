@@ -1,4 +1,4 @@
-package com.swiftshop.navigation
+﻿package com.swiftshop.navigation
 
 import com.swiftshop.core.ui.navigation.Screen
 import androidx.compose.foundation.layout.*
@@ -135,8 +135,12 @@ fun SwiftShopNavHost(
             arguments = listOf(navArgument("shopId") { type = NavType.StringType })
         ) { ShopDetailScreen(navController = navController) }
 
-        composable(Screen.Checkout.route) {
-            CheckoutScreen(navController = navController)
+        composable(
+            route = Screen.Checkout.route,
+            deepLinks = listOf(navDeepLink { uriPattern = "swiftshop://checkout/verify?sessionId={sessionId}" })
+        ) { backStackEntry ->
+            val sessionId = backStackEntry.arguments?.getString("sessionId")
+            CheckoutScreen(navController = navController, sessionId = sessionId)
         }
 
         composable(Screen.Orders.route) {
@@ -181,12 +185,18 @@ fun SwiftShopNavHost(
             )
         ) { CreateAdScreen(navController = navController) }
 
-        composable(Screen.Wallet.route) {
+        composable(
+            route = Screen.Wallet.route,
+            arguments = listOf(navArgument("sessionId") { type = NavType.StringType; nullable = true; defaultValue = null }),
+            deepLinks = listOf(navDeepLink { uriPattern = "swiftshop://wallet/verify?sessionId={sessionId}" })
+        ) { backStackEntry ->
+            val sessionId = backStackEntry.arguments?.getString("sessionId")
             val viewModel: com.swiftshop.feature.wallet.WalletViewModel = hiltViewModel()
             WalletScreen(
                 navController = navController,
                 viewModel = viewModel,
-                biometricGuard = biometricGuard
+                biometricGuard = biometricGuard,
+                sessionId = sessionId
             )
         }
         composable(Screen.MessagingList.route) {

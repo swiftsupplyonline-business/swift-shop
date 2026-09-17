@@ -21,6 +21,9 @@ export * from "./maintenance";
 // Logistics Functions
 export * from "./logistics";
 
+// Reservation Functions
+export * from "./reservations";
+
 // Advertising Functions
 export * from "./advertising";
 

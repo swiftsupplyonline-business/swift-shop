@@ -1,4 +1,4 @@
-package com.swiftshop.data.firebase
+﻿package com.swiftshop.data.firebase
 
 import java.util.Date
 import com.google.firebase.firestore.FirebaseFirestore
@@ -11,6 +11,14 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private fun walletTsToLong(v: Any?): Long = when (v) {
+    is com.google.firebase.Timestamp -> v.toDate().time
+    is Date -> v.time
+    is Long -> v
+    is Number -> v.toLong()
+    else -> 0L
+}
 
 @Singleton
 class FirebaseWalletRepository @Inject constructor(
@@ -37,7 +45,11 @@ class FirebaseWalletRepository @Inject constructor(
             .whereEqualTo("userId", userId)
             .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
             .limit(limit.toLong())
-            .addSnapshotListener { snapshot, _ ->
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
                 val transactions = snapshot?.toObjects(FirestoreWalletTransaction::class.java)
                     ?.map { it.toDomain() } ?: emptyList()
                 trySend(transactions)
@@ -47,7 +59,7 @@ class FirebaseWalletRepository @Inject constructor(
 
     override suspend fun initiateDeposit(
         userId: String, amount: MoneyAmount, gateway: String, provider: String, phone: String, idempotencyKey: String
-    ): Result<String> = runCatching {
+    ): Result<Map<String, String>> = runCatching {
         val data = mapOf(
             "amount" to amount.toFirestore(),
             "gateway" to gateway,
@@ -56,7 +68,7 @@ class FirebaseWalletRepository @Inject constructor(
             "idempotencyKey" to idempotencyKey
         )
         val result = functions.getHttpsCallable("initiateDeposit").call(data).await()
-        result.data as String
+        @Suppress("UNCHECKED_CAST") result.data as Map<String, String>
     }
 
     override suspend fun initiateWithdrawal(
@@ -90,15 +102,21 @@ class FirebaseWalletRepository @Inject constructor(
         snapshot.toObject(FirestoreWalletTransaction::class.java)?.toDomain() 
             ?: throw NoSuchElementException("Transaction not found")
     }
+
+    override suspend fun confirmDeposit(sessionId: String): Result<Map<String, String>> = runCatching {
+        val data = mapOf("sessionId" to sessionId)
+        val result = functions.getHttpsCallable("confirmDeposit").call(data).await()
+        @Suppress("UNCHECKED_CAST") result.data as Map<String, String>
+    }
 }
 
-// ─── DTOs ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ DTOs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 data class FirestoreWallet(
     val availableBalanceMinorUnits: Long = 0L,
     val pendingBalanceMinorUnits: Long = 0L,
     val currency: String = "LSL",
-    val updatedAt: Date = Date(0)
+    val updatedAt: Any? = null
 ) {
     fun toDomain(userId: String) = Wallet(
         id = userId,
@@ -106,7 +124,7 @@ data class FirestoreWallet(
         availableBalance = MoneyAmount(currency, availableBalanceMinorUnits),
         pendingBalance = MoneyAmount(currency, pendingBalanceMinorUnits),
         currency = currency,
-        updatedAt = updatedAt.time
+        updatedAt = walletTsToLong(updatedAt)
     )
 }
 
@@ -124,8 +142,8 @@ data class FirestoreWalletTransaction(
     val sourceAccount: String = "",
     val destinationAccount: String = "",
     val metadata: Map<String, String> = emptyMap(),
-    val createdAt: Date = Date(0),
-    val completedAt: Date = Date(0)
+    val createdAt: Any? = null,
+    val completedAt: Any? = null
 ) {
     fun toDomain() = WalletTransaction(
         transactionId = transactionId,
@@ -140,8 +158,8 @@ data class FirestoreWalletTransaction(
         sourceAccount = sourceAccount,
         destinationAccount = destinationAccount,
         metadata = metadata,
-        createdAt = createdAt.time,
-        completedAt = completedAt.time
+        createdAt = walletTsToLong(createdAt),
+        completedAt = walletTsToLong(completedAt)
     )
 }
 

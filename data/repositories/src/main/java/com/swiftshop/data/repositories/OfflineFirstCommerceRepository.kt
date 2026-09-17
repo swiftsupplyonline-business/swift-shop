@@ -113,10 +113,13 @@ class OfflineFirstCommerceRepository @Inject constructor(
         provider: String?,
         phoneNumber: String,
         idempotencyKey: String,
-        selectedDeliveryListingId: String?
-    ) = remote.placeOrder(items, requiresDelivery, address, paymentMethod, provider, phoneNumber, idempotencyKey, selectedDeliveryListingId)
+        selectedDeliveryListingId: String?,
+        deliveryRequestId: String?
+    ) = remote.placeOrder(items, requiresDelivery, address, paymentMethod, provider, phoneNumber, idempotencyKey, selectedDeliveryListingId, deliveryRequestId)
 
     override suspend fun verifyMopayPayment(sessionId: String) = remote.verifyMopayPayment(sessionId)
+
+    override suspend fun confirmDelivery(orderId: String): Result<Unit> = remote.confirmDelivery(orderId)
 
     override fun observeUserOrders(userId: String): Flow<List<Order>> = remote.observeUserOrders(userId)
     override fun observeSellerOrders(sellerId: String): Flow<List<Order>> = remote.observeSellerOrders(sellerId)

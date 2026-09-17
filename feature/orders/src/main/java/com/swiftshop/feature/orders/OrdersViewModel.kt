@@ -1,4 +1,4 @@
-package com.swiftshop.feature.orders
+﻿package com.swiftshop.feature.orders
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -11,6 +11,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.swiftshop.domain.commerce.ConfirmDeliveryUseCase
 
 sealed interface OrdersUiState {
     data object Loading : OrdersUiState
@@ -36,7 +37,8 @@ sealed interface FulfillmentState {
 class OrdersViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val observeCurrentUser: ObserveCurrentUserUseCase,
-    private val commerceRepository: CommerceRepository
+    private val commerceRepository: CommerceRepository,
+    private val confirmDeliveryUseCase: ConfirmDeliveryUseCase
 ) : ViewModel() {
 
     private val orderId: String? = savedStateHandle["orderId"]
@@ -102,6 +104,7 @@ class OrdersViewModel @Inject constructor(
         val nextStatus = when (currentOrder.status) {
             OrderStatus.CONFIRMED -> OrderStatus.PROCESSING
             OrderStatus.PROCESSING -> OrderStatus.READY
+            OrderStatus.READY -> OrderStatus.DISPATCHED
             else -> return
         }
 
@@ -110,10 +113,28 @@ class OrdersViewModel @Inject constructor(
             commerceRepository.updateOrderStatus(currentOrder.id, nextStatus).fold(
                 onSuccess = {
                     _fulfillmentState.value = FulfillmentState.Success
-                    loadDetail() // Refresh detail to reflect new status
+                    loadDetail()
                 },
                 onFailure = {
                     _fulfillmentState.value = FulfillmentState.Error(it.message ?: "Failed to update order")
+                }
+            )
+        }
+    }
+
+    fun confirmDelivery() {
+        val currentOrder = (detailState.value as? OrderDetailState.Loaded)?.order ?: return
+        if (_fulfillmentState.value is FulfillmentState.Processing) return
+
+        viewModelScope.launch {
+            _fulfillmentState.value = FulfillmentState.Processing
+            confirmDeliveryUseCase(currentOrder.id).fold(
+                onSuccess = {
+                    _fulfillmentState.value = FulfillmentState.Success
+                    loadDetail()
+                },
+                onFailure = {
+                    _fulfillmentState.value = FulfillmentState.Error(it.message ?: "Failed to confirm delivery")
                 }
             )
         }

@@ -245,7 +245,15 @@ data class Comment(
 // ─── Order / Commerce ────────────────────────────────────────────────────────
 
 enum class OrderStatus {
-    PENDING, CONFIRMED, PROCESSING, READY, DISPATCHED, DELIVERED, CANCELLED, REFUNDED
+    PENDING, RESERVED, CONFIRMED, PROCESSING, READY, DISPATCHED, DELIVERED, CANCELLED, REFUNDED
+}
+
+enum class InventoryStatus {
+    PENDING, RESERVED, COMMITTED, RELEASED
+}
+
+enum class SettlementStatus {
+    PENDING, ESCROW_HOLD, SETTLED, REFUNDED
 }
 
 @Serializable
@@ -261,12 +269,15 @@ data class Order(
     val platformFee: MoneyAmount = MoneyAmount.ZERO,
     val total: MoneyAmount = MoneyAmount.ZERO,
     val status: OrderStatus = OrderStatus.PENDING,
+    val inventoryStatus: InventoryStatus = InventoryStatus.PENDING,
+    val settlementStatus: SettlementStatus = SettlementStatus.PENDING,
     val deliveryAddress: DeliveryAddress = DeliveryAddress(),
     val requiresDelivery: Boolean = false,
     val selectedDeliveryListingId: String = "",
+    val deliveryRequestId: String = "",
     val paymentId: String = "",
     val notes: String = "",
-    val deliveryRequestId: String = "",
+    val reservationExpiresAt: Long = 0L,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
 ) : Parcelable

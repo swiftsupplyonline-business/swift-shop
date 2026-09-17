@@ -30,7 +30,6 @@ android {
     buildTypes {
         debug {
             isDebuggable = true
-            applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             buildConfigField("Boolean", "ENABLE_LOGGING", "true")
         }
@@ -49,13 +48,13 @@ android {
     productFlavors {
         create("dev") {
             dimension = "environment"
-            applicationIdSuffix = ".dev"
+            applicationIdSuffix = ".dev.debug"
             versionNameSuffix = "-dev"
             buildConfigField("String", "FLAVOR", "\"dev\"")
         }
         create("staging") {
             dimension = "environment"
-            applicationIdSuffix = ".staging"
+            applicationIdSuffix = ".staging.debug"
             versionNameSuffix = "-staging"
             buildConfigField("String", "FLAVOR", "\"staging\"")
         }

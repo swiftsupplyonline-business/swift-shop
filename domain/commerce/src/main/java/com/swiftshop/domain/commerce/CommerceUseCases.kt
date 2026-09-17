@@ -138,9 +138,11 @@ interface CommerceRepository {
         provider: String?,
         phoneNumber: String,
         idempotencyKey: String,
-        selectedDeliveryListingId: String? = null
+        selectedDeliveryListingId: String? = null,
+        deliveryRequestId: String? = null
     ): Result<OrderInitiation>
     suspend fun verifyMopayPayment(sessionId: String): Result<Unit>
+    suspend fun confirmDelivery(orderId: String): Result<Unit>
     fun observeUserOrders(userId: String): Flow<List<Order>>
     fun observeSellerOrders(sellerId: String): Flow<List<Order>>
     suspend fun getOrder(orderId: String): Result<Order>
@@ -232,18 +234,23 @@ class PlaceOrderUseCase(private val repository: CommerceRepository) {
         provider: String?,
         phoneNumber: String,
         idempotencyKey: String,
-        selectedDeliveryListingId: String? = null
+        selectedDeliveryListingId: String? = null,
+        deliveryRequestId: String? = null
     ): Result<OrderInitiation> {
         if (items.isEmpty()) return Result.failure(IllegalArgumentException("Cart is empty"))
         if (idempotencyKey.isBlank()) return Result.failure(IllegalArgumentException("Idempotency key required"))
         if (requiresDelivery && address == null) return Result.failure(IllegalArgumentException("Delivery address required when delivery is requested"))
         // Server-side will re-validate all prices and calculate authoritative fees
-        return repository.placeOrder(items, requiresDelivery, address, paymentMethod, provider, phoneNumber, idempotencyKey, selectedDeliveryListingId)
+        return repository.placeOrder(items, requiresDelivery, address, paymentMethod, provider, phoneNumber, idempotencyKey, selectedDeliveryListingId, deliveryRequestId)
     }
 }
 
 class VerifyMopayPaymentUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(sessionId: String): Result<Unit> = repository.verifyMopayPayment(sessionId)
+}
+
+class ConfirmDeliveryUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(orderId: String): Result<Unit> = repository.confirmDelivery(orderId)
 }
 
 class CanCreateShopUseCase {

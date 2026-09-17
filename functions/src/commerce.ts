@@ -1,4 +1,4 @@
-import { onCall, HttpsError } from "firebase-functions/v2/https";
+﻿import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { MopayClient, MOPAY_API_KEY } from "./mopay";
 import { resolveEntitlement } from "./entitlements";
@@ -81,12 +81,13 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { items, requiresDelivery, deliveryAddress, paymentMethod, provider, idempotencyKey, selectedDeliveryListingId } = request.data;
+    const { items, requiresDelivery, deliveryAddress, paymentMethod, provider, idempotencyKey, selectedDeliveryListingId, deliveryRequestId } = request.data;
     if (!items || !Array.isArray(items) || !idempotencyKey) {
         throw new HttpsError("invalid-argument", "Missing items or idempotencyKey");
     }
     if (typeof requiresDelivery !== "boolean") throw new HttpsError("invalid-argument", "requiresDelivery is required");
     if (requiresDelivery && !deliveryAddress) throw new HttpsError("invalid-argument", "deliveryAddress is required when requiresDelivery is true");
+    if (requiresDelivery && !deliveryRequestId) throw new HttpsError("invalid-argument", "deliveryRequestId is required for orders requiring delivery");
 
     const db = admin.firestore();
     let orderId = "";
@@ -107,6 +108,33 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
             let shopId = "";
             let sellerId = "";
 
+            // 1. Validate Delivery Request if applicable
+            let deliveryFee = 0;
+            let finalDeliveryListingId = selectedDeliveryListingId;
+            let drShopId = "";
+
+            if (requiresDelivery) {
+                const drRef = db.collection("deliveryRequests").doc(deliveryRequestId);
+                const drDoc = await transaction.get(drRef);
+                if (!drDoc.exists) throw new Error("Delivery request not found");
+                const drData = drDoc.data()!;
+                if (drData.status !== "ACCEPTED") throw new Error(`Delivery request status is ${drData.status}. Must be ACCEPTED.`);
+                if (drData.requesterId !== auth.uid) throw new Error("Delivery request ownership mismatch");
+
+
+                // P0 #1: Capture delivery listing shopId for cross-shop ownership check
+                const drListingRef = db.collection("listings").doc(drData.listingId);
+                const drListingSnap = await transaction.get(drListingRef);
+                if (!drListingSnap.exists) throw new Error("Delivery listing not found");
+                drShopId = drListingSnap.data()!.shopId as string;
+                deliveryFee = drData.deliveryFeeMinorUnits || 0;
+                finalDeliveryListingId = drData.listingId;
+            }
+
+            // 2. Validate Items and Reserve Inventory
+            const now = admin.firestore.Timestamp.now();
+            const reservationExpiresAt = admin.firestore.Timestamp.fromMillis(now.toMillis() + 15 * 60 * 1000);
+
             for (const item of items) {
                 const listingRef = db.collection("listings").doc(item.listingId);
                 const listingDoc = await transaction.get(listingRef);
@@ -120,17 +148,31 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 if (!listing.isAvailable) throw new Error(`Listing ${item.listingId} is not available`);
 
                 const requestedQty = item.quantity || 1;
-                const availableStock = listing.stockQuantity;
+                const totalStock = listing.stockQuantity || 0;
+                const currentReserved = listing.reservedQuantity || 0;
+                const available = totalStock - currentReserved;
 
-                if (availableStock !== undefined && availableStock !== null) {
-                    if (availableStock < requestedQty) {
-                        throw new Error(`Insufficient stock for ${listing.title}. Requested: ${requestedQty}, Available: ${availableStock}`);
-                    }
-                    transaction.update(listingRef, {
-                        stockQuantity: availableStock - requestedQty,
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                    });
+                if (available < requestedQty) {
+                    throw new Error(`Insufficient stock for ${listing.title}. Requested: ${requestedQty}, Available: ${available}`);
                 }
+
+                // Reserve Stock
+                transaction.update(listingRef, {
+                    reservedQuantity: currentReserved + requestedQty,
+                    updatedAt: now
+                });
+
+                // Create Reservation Record
+                const resId = db.collection("reservations").doc().id;
+                transaction.set(db.collection("reservations").doc(resId), {
+                    id: resId,
+                    orderId: newOrderId,
+                    listingId: item.listingId,
+                    quantity: requestedQty,
+                    status: "ACTIVE",
+                    expiresAt: reservationExpiresAt,
+                    createdAt: now
+                });
 
                 if (!shopId) {
                     shopId = listing.shopId;
@@ -151,40 +193,17 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 });
             }
 
-            let deliveryFee = 0;
-            let deliveryListingId: string | null = null;
-            if (requiresDelivery) {
-                if (selectedDeliveryListingId) {
-                    const dlRef = db.collection("listings").doc(selectedDeliveryListingId);
-                    const dlDoc = await transaction.get(dlRef);
-                    if (!dlDoc.exists) throw new Error("Selected delivery provider not found");
-                    const dlData = dlDoc.data()!;
-                    if (dlData.listingType !== "DELIVER") throw new Error("Invalid delivery listing");
-                    if (!dlData.isAvailable) throw new Error("Selected delivery provider is unavailable");
-                    if (dlData.shopId !== shopId) throw new Error("Selected delivery provider does not belong to this shop.");
-                    deliveryFee = dlData.priceMinorUnits || 0;
-                    deliveryListingId = selectedDeliveryListingId;
-                } else {
-                    const deliverySnap = await transaction.get(
-                        db.collection("listings")
-                            .where("shopId", "==", shopId)
-                            .where("listingType", "==", "DELIVER")
-                            .where("isAvailable", "==", true)
-                    );
-                    if (deliverySnap.empty) {
-                        throw new Error("No delivery option is available for this shop.");
-                    }
-                    const deliveryListingDoc = deliverySnap.docs[0];
-                    deliveryFee = deliveryListingDoc.data().priceMinorUnits || 0;
-                    deliveryListingId = deliveryListingDoc.id;
-                }
+            // P0 #1: Enforce delivery request belongs to the same shop as the order items.
+            // drShopId is only defined when requiresDelivery is true.
+            if (typeof drShopId !== 'undefined' && drShopId !== shopId) {
+                throw new Error(`Delivery request shop mismatch: request is for shop ${drShopId}, order is for shop ${shopId}`);
             }
 
             const platformFee = Math.floor((subtotal * 15) / 1000);
             const total = subtotal + deliveryFee + platformFee;
             finalTotal = total;
 
-            let orderStatus = "PENDING";
+            let orderStatus = "RESERVED";
 
             if (paymentMethod === "SWIFT_WALLET") {
                 const walletRef = db.collection("wallets").doc(auth.uid);
@@ -227,21 +246,26 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 totalMinorUnits: total,
                 currency: "LSL",
                 status: orderStatus,
+                inventoryStatus: "RESERVED",
+                settlementStatus: paymentMethod === "SWIFT_WALLET" ? "ESCROW_HOLD" : "PENDING",
+                paymentStatus: paymentMethod === "SWIFT_WALLET" ? "PAID" : "PENDING",
                 requiresDelivery: requiresDelivery,
-                selectedDeliveryListingId: deliveryListingId,
+                deliveryRequestId: deliveryRequestId || null,
+                selectedDeliveryListingId: finalDeliveryListingId || null,
                 deliveryAddress: deliveryAddress || {},
                 paymentMethod: paymentMethod || "MOPAY",
                 provider: provider || null,
                 idempotencyKey: idempotencyKey,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                reservationExpiresAt: reservationExpiresAt,
+                createdAt: now,
+                updatedAt: now
             };
 
             transaction.set(db.collection("orders").doc(newOrderId), orderDoc);
             transaction.set(idempotencyRef, {
                 orderId: newOrderId,
                 userId: auth.uid,
-                createdAt: admin.firestore.FieldValue.serverTimestamp()
+                createdAt: now
             });
 
             return newOrderId;
@@ -323,8 +347,6 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
             throw new Error("Session reference mismatch.");
         }
 
-        // MoPay might return amount in major units. Verify carefully.
-        // Assuming mopaySession.amount is major units (e.g. 100.50 for M100.50)
         const mopayAmountMinor = Math.round(mopaySession.amount * 100);
         if (mopayAmountMinor !== order.totalMinorUnits) {
             throw new Error(`Amount mismatch. Expected: ${order.totalMinorUnits}, Got: ${mopayAmountMinor}`);
@@ -336,7 +358,36 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                 const freshOrderDoc = await transaction.get(orderDoc.ref);
                 const freshOrder = freshOrderDoc.data()!;
 
-                if (freshOrder.status === "CONFIRMED") return; // Already processed (Idempotency)
+                if (freshOrder.status === "CONFIRMED") return; // Idempotency: already confirmed, nothing to do
+                if (freshOrder.status !== "RESERVED") throw new Error(`Order is in state ${freshOrder.status}, cannot confirm.`);
+
+                const now = admin.firestore.Timestamp.now();
+
+                // COMMIT INVENTORY
+                const resQuery = db.collection("reservations").where("orderId", "==", order.id);
+                const resSnap = await transaction.get(resQuery);
+
+                if (resSnap.empty) throw new Error("No reservations found for this order.");
+
+                for (const resDoc of resSnap.docs) {
+                    const reservation = resDoc.data();
+                    if (reservation.status !== "ACTIVE") {
+                        throw new Error(`Reservation for ${reservation.listingId} is ${reservation.status}. Cannot commit.`);
+                    }
+
+                    const listingRef = db.collection("listings").doc(reservation.listingId);
+                    const listingSnap = await transaction.get(listingRef);
+
+                    if (listingSnap.exists) {
+                        const listing = listingSnap.data()!;
+                        transaction.update(listingRef, {
+                            stockQuantity: (listing.stockQuantity || 0) - reservation.quantity,
+                            reservedQuantity: Math.max(0, (listing.reservedQuantity || 0) - reservation.quantity),
+                            updatedAt: now
+                        });
+                    }
+                    transaction.update(resDoc.ref, { status: "COMMITTED", updatedAt: now });
+                }
 
                 // Create Ledger Entry
                 const ledgerId = db.collection("ledgerEntries").doc().id;
@@ -348,30 +399,165 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                     amountMinorUnits: order.totalMinorUnits,
                     currency: "LSL",
                     reference: `ORDER_CONFIRM_MOPAY_${order.id}`,
-                    timestamp: admin.firestore.FieldValue.serverTimestamp()
+                    timestamp: now
                 });
 
                 transaction.update(orderDoc.ref, {
                     status: "CONFIRMED",
                     paymentStatus: "SUCCESS",
+                    inventoryStatus: "COMMITTED",
+                    settlementStatus: "ESCROW_HOLD",
                     gatewayTransactionId: mopaySession.transactionId,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    updatedAt: now
                 });
             });
 
             return { status: "SUCCESS", orderId: order.id };
         } else {
-            // Update order with failure info if applicable
-            await orderDoc.ref.update({
-                paymentStatus: mopaySession.transactionStatus,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
+             // Handle terminal failure (release reservation)
+             if (mopaySession.transactionStatus === "FAILED" || mopaySession.transactionStatus === "CANCELLED") {
+                 await db.runTransaction(async (transaction) => {
+                     const freshOrderDoc = await transaction.get(orderDoc.ref);
+                     const freshOrder = freshOrderDoc.data()!;
+                     if (freshOrder.status !== "RESERVED") return;
+
+                     const now = admin.firestore.Timestamp.now();
+                     const resQuery = db.collection("reservations").where("orderId", "==", order.id);
+                     const resSnap = await transaction.get(resQuery);
+
+                     for (const resDoc of resSnap.docs) {
+                         const reservation = resDoc.data();
+                         if (reservation.status !== "ACTIVE") continue;
+
+                         const listingRef = db.collection("listings").doc(reservation.listingId);
+                         const listingSnap = await transaction.get(listingRef);
+                         if (listingSnap.exists) {
+                             const listing = listingSnap.data()!;
+                             transaction.update(listingRef, {
+                                 reservedQuantity: Math.max(0, (listing.reservedQuantity || 0) - reservation.quantity),
+                                 updatedAt: now
+                             });
+                         }
+                         transaction.update(resDoc.ref, { status: "RELEASED", updatedAt: now });
+                     }
+                     transaction.update(orderDoc.ref, {
+                         status: mopaySession.transactionStatus,
+                         paymentStatus: mopaySession.transactionStatus,
+                         inventoryStatus: "RELEASED",
+                         updatedAt: now
+                     });
+                 });
+             } else {
+                await orderDoc.ref.update({
+                    paymentStatus: mopaySession.transactionStatus,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+             }
 
             return { status: mopaySession.transactionStatus, orderId: order.id };
         }
 
     } catch (error: any) {
         console.error("Payment verification failed:", error);
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
+ * Buyer confirms delivery of an order.
+ * This triggers authoritative settlement (escrow release).
+ */
+export const confirmDelivery = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { orderId } = request.data;
+    if (!orderId) throw new HttpsError("invalid-argument", "Missing orderId");
+
+    const db = admin.firestore();
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const orderRef = db.collection("orders").doc(orderId);
+            const orderDoc = await transaction.get(orderRef);
+            if (!orderDoc.exists) throw new Error("Order not found");
+            const order = orderDoc.data()!;
+
+            if (order.buyerId !== auth.uid) throw new Error("Unauthorized");
+            if (order.status !== "READY" && order.status !== "DISPATCHED" && order.status !== "DELIVERED") {
+                 throw new Error(`Order cannot be confirmed in state ${order.status}`);
+            }
+
+            if (order.settlementStatus === "SETTLED") return; // Idempotent
+
+            const now = admin.firestore.Timestamp.now();
+
+            // SETTLEMENT LOGIC
+            const subtotal = order.subtotalMinorUnits || 0;
+            const deliveryFee = order.deliveryFeeMinorUnits || 0;
+            const platformFee = order.platformFeeMinorUnits || 0;
+            const total = order.totalMinorUnits || 0;
+
+            // Debit Escrow
+            const ledgerId = db.collection("ledgerEntries").doc().id;
+            transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
+                id: ledgerId,
+                debitAccount: "system_order_escrow",
+                creditAccount: "system_clearing", // Temporary clearing for distribution
+                amountMinorUnits: total,
+                currency: "LSL",
+                reference: `SETTLE_ORDER_${orderId}`,
+                timestamp: now
+            });
+
+            // Credit Seller Wallet (Subtotal + Delivery Fee)
+            // Note: In this architecture, we assume the shop owner handles/receives delivery fees.
+            const sellerProceeds = subtotal + deliveryFee;
+            const sellerWalletRef = db.collection("wallets").doc(order.sellerId);
+            const sellerWalletDoc = await transaction.get(sellerWalletRef);
+            const currentSellerBalance = sellerWalletDoc.data()?.availableBalanceMinorUnits || 0;
+
+            transaction.update(sellerWalletRef, {
+                availableBalanceMinorUnits: currentSellerBalance + sellerProceeds,
+                updatedAt: now
+            });
+
+            const sellerLedgerId = db.collection("ledgerEntries").doc().id;
+            transaction.set(db.collection("ledgerEntries").doc(sellerLedgerId), {
+                id: sellerLedgerId,
+                debitAccount: "system_clearing",
+                creditAccount: `user_${order.sellerId}`,
+                amountMinorUnits: sellerProceeds,
+                currency: "LSL",
+                reference: `SALE_PROCEEDS_${orderId}`,
+                timestamp: now
+            });
+
+            // Credit Platform Fees
+            if (platformFee > 0) {
+                const feeLedgerId = db.collection("ledgerEntries").doc().id;
+                transaction.set(db.collection("ledgerEntries").doc(feeLedgerId), {
+                    id: feeLedgerId,
+                    debitAccount: "system_clearing",
+                    creditAccount: "system_fees",
+                    amountMinorUnits: platformFee,
+                    currency: "LSL",
+                    reference: `PLATFORM_FEE_${orderId}`,
+                    timestamp: now
+                });
+            }
+
+            transaction.update(orderRef, {
+                status: "DELIVERED",
+                settlementStatus: "SETTLED",
+                completedAt: now,
+                updatedAt: now
+            });
+        });
+
+        return { success: true };
+    } catch (error: any) {
+        console.error("Delivery confirmation failed:", error);
         throw new HttpsError("failed-precondition", error.message);
     }
 });
@@ -406,9 +592,9 @@ export const updateOrderStatus = onCall(async (request) => {
             const isBuyer = order.buyerId === auth.uid;
 
             if (isBuyer && status === "CANCELLED") {
-                // Buyer can only cancel - note: this typically goes through cancelOrder for logic,
-                // but if we allow it here, we must ensure it's PENDING.
-                if (order.status !== "PENDING") throw new Error("Buyer can only cancel pending orders");
+                // Buyer can only cancel PENDING or RESERVED orders.
+                // New orders created under the reservation model use status RESERVED.
+                if (!['PENDING', 'RESERVED'].includes(order.status)) throw new Error('Buyer can only cancel pending or reserved orders');
             } else if (isSeller) {
                 // Seller transition matrix enforcement
                 const allowedNext = SELLER_TRANSITIONS[order.status] || [];
@@ -483,19 +669,27 @@ export const cancelOrder = onCall(async (request) => {
                 }
             }
 
-            // INVENTORY RESTORATION: Restore stock for each item
-            for (const item of order.items) {
-                const listingRef = db.collection("listings").doc(item.listingId);
-                const listingDoc = await transaction.get(listingRef);
-                if (listingDoc.exists) {
-                    const listing = listingDoc.data()!;
-                    // Only restore if listing has finite stock
-                    if (listing.stockQuantity !== undefined && listing.stockQuantity !== null) {
+            // P0 #3: Release reservations for RESERVED orders only.
+            // createOrder increments reservedQuantity — it does NOT decrement stockQuantity.
+            // Therefore cancellation must mirror the payment-failure release path:
+            // decrement reservedQuantity, mark reservation RELEASED, never touch stockQuantity.
+            if (order.status === 'RESERVED') {
+                const cancelResQuery = db.collection('reservations').where('orderId', '==', orderId);
+                const cancelResSnap = await transaction.get(cancelResQuery);
+                const cancelNow = admin.firestore.FieldValue.serverTimestamp();
+                for (const resDoc of cancelResSnap.docs) {
+                    const reservation = resDoc.data();
+                    if (reservation.status !== 'ACTIVE') continue; // idempotency: skip already-released
+                    const listingRef = db.collection('listings').doc(reservation.listingId);
+                    const listingSnap = await transaction.get(listingRef);
+                    if (listingSnap.exists) {
+                        const listing = listingSnap.data()!;
                         transaction.update(listingRef, {
-                            stockQuantity: listing.stockQuantity + item.quantity,
-                            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                            reservedQuantity: Math.max(0, (listing.reservedQuantity || 0) - reservation.quantity),
+                            updatedAt: cancelNow
                         });
                     }
+                    transaction.update(resDoc.ref, { status: 'RELEASED', updatedAt: cancelNow });
                 }
             }
 

@@ -1,23 +1,24 @@
-package com.swiftshop.domain.wallet
+﻿package com.swiftshop.domain.wallet
 
 import com.swiftshop.core.model.*
 import kotlinx.coroutines.flow.Flow
 
-// ─── Repository Interfaces ────────────────────────────────────────────────────
+// â”€â”€â”€ Repository Interfaces â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface WalletRepository {
     fun observeWallet(userId: String): Flow<Wallet>
     fun observeTransactions(userId: String, limit: Int): Flow<List<WalletTransaction>>
-    suspend fun initiateDeposit(userId: String, amount: MoneyAmount, gateway: String, provider: String, phone: String, idempotencyKey: String): Result<String>
+    suspend fun initiateDeposit(userId: String, amount: MoneyAmount, gateway: String, provider: String, phone: String, idempotencyKey: String): Result<Map<String, String>>
     suspend fun initiateWithdrawal(userId: String, amount: MoneyAmount, gateway: String, provider: String, destination: String, idempotencyKey: String): Result<String>
     suspend fun initiateP2PTransfer(fromUserId: String, toUserId: String, amount: MoneyAmount, idempotencyKey: String): Result<String>
     suspend fun getTransactionById(transactionId: String): Result<WalletTransaction>
+    suspend fun confirmDeposit(sessionId: String): Result<Map<String, String>>
 }
 
 interface LedgerRepository {
     /**
      * All financial events are written as immutable double-entry ledger entries.
-     * Balance is always derived server-side from ledger entries — never from UI state.
+     * Balance is always derived server-side from ledger entries â€” never from UI state.
      */
     suspend fun postEntry(entry: LedgerEntry): Result<String>
     fun observeAccountEntries(accountId: String, limit: Int): Flow<List<LedgerEntry>>
@@ -34,7 +35,7 @@ data class LedgerEntry(
     val timestamp: Long = System.currentTimeMillis()
 )
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 object WalletRules {
     val MINIMUM_WITHDRAWAL = MoneyAmount("LSL", 20000L)  // M200.00
@@ -44,7 +45,7 @@ object WalletRules {
         MoneyAmount(amount.currency, (amount.minorUnits * P2P_FEE_PERCENT).toLong())
 }
 
-// ─── Use Cases ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Use Cases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class ObserveWalletUseCase(private val repository: WalletRepository) {
     operator fun invoke(userId: String): Flow<Wallet> = repository.observeWallet(userId)
@@ -87,5 +88,12 @@ class InitiateP2PTransferUseCase(private val repository: WalletRepository) {
         if (idempotencyKey.isBlank()) return Result.failure(IllegalArgumentException("Idempotency key required"))
         // Fee is calculated server-side; this is client-side pre-validation only
         return repository.initiateP2PTransfer(fromUserId, toUserId, amount, idempotencyKey)
+    }
+}
+
+class ConfirmDepositUseCase(private val repository: WalletRepository) {
+    suspend operator fun invoke(sessionId: String): Result<Map<String, String>> {
+        if (sessionId.isBlank()) return Result.failure(IllegalArgumentException("Session ID required"))
+        return repository.confirmDeposit(sessionId)
     }
 }

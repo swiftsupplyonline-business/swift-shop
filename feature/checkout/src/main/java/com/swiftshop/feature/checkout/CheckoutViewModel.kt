@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import com.swiftshop.core.model.*
 import com.swiftshop.domain.auth.ObserveCurrentUserUseCase
 import com.swiftshop.domain.commerce.*
+import com.swiftshop.domain.delivery.CreateDeliveryRequestUseCase
+import com.swiftshop.domain.delivery.ObserveDeliveryRequestUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -27,6 +29,7 @@ sealed interface CheckoutUiState {
     data class OrderPlaced(val orderId: String) : CheckoutUiState
     data class AwaitingPayment(val orderId: String, val paymentUrl: String, val sessionId: String) : CheckoutUiState
     data class VerifyingPayment(val orderId: String) : CheckoutUiState
+    data class AwaitingDeliveryAcceptance(val requestId: String) : CheckoutUiState
     data class Error(val message: String) : CheckoutUiState
 }
 
@@ -38,6 +41,8 @@ class CheckoutViewModel @Inject constructor(
     private val getDeliveryListings: GetDeliveryListingsUseCase,
     private val placeOrder: PlaceOrderUseCase,
     private val verifyMopayPayment: VerifyMopayPaymentUseCase,
+    private val createDeliveryRequest: CreateDeliveryRequestUseCase,
+    private val observeDeliveryRequest: ObserveDeliveryRequestUseCase,
     private val removeFromCartUseCase: RemoveFromCartUseCase,
     private val clearCartUseCase: ClearCartUseCase
 ) : ViewModel() {
@@ -65,6 +70,9 @@ class CheckoutViewModel @Inject constructor(
     var paymentMethod by mutableStateOf(PaymentMethod.MOPAY)
     var paymentProvider by mutableStateOf<String?>(null)
     var paymentPhone by mutableStateOf("")
+
+    private var currentDeliveryRequest: DeliveryRequest? = null
+    private var deliveryObservationJob: Job? = null
 
     private var currentUserId: String = ""
     private var feeCalculationJob: Job? = null
@@ -174,6 +182,18 @@ class CheckoutViewModel @Inject constructor(
 
     fun placeOrder() {
         val cartState = _uiState.value as? CheckoutUiState.CartLoaded ?: return
+
+        if (requiresDelivery) {
+            val requestId = currentDeliveryRequest?.id
+            val status = currentDeliveryRequest?.status
+
+            if (requestId == null || status != DeliveryRequestStatus.ACCEPTED) {
+                // Trigger delivery request if not already started
+                requestDelivery()
+                return
+            }
+        }
+
         viewModelScope.launch {
             _uiState.value = CheckoutUiState.PlacingOrder
             val idempotencyKey = UUID.randomUUID().toString()
@@ -195,7 +215,8 @@ class CheckoutViewModel @Inject constructor(
                 provider = paymentProvider,
                 phoneNumber = paymentPhone,
                 idempotencyKey = idempotencyKey,
-                selectedDeliveryListingId = if (requiresDelivery) selectedDeliveryListingId else null
+                selectedDeliveryListingId = if (requiresDelivery) selectedDeliveryListingId else null,
+                deliveryRequestId = currentDeliveryRequest?.id
             ).fold(
                 onSuccess = { initiation ->
                     clearCartUseCase(currentUserId)
@@ -211,6 +232,38 @@ class CheckoutViewModel @Inject constructor(
                 },
                 onFailure = { _uiState.value = CheckoutUiState.Error(it.message ?: "Order failed") }
             )
+        }
+    }
+
+    private fun requestDelivery() {
+        val listingId = selectedDeliveryListingId ?: return
+        val pickup = GeoPoint() // In a real app, this would be the shop location from the listing's shop
+        val dropoff = GeoPoint(deliveryAddress.lat, deliveryAddress.lng)
+
+        viewModelScope.launch {
+            _uiState.value = CheckoutUiState.Loading
+            createDeliveryRequest(listingId, pickup, dropoff).fold(
+                onSuccess = { requestId ->
+                    _uiState.value = CheckoutUiState.AwaitingDeliveryAcceptance(requestId)
+                    observeDeliveryRequestStatus(requestId)
+                },
+                onFailure = { _uiState.value = CheckoutUiState.Error(it.message ?: "Delivery request failed") }
+            )
+        }
+    }
+
+    private fun observeDeliveryRequestStatus(requestId: String) {
+        deliveryObservationJob?.cancel()
+        deliveryObservationJob = viewModelScope.launch {
+            observeDeliveryRequest(requestId).collect { request ->
+                currentDeliveryRequest = request
+                if (request.status == DeliveryRequestStatus.ACCEPTED) {
+                    // Transition back to cart loaded so user can proceed to Place Order
+                    updateFees()
+                } else if (request.status == DeliveryRequestStatus.DECLINED || request.status == DeliveryRequestStatus.EXPIRED) {
+                    _uiState.value = CheckoutUiState.Error("Delivery provider ${request.status.name.lowercase()}")
+                }
+            }
         }
     }
 

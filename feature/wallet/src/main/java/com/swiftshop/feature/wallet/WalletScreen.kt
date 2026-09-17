@@ -1,5 +1,7 @@
-package com.swiftshop.feature.wallet
+﻿package com.swiftshop.feature.wallet
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -26,17 +28,18 @@ import kotlinx.coroutines.flow.collectLatest
 fun WalletScreen(
     navController: NavController,
     viewModel: WalletViewModel,
-    biometricGuard: BiometricGuard
+    biometricGuard: BiometricGuard,
+    sessionId: String? = null
 ) {
     val walletState by viewModel.walletState.collectAsState()
     val transactionsState by viewModel.transactions.collectAsState()
     val actionState by viewModel.actionState.collectAsState()
     val balanceVisible by viewModel.balanceVisible.collectAsState()
-    
+
     val showDepositSheet by viewModel.showDepositSheet.collectAsState()
     val showWithdrawSheet by viewModel.showWithdrawSheet.collectAsState()
     val showTransferSheet by viewModel.showTransferSheet.collectAsState()
-    
+
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -54,6 +57,21 @@ fun WalletScreen(
             } else {
                 viewModel.handleSecurityResult(result)
             }
+        }
+    }
+
+    // Deposit Payment Browser Launch
+    LaunchedEffect(Unit) {
+        viewModel.depositIntent.collectLatest { intent ->
+            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(intent.paymentUrl))
+            context.startActivity(browserIntent)
+        }
+    }
+
+    // Auto-confirm deposit on deep-link return from MoPay
+    LaunchedEffect(sessionId) {
+        if (!sessionId.isNullOrBlank()) {
+            viewModel.confirmDeposit(sessionId)
         }
     }
 

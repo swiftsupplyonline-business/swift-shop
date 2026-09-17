@@ -1,4 +1,4 @@
-package com.swiftshop.feature.wallet.components
+﻿package com.swiftshop.feature.wallet.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,6 +16,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.SwapHoriz
 import com.swiftshop.core.model.UserTier
 import com.swiftshop.core.model.Wallet
 import com.swiftshop.core.ui.components.SwiftCard
@@ -63,15 +66,64 @@ fun BalanceCard(
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                if (balanceVisible) wallet.availableBalance.toDisplayString() else "•••• ••••",
+                if (balanceVisible) wallet.availableBalance.toDisplayString() else "â€¢â€¢â€¢â€¢ â€¢â€¢â€¢â€¢",
                 style = MaterialTheme.typography.headlineLarge,
                 color = if (tier == UserTier.ELITE) colors.eliteGold else Color.White
             )
             Spacer(Modifier.height(4.dp))
-            Text("${wallet.currency} · Swift Shop Wallet",
+            Text("${wallet.currency} Â· Swift Shop Wallet",
                 style = MaterialTheme.typography.labelSmall,
                 color = Color.White.copy(alpha = 0.5f))
+            Spacer(Modifier.height(24.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                QuickActionButton(
+                    icon = Icons.Default.ArrowDownward,
+                    label = "Deposit",
+                    onClick = onDeposit,
+                    modifier = Modifier.weight(1f)
+                )
+                QuickActionButton(
+                    icon = Icons.Default.ArrowUpward,
+                    label = "Withdraw",
+                    onClick = onWithdraw,
+                    modifier = Modifier.weight(1f)
+                )
+                QuickActionButton(
+                    icon = Icons.Default.SwapHoriz,
+                    label = "Transfer",
+                    onClick = onTransfer,
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun QuickActionButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = Color.White, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.85f))
     }
 }
 

@@ -1,4 +1,4 @@
-package com.swiftshop.feature.orders
+﻿package com.swiftshop.feature.orders
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
@@ -131,6 +131,7 @@ private fun OrderStatusBadge(status: OrderStatus) {
         OrderStatus.DELIVERED -> "Delivered" to SwiftShopColors.Success
         OrderStatus.CANCELLED -> "Cancelled" to SwiftShopColors.Error
         OrderStatus.REFUNDED -> "Refunded" to SwiftShopColors.Warning
+        OrderStatus.RESERVED -> "Reserved" to SwiftShopColors.Warning
     }
     androidx.compose.foundation.layout.Box(
         modifier = Modifier
@@ -142,7 +143,7 @@ private fun OrderStatusBadge(status: OrderStatus) {
     }
 }
 
-// ─── Order Detail ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Order Detail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @Composable
 fun OrderDetailScreen(
@@ -293,6 +294,17 @@ fun OrderDetailScreen(
                                 }
                             }
                             else -> {}
+                        }
+                    }
+
+                    if (!isSellerMode && (order.status == OrderStatus.DISPATCHED || (order.status == OrderStatus.READY && !order.requiresDelivery))) {
+                        item {
+                            SwiftPrimaryButton(
+                                text = "Confirm Delivery",
+                                onClick = { viewModel.confirmDelivery() },
+                                isLoading = fulfillmentState is FulfillmentState.Processing,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
 
