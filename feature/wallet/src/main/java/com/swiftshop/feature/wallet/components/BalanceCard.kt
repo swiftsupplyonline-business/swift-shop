@@ -36,7 +36,7 @@ fun BalanceCard(
 ) {
     val colors = MaterialTheme.swiftColors
     val gradient = when (tier) {
-        UserTier.BASIC -> listOf(colors.brandBlue, colors.deepNavy)
+        UserTier.BASIC -> listOf(colors.brandBlue, colors.electricBlue)
         UserTier.PREMIUM -> listOf(colors.premiumGradientStart, colors.premiumGradientEnd)
         UserTier.ELITE -> listOf(colors.eliteObsidian, Color(0xFF1A1A2E))
     }
@@ -66,7 +66,7 @@ fun BalanceCard(
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                if (balanceVisible) wallet.availableBalance.toDisplayString() else "â€¢â€¢â€¢â€¢ â€¢â€¢â€¢â€¢",
+                if (balanceVisible) wallet.availableBalance.toDisplayString() else "••••  ••••",
                 style = MaterialTheme.typography.headlineLarge,
                 color = if (tier == UserTier.ELITE) colors.eliteGold else Color.White
             )
