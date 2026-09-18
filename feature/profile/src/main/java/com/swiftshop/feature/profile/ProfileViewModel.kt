@@ -1,4 +1,4 @@
-﻿package com.swiftshop.feature.profile
+package com.swiftshop.feature.profile
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -82,8 +82,10 @@ class ProfileViewModel @Inject constructor(
                         val uid = if (isOwnProfile) currentUser.uid else targetUid!!
 
                         observeProfile(uid).flatMapLatest { profile ->
-                            getUserPosts(uid).map { posts ->
-                                val shops = commerceRepository.getUserShops(uid).first()
+                            combine(
+                                getUserPosts(uid),
+                                commerceRepository.getUserShops(uid)
+                            ) { posts, shops ->
                                 val listings = getUserListings(uid).getOrDefault(emptyList())
                                 val wallet = if (isOwnProfile)
                                     runCatching { WalletUiState.Loaded(observeWallet(uid).first()) as WalletUiState }
@@ -95,7 +97,10 @@ class ProfileViewModel @Inject constructor(
 
                                 _walletState.value = wallet
 
-                                val userForState = if (isOwnProfile) currentUser else User(
+                                val userForState = if (isOwnProfile) currentUser.copy(
+                                    displayName = profile.displayName,
+                                    photoUrl = profile.avatarUrl.ifBlank { currentUser.photoUrl }
+                                ) else User(
                                     uid = profile.uid,
                                     displayName = profile.displayName,
                                     photoUrl = profile.avatarUrl,
