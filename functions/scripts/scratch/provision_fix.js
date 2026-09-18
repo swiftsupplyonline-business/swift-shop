@@ -64,6 +64,8 @@ async function fix() {
 
 fix().then(() => {
     console.log('PROVISION_FIX_DONE');
+    setTimeout(() => { process.exit(0); }, 2000);
 }).catch(e => {
     console.error('PROVISION_FIX_FAILED:', e);
+    process.exit(1);
 });

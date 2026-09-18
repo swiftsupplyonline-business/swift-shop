@@ -13,3 +13,8 @@ functions/lib/
 .cxx/
 captures/
 .artifacts/
+
+hs_err_pid*.log
+kapt_debug.txt
+kapt_diag.txt
+checkout_deps.txt

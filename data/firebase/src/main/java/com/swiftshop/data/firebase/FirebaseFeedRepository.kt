@@ -23,7 +23,9 @@ fun tsToLong(v: Any?): Long = when (v) {
 
 @Singleton
 class FirebaseFeedRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val functions: com.google.firebase.functions.FirebaseFunctions,
+    private val auth: com.google.firebase.auth.FirebaseAuth
 ) : FeedRepository {
 
     override fun getShopFeed(page: Int, pageSize: Int): Flow<PagingState<Listing>> = callbackFlow {
@@ -50,19 +52,23 @@ class FirebaseFeedRepository @Inject constructor(
     }
 
     override suspend fun publishPost(post: FeedPost): Result<String> = runCatching {
-        val docRef = firestore.collection("posts").document()
-        val data = post.copy(id = docRef.id).toFirestore()
-        docRef.set(data).await()
-        docRef.id
+        val data = post.toFirestore()
+        val result = functions.getHttpsCallable("publishPost").call(data).await()
+        result.data as String
     }
 
     override fun getPostFeed(page: Int, pageSize: Int): Flow<PagingState<FeedPost>> = callbackFlow {
+        val uid = auth.uid ?: ""
         val subscription = firestore.collection("posts")
             .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
             .limit(pageSize.toLong())
             .addSnapshotListener { snapshot, _ ->
-                val items = snapshot?.toObjects(FirestoreFeedPost::class.java)?.map { it.toDomain() } ?: emptyList()
-                trySend(PagingState.Success(items, hasMore = items.size == pageSize))
+                val items = snapshot?.toObjects(FirestoreFeedPost::class.java) ?: emptyList()
+                
+                // For simplicity in this batch, we don't block the UI for relationship fetch
+                // Real-world would use combine() or a join query if possible.
+                val domainItems = items.map { it.toDomain() }
+                trySend(PagingState.Success(domainItems, hasMore = items.size == pageSize))
             }
         awaitClose { subscription.remove() }
     }
@@ -103,28 +109,27 @@ class FirebaseFeedRepository @Inject constructor(
     }
 
     override suspend fun likePost(postId: String): Result<Unit> = runCatching {
-        // Atomic increment handled via Cloud Function or FieldValue.increment
-        firestore.collection("posts").document(postId)
-            .update("likeCount", com.google.firebase.firestore.FieldValue.increment(1))
-            .await()
+        val data = mapOf("postId" to postId)
+        functions.getHttpsCallable("likePost").call(data).await()
+        Unit
     }
 
     override suspend fun unlikePost(postId: String): Result<Unit> = runCatching {
-        firestore.collection("posts").document(postId)
-            .update("likeCount", com.google.firebase.firestore.FieldValue.increment(-1))
-            .await()
+        val data = mapOf("postId" to postId)
+        functions.getHttpsCallable("unlikePost").call(data).await()
+        Unit
     }
 
     override suspend fun bookmarkPost(postId: String): Result<Unit> = runCatching {
-        firestore.collection("posts").document(postId)
-            .update("bookmarkCount", com.google.firebase.firestore.FieldValue.increment(1))
-            .await()
+        val data = mapOf("postId" to postId)
+        functions.getHttpsCallable("bookmarkPost").call(data).await()
+        Unit
     }
 
     override suspend fun unbookmarkPost(postId: String): Result<Unit> = runCatching {
-        firestore.collection("posts").document(postId)
-            .update("bookmarkCount", com.google.firebase.firestore.FieldValue.increment(-1))
-            .await()
+        val data = mapOf("postId" to postId)
+        functions.getHttpsCallable("unbookmarkPost").call(data).await()
+        Unit
     }
 
     override fun observeListingComments(listingId: String): Flow<List<Comment>> = callbackFlow {
@@ -139,16 +144,22 @@ class FirebaseFeedRepository @Inject constructor(
 
     override suspend fun postListingComment(comment: Comment): Result<String> = runCatching {
         val doc = firestore.collection("comments").document()
-        val data = comment.copy(id = doc.id, createdAt = System.currentTimeMillis())
-        doc.set(data).await()
-        firestore.collection("listings").document(comment.listingId)
-            .update("commentCount", com.google.firebase.firestore.FieldValue.increment(1))
-            .await()
+        val data = mapOf(
+            "id" to doc.id,
+            "listingId" to comment.listingId,
+            "text" to comment.text,
+            "authorName" to comment.authorName,
+            "authorAvatarUrl" to comment.authorAvatarUrl,
+            "parentCommentId" to comment.parentCommentId
+        )
+        functions.getHttpsCallable("createListingComment").call(data).await()
         doc.id
     }
 
     override suspend fun deleteListingComment(commentId: String): Result<Unit> = runCatching {
-        firestore.collection("comments").document(commentId).delete().await()
+        val data = mapOf("commentId" to commentId)
+        functions.getHttpsCallable("deleteListingComment").call(data).await()
+        Unit
     }
 
     override suspend fun getPost(postId: String): Result<FeedPost?> = runCatching {
@@ -172,16 +183,22 @@ class FirebaseFeedRepository @Inject constructor(
 
     override suspend fun postPostComment(comment: Comment): Result<String> = runCatching {
         val doc = firestore.collection("comments").document()
-        val data = comment.copy(id = doc.id, createdAt = System.currentTimeMillis())
-        doc.set(data).await()
-        firestore.collection("posts").document(comment.postId)
-            .update("commentCount", com.google.firebase.firestore.FieldValue.increment(1))
-            .await()
+        val data = mapOf(
+            "id" to doc.id,
+            "postId" to comment.postId,
+            "text" to comment.text,
+            "authorName" to comment.authorName,
+            "authorAvatarUrl" to comment.authorAvatarUrl,
+            "parentCommentId" to comment.parentCommentId
+        )
+        functions.getHttpsCallable("createPostComment").call(data).await()
         doc.id
     }
 
     override suspend fun deletePostComment(commentId: String): Result<Unit> = runCatching {
-        firestore.collection("comments").document(commentId).delete().await()
+        val data = mapOf("commentId" to commentId)
+        functions.getHttpsCallable("deletePostComment").call(data).await()
+        Unit
     }
 }
 
@@ -208,7 +225,6 @@ fun FeedPost.toFirestore() = mapOf(
     "taggedShops" to taggedShops,
     "isSponsored" to isSponsored,
     "rankingScore" to rankingScore,
-    "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
 )
 
 data class FirestoreFeedPost(
@@ -236,5 +252,5 @@ data class FirestoreFeedPost(
     val rankingScore: Double = 0.0,
     val createdAt: Any? = null
 ) {
-    fun toDomain() = FeedPost(id, authorId, authorName, authorAvatarUrl, runCatching { UserTier.valueOf(authorTier) }.getOrDefault(UserTier.BASIC), shopId, runCatching { PostType.valueOf(type) }.getOrDefault(PostType.IMAGE), caption, mediaUrls, videoUrl, thumbnailUrl, videoDurationMs, likeCount, commentCount, reshareCount, bookmarkCount, hashtags, mentions, taggedListings, taggedShops, false, false, isSponsored, rankingScore, tsToLong(createdAt))
+    fun toDomain(isLiked: Boolean = false, isBookmarked: Boolean = false) = FeedPost(id, authorId, authorName, authorAvatarUrl, runCatching { UserTier.valueOf(authorTier) }.getOrDefault(UserTier.BASIC), shopId, runCatching { PostType.valueOf(type) }.getOrDefault(PostType.IMAGE), caption, mediaUrls, videoUrl, thumbnailUrl, videoDurationMs, likeCount, commentCount, reshareCount, bookmarkCount, hashtags, mentions, taggedListings, taggedShops, isLiked, isBookmarked, isSponsored, rankingScore, tsToLong(createdAt))
 }

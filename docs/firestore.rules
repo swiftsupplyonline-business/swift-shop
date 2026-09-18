@@ -77,40 +77,29 @@ service cloud.firestore {
       // Created and deleted via Cloud Function only to enforce tier limits
       allow create: if false;
       allow update: if isSignedIn()
-        && (
-          (resource.data.sellerId == request.auth.uid
-            && !request.resource.data.diff(resource.data).affectedKeys()
-                .hasAny(['sellerId', 'isSponsored', 'commitmentCount']))
-          // Allow like/comment count updates from any signed-in, active user
-          || (isActive()
-              && request.resource.data.diff(resource.data).affectedKeys()
-                  .hasOnly(['likeCount', 'commentCount']))
-        );
+        && resource.data.sellerId == request.auth.uid
+        && !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['id', 'sellerId', 'isSponsored', 'commitmentCount', 'likeCount', 'commentCount', 'bookmarkCount', 'rankingScore', 'createdAt', 'updatedAt']);
       allow delete: if false;
     }
 
-    // â”€â”€ Posts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Posts ───────────────────────────────────────────────────────────
     match /posts/{postId} {
       allow read: if true;
-      allow create: if isSignedIn() && isActive()
-        && request.resource.data.authorId == request.auth.uid;
+      allow create: if false; // Cloud Function only (Harden Publish)
       allow update: if isSignedIn() && isActive()
-        && (resource.data.authorId == request.auth.uid
-            // Allow like/bookmark count updates from any authenticated user via Cloud Function
-            || request.resource.data.diff(resource.data).affectedKeys()
-                .hasOnly(['likeCount', 'commentCount', 'reshareCount', 'bookmarkCount']));
+        && resource.data.authorId == request.auth.uid
+        && !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['id', 'authorId', 'isSponsored', 'likeCount', 'commentCount', 'bookmarkCount', 'reshareCount', 'rankingScore', 'createdAt', 'updatedAt']);
       allow delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
     }
 
     // â”€â”€ Comments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     match /comments/{commentId} {
       allow read: if true;
-      allow create: if isSignedIn() && isActive()
-        && request.resource.data.authorId == request.auth.uid
-        && ((request.resource.data.postId is string && request.resource.data.postId != "")
-            != (request.resource.data.listingId is string && request.resource.data.listingId != ""));
-      allow update: if isSignedIn() && resource.data.authorId == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
+      // All comment mutations (create/delete) must flow through Cloud Functions
+      // to ensure atomic counter updates and server-side verification.
+      allow write: if false;
     }
 
     // â”€â”€ Orders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

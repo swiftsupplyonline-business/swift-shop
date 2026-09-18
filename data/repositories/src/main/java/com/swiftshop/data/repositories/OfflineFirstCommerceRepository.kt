@@ -79,6 +79,10 @@ class OfflineFirstCommerceRepository @Inject constructor(
 
     override suspend fun unlikeListing(listingId: String): Result<Unit> = remote.unlikeListing(listingId)
 
+    override suspend fun bookmarkListing(listingId: String): Result<Unit> = remote.bookmarkListing(listingId)
+
+    override suspend fun unbookmarkListing(listingId: String): Result<Unit> = remote.unbookmarkListing(listingId)
+
     override suspend fun getSimilarListings(category: String, excludeListingId: String, limit: Int): Result<List<Listing>> =
         remote.getSimilarListings(category, excludeListingId, limit)
 
@@ -127,3 +131,4 @@ class OfflineFirstCommerceRepository @Inject constructor(
     override suspend fun updateOrderStatus(orderId: String, status: OrderStatus) = remote.updateOrderStatus(orderId, status)
     override suspend fun cancelOrder(orderId: String, reason: String) = remote.cancelOrder(orderId, reason)
 }
+

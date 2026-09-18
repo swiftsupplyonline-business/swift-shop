@@ -175,9 +175,11 @@ data class Listing(
     val customFields: List<CustomField> = emptyList(),
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
-    val likeCount: Int = 0,
     val commentCount: Int = 0,
-    val isLikedByMe: Boolean = false
+    val bookmarkCount: Int = 0,
+    val isLikedByMe: Boolean = false,
+    val isBookmarkedByMe: Boolean = false,
+    val likeCount: Int = 0
 ) : Parcelable
 
 @Serializable
@@ -512,3 +514,5 @@ sealed interface PagingState<out T> {
     data object Empty : PagingState<Nothing>
     data class LoadingMore<T>(val items: List<T>) : PagingState<T>
 }
+
+

@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -45,6 +46,8 @@ class ListingDetailViewModel @Inject constructor(
     private val addToCartUseCase: com.swiftshop.domain.commerce.AddToCartUseCase,
     private val likeListingUseCase: com.swiftshop.domain.commerce.LikeListingUseCase,
     private val unlikeListingUseCase: com.swiftshop.domain.commerce.UnlikeListingUseCase,
+    private val bookmarkListingUseCase: com.swiftshop.domain.commerce.BookmarkListingUseCase,
+    private val unbookmarkListingUseCase: com.swiftshop.domain.commerce.UnbookmarkListingUseCase,
     private val observeListingCommentsUseCase: com.swiftshop.domain.feed.ObserveListingCommentsUseCase,
     private val postListingCommentUseCase: com.swiftshop.domain.feed.PostListingCommentUseCase,
     private val deleteListingCommentUseCase: com.swiftshop.domain.feed.DeleteListingCommentUseCase,
@@ -88,16 +91,22 @@ class ListingDetailViewModel @Inject constructor(
     private val _similarListings = MutableStateFlow<List<Listing>>(emptyList())
     val similarListings: StateFlow<List<Listing>> = _similarListings.asStateFlow()
 
-    init { load() }
+    init {
+        // Derive isOwner reactively — no race between user and listing resolution
+        viewModelScope.launch {
+            combine(uiState, observeCurrentUser()) { state, user ->
+                user?.uid != null &&
+                    state is ListingDetailState.Loaded &&
+                    user.uid == state.listing.sellerId
+            }.collect { _isOwner.value = it }
+        }
+        load()
+    }
 
     fun load() {
         viewModelScope.launch {
             val user = observeCurrentUser().first()
             _currentUserId.value = user?.uid
-            val state = _uiState.value
-            if (state is ListingDetailState.Loaded) {
-                _isOwner.value = user?.uid == state.listing.sellerId
-            }
         }
         viewModelScope.launch {
             _uiState.value = ListingDetailState.Loading
@@ -208,6 +217,30 @@ class ListingDetailViewModel @Inject constructor(
             }
         }
     }
+
+    fun toggleBookmark() {
+        val state = _uiState.value as? ListingDetailState.Loaded ?: return
+        val listing = state.listing
+        val wasBookmarked = listing.isBookmarkedByMe
+
+        // Optimistic update
+        _uiState.value = ListingDetailState.Loaded(
+            listing.copy(
+                isBookmarkedByMe = !wasBookmarked,
+                bookmarkCount = if (wasBookmarked) (listing.bookmarkCount - 1).coerceAtLeast(0) else listing.bookmarkCount + 1
+            )
+        )
+
+        viewModelScope.launch {
+            val result = if (wasBookmarked) unbookmarkListingUseCase(listing.id) else bookmarkListingUseCase(listing.id)
+            result.onFailure {
+                // Revert on failure
+                _uiState.value = ListingDetailState.Loaded(listing)
+                _actionState.value = ActionState.Error("Couldn't update bookmark — try again")
+            }
+        }
+    }
+
     fun deleteListing(onDeleted: () -> Unit) {
         viewModelScope.launch {
             _isDeleting.value = true

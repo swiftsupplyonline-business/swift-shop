@@ -833,11 +833,30 @@ export const createListing = onCall(async (request) => {
 
             const listingId = db.collection("listings").doc().id;
             const isAvailable = listing.isAvailable !== false; // Default to true
+
+            const clientOwnedFields: Record<string, any> = {};
+            const allowedKeys = [
+                "shopId", "title", "description", "category", "tags",
+                "priceMinorUnits", "priceCurrency", "imageUrls", "images", "videoUrl",
+                "listingType", "isAvailable", "stockQuantity", "deliveryEstimateDays",
+                "customFields", "durationMinutes", "fulfillmentOptions"
+            ];
+            for (const key of allowedKeys) {
+                if (listing && listing[key] !== undefined) {
+                    clientOwnedFields[key] = listing[key];
+                }
+            }
+
             const newListing = {
-                ...listing,
+                ...clientOwnedFields,
                 id: listingId,
                 sellerId: uid,
                 isAvailable,
+                isSponsored: false,
+                commitmentCount: 0,
+                likeCount: 0,
+                commentCount: 0,
+                rankingScore: 0,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             };
@@ -992,11 +1011,31 @@ export const updateListing = onCall(async (request) => {
                 throw new Error("Unauthorized");
             }
 
+            const allowedUpdateKeys = [
+                "shopId", "title", "description", "category", "tags",
+                "priceMinorUnits", "priceCurrency", "imageUrls", "images", "videoUrl",
+                "listingType", "isAvailable", "stockQuantity", "deliveryEstimateDays",
+                "customFields", "durationMinutes", "fulfillmentOptions"
+            ];
+            const filteredUpdates: Record<string, any> = {};
+            for (const key of allowedUpdateKeys) {
+                if (updates && updates[key] !== undefined) {
+                    filteredUpdates[key] = updates[key];
+                }
+            }
+
+            if (filteredUpdates.shopId !== undefined && filteredUpdates.shopId !== listing.shopId) {
+                const shopRef = db.collection("shops").doc(filteredUpdates.shopId);
+                const shopDoc = await transaction.get(shopRef);
+                if (!shopDoc.exists) throw new Error("Target shop not found");
+                if (shopDoc.data()!.ownerId !== auth.uid) throw new Error("Unauthorized shop transfer");
+            }
+
             const oldAvailable = listing.isAvailable !== false;
-            const newAvailable = updates.isAvailable !== undefined ? updates.isAvailable : oldAvailable;
+            const newAvailable = filteredUpdates.isAvailable !== undefined ? filteredUpdates.isAvailable : oldAvailable;
 
             transaction.update(listingRef, {
-                ...updates,
+                ...filteredUpdates,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
 
@@ -1010,6 +1049,279 @@ export const updateListing = onCall(async (request) => {
                         updatedAt: admin.firestore.FieldValue.serverTimestamp()
                     });
                 }
+            }
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
+ * Idempotent likeListing Cloud Function.
+ */
+export const likeListing = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { listingId } = request.data;
+    if (!listingId) throw new HttpsError("invalid-argument", "Missing listingId");
+
+    const db = admin.firestore();
+    const uid = auth.uid;
+    const relationshipId = `listing_${listingId}`;
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const listingRef = db.collection("listings").doc(listingId);
+            const likeRef = db.collection("users").doc(uid).collection("likes").doc(relationshipId);
+
+            const [listingDoc, likeDoc] = await Promise.all([
+                transaction.get(listingRef),
+                transaction.get(likeRef)
+            ]);
+
+            if (!listingDoc.exists) throw new Error("Listing not found");
+            if (likeDoc.exists) return; // Idempotent
+
+            transaction.set(likeRef, {
+                uid,
+                contentId: listingId,
+                type: "LISTING",
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+            transaction.update(listingRef, {
+                likeCount: admin.firestore.FieldValue.increment(1),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
+ * Idempotent unlikeListing Cloud Function.
+ */
+export const unlikeListing = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { listingId } = request.data;
+    if (!listingId) throw new HttpsError("invalid-argument", "Missing listingId");
+
+    const db = admin.firestore();
+    const uid = auth.uid;
+    const relationshipId = `listing_${listingId}`;
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const listingRef = db.collection("listings").doc(listingId);
+            const likeRef = db.collection("users").doc(uid).collection("likes").doc(relationshipId);
+
+            const [listingDoc, likeDoc] = await Promise.all([
+                transaction.get(listingRef),
+                transaction.get(likeRef)
+            ]);
+
+            if (!listingDoc.exists) throw new Error("Listing not found");
+            if (!likeDoc.exists) return; // Idempotent
+
+            transaction.delete(likeRef);
+
+            const currentLikeCount = listingDoc.data()?.likeCount || 0;
+            transaction.update(listingRef, {
+                likeCount: Math.max(0, currentLikeCount - 1),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
+ * Idempotent bookmarkListing Cloud Function.
+ */
+export const bookmarkListing = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { listingId } = request.data;
+    if (!listingId) throw new HttpsError("invalid-argument", "Missing listingId");
+
+    const db = admin.firestore();
+    const uid = auth.uid;
+    const relationshipId = `listing_${listingId}`;
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const listingRef = db.collection("listings").doc(listingId);
+            const bookmarkRef = db.collection("users").doc(uid).collection("bookmarks").doc(relationshipId);
+
+            const [listingDoc, bookmarkDoc] = await Promise.all([
+                transaction.get(listingRef),
+                transaction.get(bookmarkRef)
+            ]);
+
+            if (!listingDoc.exists) throw new Error("Listing not found");
+            if (bookmarkDoc.exists) return; // Idempotent
+
+            transaction.set(bookmarkRef, {
+                uid,
+                contentId: listingId,
+                type: "LISTING",
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+            transaction.update(listingRef, {
+                bookmarkCount: admin.firestore.FieldValue.increment(1),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
+ * Idempotent unbookmarkListing Cloud Function.
+ */
+export const unbookmarkListing = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { listingId } = request.data;
+    if (!listingId) throw new HttpsError("invalid-argument", "Missing listingId");
+
+    const db = admin.firestore();
+    const uid = auth.uid;
+    const relationshipId = `listing_${listingId}`;
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const listingRef = db.collection("listings").doc(listingId);
+            const bookmarkRef = db.collection("users").doc(uid).collection("bookmarks").doc(relationshipId);
+
+            const [listingDoc, bookmarkDoc] = await Promise.all([
+                transaction.get(listingRef),
+                transaction.get(bookmarkRef)
+            ]);
+
+            if (!listingDoc.exists) throw new Error("Listing not found");
+            if (!bookmarkDoc.exists) return; // Idempotent
+
+            transaction.delete(bookmarkRef);
+
+            const currentBookmarkCount = listingDoc.data()?.bookmarkCount || 0;
+            transaction.update(listingRef, {
+                bookmarkCount: Math.max(0, currentBookmarkCount - 1),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
+ * Transactional, server-authoritative creation of a Listing comment.
+ */
+export const createListingComment = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { listingId, text, id: commentId } = request.data;
+    if (!listingId || !text) throw new HttpsError("invalid-argument", "Missing listingId or text");
+
+    const db = admin.firestore();
+    const uid = auth.uid;
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const listingRef = db.collection("listings").doc(listingId);
+            const commentRef = db.collection("comments").doc(commentId || db.collection("comments").doc().id);
+
+            const [listingDoc, commentDoc] = await Promise.all([
+                transaction.get(listingRef),
+                transaction.get(commentRef)
+            ]);
+
+            if (!listingDoc.exists) throw new Error("Listing not found");
+            if (commentDoc.exists) return; // Idempotent
+
+            const now = admin.firestore.FieldValue.serverTimestamp();
+
+            // Server-authoritative comment document
+            transaction.set(commentRef, {
+                id: commentRef.id,
+                listingId,
+                authorId: uid,
+                authorName: request.data.authorName || "Anonymous",
+                authorAvatarUrl: request.data.authorAvatarUrl || "",
+                text,
+                parentCommentId: request.data.parentCommentId || "",
+                replyCount: 0,
+                likeCount: 0,
+                createdAt: now,
+                updatedAt: now
+            });
+
+            transaction.update(listingRef, {
+                commentCount: admin.firestore.FieldValue.increment(1),
+                updatedAt: now
+            });
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
+ * Transactional, server-authoritative deletion of a Listing comment.
+ */
+export const deleteListingComment = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { commentId } = request.data;
+    if (!commentId) throw new HttpsError("invalid-argument", "Missing commentId");
+
+    const db = admin.firestore();
+    const uid = auth.uid;
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const commentRef = db.collection("comments").doc(commentId);
+            const commentDoc = await transaction.get(commentRef);
+
+            if (!commentDoc.exists) return; // Idempotent
+
+            const commentData = commentDoc.data()!;
+            if (commentData.authorId !== uid && auth.token.admin !== true) {
+                throw new Error("Unauthorized");
+            }
+
+            const listingId = commentData.listingId;
+            if (!listingId) throw new Error("Comment is not associated with a Listing");
+
+            const listingRef = db.collection("listings").doc(listingId);
+            const listingDoc = await transaction.get(listingRef);
+
+            transaction.delete(commentRef);
+
+            if (listingDoc.exists) {
+                const currentCount = listingDoc.data()?.commentCount || 0;
+                transaction.update(listingRef, {
+                    commentCount: Math.max(0, currentCount - 1),
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
             }
         });
         return { success: true };

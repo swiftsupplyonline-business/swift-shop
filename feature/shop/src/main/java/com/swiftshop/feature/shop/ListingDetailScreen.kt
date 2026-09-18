@@ -316,6 +316,23 @@ fun ListingDetailScreen(
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+
+                            Spacer(Modifier.width(16.dp))
+                            IconButton(
+                                onClick = { viewModel.toggleBookmark() },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    if (listing.isBookmarkedByMe) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                    contentDescription = if (listing.isBookmarkedByMe) "Unbookmark" else "Bookmark",
+                                    tint = if (listing.isBookmarkedByMe) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                "${listing.bookmarkCount}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
 
                         // Shop Info
@@ -762,5 +779,6 @@ private fun CustomFieldRenderer(field: CustomField) {
         )
     }
 }
+
 
 

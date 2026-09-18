@@ -51,6 +51,10 @@ class CheckoutViewModel @Inject constructor(
     val uiState: StateFlow<CheckoutUiState> = _uiState.asStateFlow()
 
     private var currentCartItems: List<CartItem> = emptyList()
+    private val _hasCartItems = MutableStateFlow(false)
+    val hasCartItems: StateFlow<Boolean> = _hasCartItems.asStateFlow()
+    private val _cartItems = MutableStateFlow<List<CartItem>>(emptyList())
+    val cartItems: StateFlow<List<CartItem>> = _cartItems.asStateFlow()
     private val _cartShopId = MutableStateFlow("")
     
     private val _deliveryAddress = MutableStateFlow(DeliveryAddress(city = "Maseru", country = "Lesotho"))
@@ -84,6 +88,8 @@ class CheckoutViewModel @Inject constructor(
                 observeCart(user.uid).collect { items ->
                     _cartShopId.value = items.firstOrNull()?.shopId ?: ""
                     currentCartItems = items
+                    _hasCartItems.value = items.isNotEmpty()
+                    _cartItems.value = items
                     updateFees()
                 }
             }
@@ -180,6 +186,12 @@ class CheckoutViewModel @Inject constructor(
         }
     }
 
+
+    fun onClearCartClicked() {
+        viewModelScope.launch {
+            clearCartUseCase(currentUserId)
+        }
+    }
     fun placeOrder() {
         val cartState = _uiState.value as? CheckoutUiState.CartLoaded ?: return
 

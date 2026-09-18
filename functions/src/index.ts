@@ -3,20 +3,24 @@ import * as admin from "firebase-admin";
 // Initialize Admin SDK for server-authoritative operations
 admin.initializeApp();
 
-// Auth Triggers
-export * from "./auth";
+// Hardened exports
+export { provisionNewUser } from "./auth";
+export {
+    calculateOrderFees, createOrder, verifyMopayPayment, confirmDelivery,
+    updateOrderStatus, cancelOrder, confirmMopayPayment, initiateSubscription,
+    createListing, deleteListing, createShop, updateListing,
+    likeListing, unlikeListing, bookmarkListing, unbookmarkListing,
+    createListingComment, deleteListingComment
+} from "./commerce";
+export {
+    onFollowCreated, onFollowDeleted,
+    publishPost, likePost, unlikePost, bookmarkPost, unbookmarkPost,
+    createPostComment, deletePostComment
+} from "./social";
+export { syncProfileCounters } from "./maintenance";
 
 // Financial Functions
 export * from "./finance";
-
-// Commerce Functions
-export * from "./commerce";
-
-// Social Functions
-export * from "./social";
-
-// Maintenance Functions
-export * from "./maintenance";
 
 // Logistics Functions
 export * from "./logistics";
