@@ -1,4 +1,4 @@
-﻿package com.swiftshop.di
+package com.swiftshop.di
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -61,7 +61,7 @@ object FirebaseModule {
 object PaymentModule {
 
     /**
-     * The one place BuildConfig.FLAVOR is trustworthy for this decision â€”
+     * The one place BuildConfig.FLAVOR is trustworthy for this decision —
      * this is :app's own BuildConfig, matching whichever product flavor is
      * actually being assembled. dev builds get the in-memory mock so
      * wallet/checkout flows can be exercised without a live backend;
@@ -184,6 +184,12 @@ object CommerceModule {
     fun provideUnlikeListingUseCase(repo: CommerceRepository) = UnlikeListingUseCase(repo)
 
     @Provides
+    fun provideBookmarkListingUseCase(repo: CommerceRepository) = BookmarkListingUseCase(repo)
+
+    @Provides
+    fun provideUnbookmarkListingUseCase(repo: CommerceRepository) = UnbookmarkListingUseCase(repo)
+
+    @Provides
     fun provideGetSimilarListingsUseCase(repo: CommerceRepository) = GetSimilarListingsUseCase(repo)
 
     @Provides
@@ -222,6 +228,9 @@ object CommerceModule {
     @Provides
     fun provideCreateListingUseCase(repo: CommerceRepository, media: com.swiftshop.core.media.MediaUploader) = 
         CreateListingUseCase(repo, media)
+
+    @Provides
+    fun provideDeleteListingUseCase(repo: CommerceRepository) = DeleteListingUseCase(repo)
 }
 
 @Module

@@ -108,6 +108,8 @@ interface CommerceRepository {
     suspend fun deleteListing(listingId: String): Result<Unit>
     suspend fun likeListing(listingId: String): Result<Unit>
     suspend fun unlikeListing(listingId: String): Result<Unit>
+    suspend fun bookmarkListing(listingId: String): Result<Unit>
+    suspend fun unbookmarkListing(listingId: String): Result<Unit>
     suspend fun getSimilarListings(category: String, excludeListingId: String, limit: Int = 10): Result<List<Listing>>
 
     // Cart
@@ -195,6 +197,14 @@ class UnlikeListingUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(listingId: String): Result<Unit> = repository.unlikeListing(listingId)
 }
 
+class BookmarkListingUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(listingId: String): Result<Unit> = repository.bookmarkListing(listingId)
+}
+
+class UnbookmarkListingUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(listingId: String): Result<Unit> = repository.unbookmarkListing(listingId)
+}
+
 class GetSimilarListingsUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(category: String, excludeListingId: String, limit: Int = 10): Result<List<Listing>> =
         repository.getSimilarListings(category, excludeListingId, limit)
@@ -266,4 +276,8 @@ class CreateShopUseCase(private val repository: CommerceRepository) {
 
 class UpdateShopUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(shop: Shop): Result<Unit> = repository.updateShop(shop)
+}
+
+class DeleteListingUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(listingId: String): Result<Unit> = repository.deleteListing(listingId)
 }
