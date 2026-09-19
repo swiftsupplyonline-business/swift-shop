@@ -292,6 +292,53 @@ export const respondToDeliveryRequest = onCall(async (request) => {
 });
 
 /**
+ * Cancels a pending delivery request initiated by the requester.
+ * Only the requester (customer) may cancel a PENDING request.
+ * Requests in any terminal state (ACCEPTED, DECLINED, EXPIRED, CANCELLED)
+ * cannot be cancelled — the client must handle those states in the UI.
+ *
+ * Contract:
+ * - Request: { requestId: string }
+ * - Response: { success: true }
+ */
+export const cancelDeliveryRequest = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { requestId } = request.data;
+    if (!requestId) throw new HttpsError("invalid-argument", "requestId is required");
+
+    const db = admin.firestore();
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const requestRef = db.collection("deliveryRequests").doc(requestId);
+            const requestDoc = await transaction.get(requestRef);
+            if (!requestDoc.exists) throw new Error("Delivery request not found");
+            const deliveryRequest = requestDoc.data()!;
+
+            if (deliveryRequest.requesterId !== auth.uid) {
+                throw new Error("Only the requester can cancel this delivery request");
+            }
+
+            // Only PENDING requests can be cancelled by the customer.
+            // ACCEPTED requests need a different flow (post-acceptance cancellation).
+            if (deliveryRequest.status !== "PENDING") {
+                throw new Error(`Cannot cancel a request that is already ${deliveryRequest.status}`);
+            }
+
+            transaction.update(requestRef, {
+                status: "CANCELLED",
+                updatedAt: Date.now()
+            });
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
  * Scheduled sweep: flips any PENDING request whose window has elapsed to
  * EXPIRED. Runs every minute. This is what makes "merchant never responded"
  * actually resolve for the requester even if the merchant's device never

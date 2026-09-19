@@ -16,4 +16,5 @@ interface DeliveryRepository {
     fun observeDeliveryRequest(requestId: String): Flow<DeliveryRequest>
     fun observePendingDeliveryRequestsForMerchant(merchantId: String): Flow<List<DeliveryRequest>>
     suspend fun respondToDeliveryRequest(requestId: String, accept: Boolean): Result<Unit>
+    suspend fun cancelDeliveryRequest(requestId: String): Result<Unit>
 }

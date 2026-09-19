@@ -1,9 +1,9 @@
-﻿rules_version = '2';
+rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Helpers ────────────────────────────────────────────────────────────
     function isSignedIn() {
       return request.auth != null;
     }
@@ -20,7 +20,7 @@ service cloud.firestore {
               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('accountStatus', 'ACTIVE') == 'ACTIVE');
     }
 
-    // â”€â”€ Users â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Users ──────────────────────────────────────────────────────────────
     match /users/{uid} {
       // P0: Private Account Data - restricted to Owner/Admin
       allow read: if isOwner(uid) || isAdmin();
@@ -55,7 +55,7 @@ service cloud.firestore {
       }
     }
 
-    // â”€â”€ Profiles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Profiles ───────────────────────────────────────────────────────────
     match /profiles/{uid} {
       allow read: if isSignedIn();
       allow write: if isOwner(uid) && isActive()
@@ -65,7 +65,7 @@ service cloud.firestore {
                      'activeListingCount', 'reputationScore', 'tier', 'totalDeliveries']);
     }
 
-    // â”€â”€ Shops â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Shops ──────────────────────────────────────────────────────────────
     match /shops/{shopId} {
       allow read: if true;  // public
       // Created via Cloud Function only to enforce tier limits
@@ -77,7 +77,7 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // â”€â”€ Listings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Listings ───────────────────────────────────────────────────────────
     match /listings/{listingId} {
       allow read: if true;  // public
       // Created and deleted via Cloud Function only to enforce tier limits
@@ -94,7 +94,7 @@ service cloud.firestore {
       }
     }
 
-    // ─── Posts ───────────────────────────────────────────────────────────
+    // --- Posts -----------------------------------------------------------
     match /posts/{postId} {
       allow read: if true;
       allow create: if false; // Cloud Function only (Harden Publish)
@@ -110,7 +110,7 @@ service cloud.firestore {
       }
     }
 
-    // â”€â”€ Comments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Comments ───────────────────────────────────────────────────────────
     match /comments/{commentId} {
       allow read: if true;
       // All comment mutations (create/delete) must flow through Cloud Functions
@@ -118,7 +118,7 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // â”€â”€ Orders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Orders ─────────────────────────────────────────────────────────────
     match /orders/{orderId} {
       allow read: if isSignedIn()
         && (resource.data.buyerId == request.auth.uid
@@ -131,36 +131,36 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // â”€â”€ Delivery Requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Delivery Requests ──────────────────────────────────────────────────
     match /deliveryRequests/{requestId} {
       allow read: if isSignedIn()
         && (resource.data.requesterId == request.auth.uid
             || resource.data.merchantId == request.auth.uid
             || isAdmin());
-      // Created, accepted, declined, and expired via Cloud Function only â€”
+      // Created, accepted, declined, and expired via Cloud Function only —
       // the 120-second window is server-authoritative, not client-trusted.
       allow create: if false;
       allow update: if false;
       allow delete: if false;
     }
 
-    // â”€â”€ Wallets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Wallets ────────────────────────────────────────────────────────────
     match /wallets/{uid} {
       allow read: if isOwner(uid) || isAdmin();
-      // All writes server-side only â€” no client wallet mutation
+      // All writes server-side only — no client wallet mutation
       allow write: if false;
     }
 
-    // â”€â”€ Ledger Entries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Ledger Entries ─────────────────────────────────────────────────────
     match /ledgerEntries/{entryId} {
       allow read: if isAdmin()
         || resource.data.debitAccount == request.auth.uid
         || resource.data.creditAccount == request.auth.uid;
-      // Immutable â€” write only from admin SDK (Cloud Functions)
+      // Immutable — write only from admin SDK (Cloud Functions)
       allow write: if false;
     }
 
-    // â”€â”€ Wallet Transactions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Wallet Transactions ────────────────────────────────────────────────
     match /walletTransactions/{txId} {
       allow read: if isSignedIn()
         && resource.data.userId == request.auth.uid;
@@ -168,7 +168,7 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // â”€â”€ Conversations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Conversations ──────────────────────────────────────────────────────
     match /conversations/{conversationId} {
       allow read: if isSignedIn()
         && request.auth.uid in resource.data.participantIds;
@@ -179,7 +179,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // â”€â”€ Messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Messages ───────────────────────────────────────────────────────────
     match /messages/{messageId} {
       allow read: if isSignedIn()
         && get(/databases/$(database)/documents/conversations/$(resource.data.conversationId))
@@ -191,7 +191,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // â”€â”€ Delivery Routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Delivery Routes ────────────────────────────────────────────────────
     match /deliveryRoutes/{routeId} {
       allow read: if isSignedIn()
         && (resource.data.buyerId == request.auth.uid
@@ -199,7 +199,7 @@ service cloud.firestore {
             || isAdmin());
       allow create: if false;  // Cloud Function only
       allow update: if isSignedIn()
-        // Driver can update their own live location (flat lat/lng fields â€”
+        // Driver can update their own live location (flat lat/lng fields —
         // matches FirestoreDeliveryRoute on Android, not a nested map)
         && resource.data.driverId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys()
@@ -207,7 +207,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // â”€â”€ Advertising Campaigns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Advertising Campaigns ──────────────────────────────────────────────
     match /advertisingCampaigns/{campaignId} {
       allow read: if isSignedIn()
         && (resource.data.ownerId == request.auth.uid || isAdmin());
@@ -222,25 +222,25 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // â”€â”€ Subscriptions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Subscriptions ──────────────────────────────────────────────────────
     match /subscriptions/{subscriptionId} {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow write: if false;  // Cloud Function only
     }
 
-    // â”€â”€ Entitlements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Entitlements ────────────────────────────────────────────────────────
     match /entitlements/{entitlementId} {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow write: if false;  // Server only
     }
 
-    // â”€â”€ Audit Logs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Audit Logs ─────────────────────────────────────────────────────────
     match /auditLogs/{logId} {
       allow read: if isAdmin();
       allow write: if false;  // Admin SDK only
     }
 
-    // â”€â”€ Reports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Reports ────────────────────────────────────────────────────────────
     match /reports/{reportId} {
       allow create: if isSignedIn() && isActive();
       allow read: if isAdmin();
@@ -248,7 +248,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // â”€â”€ Follows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Follows ────────────────────────────────────────────────────────────
     match /follows/{followId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isActive()
@@ -257,13 +257,13 @@ service cloud.firestore {
         && resource.data.followerId == request.auth.uid;
     }
 
-    // â”€â”€ Idempotency â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Idempotency ────────────────────────────────────────────────────────
     match /idempotencyKeys/{key} {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow write: if false;
     }
 
-    // â”€â”€ Reservations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Reservations ───────────────────────────────────────────────────────
     // Reservations are an internal server implementation detail.
     // Documents carry: id, orderId, listingId, quantity, status, expiresAt, createdAt.
     // No buyerId/sellerId fields exist on reservation documents.

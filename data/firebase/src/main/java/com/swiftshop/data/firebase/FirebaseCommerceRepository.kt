@@ -90,17 +90,19 @@ class FirebaseCommerceRepository @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
+    // shopId parameter is kept for API compatibility but is no longer used as a filter.
+    // Delivery providers may belong to any shop — cross-shop delivery is valid.
+    // The Firestore index required: listingType ASC, isAvailable ASC, createdAt DESC.
     override fun getDeliveryListings(shopId: String): Flow<List<Listing>> = callbackFlow {
         val subscription = firestore.collection("listings")
             .whereEqualTo("listingType", "DELIVER")
-            .whereEqualTo("shopId", shopId)
             .whereEqualTo("isAvailable", true)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    android.util.Log.e("SwiftShopDelivery", "getDeliveryListings failed for shopId=$shopId", error)
+                    android.util.Log.e("SwiftShopDelivery", "getDeliveryListings failed", error)
                 }
                 val list = snapshot?.toObjects(FirestoreListing::class.java)?.map { it.toDomain() } ?: emptyList()
-                android.util.Log.d("SwiftShopDelivery", "getDeliveryListings shopId=$shopId returned ${list.size} results")
+                android.util.Log.d("SwiftShopDelivery", "getDeliveryListings returned ${list.size} results")
                 trySend(list)
             }
         awaitClose { subscription.remove() }

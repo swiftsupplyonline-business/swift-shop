@@ -76,6 +76,12 @@ class FirebaseDeliveryRepository @Inject constructor(
         Unit
     }
 
+    override suspend fun cancelDeliveryRequest(requestId: String): Result<Unit> = runCatching {
+        val data = mapOf("requestId" to requestId)
+        functions.getHttpsCallable("cancelDeliveryRequest").call(data).await()
+        Unit
+    }
+
     override suspend fun updateDriverLocation(routeId: String, location: GeoPoint): Result<Unit> = runCatching {
         // Direct write allowed for drivers to update their own location for real-time tracking
         firestore.collection("deliveryRoutes").document(routeId)

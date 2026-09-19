@@ -32,3 +32,8 @@ class RespondToDeliveryRequestUseCase(private val repository: DeliveryRepository
     suspend operator fun invoke(requestId: String, accept: Boolean): Result<Unit> =
         repository.respondToDeliveryRequest(requestId, accept)
 }
+
+class CancelDeliveryRequestUseCase(private val repository: DeliveryRepository) {
+    suspend operator fun invoke(requestId: String): Result<Unit> =
+        repository.cancelDeliveryRequest(requestId)
+}

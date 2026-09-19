@@ -314,6 +314,9 @@ object LogisticsModule {
 
     @Provides
     fun provideRespondToDeliveryRequestUseCase(repo: DeliveryRepository) = RespondToDeliveryRequestUseCase(repo)
+
+    @Provides
+    fun provideCancelDeliveryRequestUseCase(repo: DeliveryRepository) = CancelDeliveryRequestUseCase(repo)
 }
 
 @Module
