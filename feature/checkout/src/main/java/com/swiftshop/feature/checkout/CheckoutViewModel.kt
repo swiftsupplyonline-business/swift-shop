@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import javax.inject.Inject
 
-// ─── UI State ─────────────────────────────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ UI State Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 sealed interface CheckoutUiState {
     data object Loading : CheckoutUiState
@@ -38,7 +38,7 @@ sealed interface CheckoutUiState {
     data class Error(val message: String) : CheckoutUiState
 }
 
-// ─── Accepted delivery snapshot (immutable once accepted) ─────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Accepted delivery snapshot (immutable once accepted) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 data class AcceptedDelivery(
     val requestId: String,
@@ -46,7 +46,7 @@ data class AcceptedDelivery(
     val fee: MoneyAmount
 )
 
-// ─── ViewModel ────────────────────────────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ ViewModel Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 @HiltViewModel
 class CheckoutViewModel @Inject constructor(
@@ -100,7 +100,7 @@ class CheckoutViewModel @Inject constructor(
     private var currentDeliveryRequest: DeliveryRequest? = null
     private var deliveryObservationJob: Job? = null
 
-    // Shop pickup location — fetched from the delivery listing's shop.
+    // Shop pickup location Ã¢â‚¬â€ fetched from the delivery listing's shop.
     // This is the authoritative pickup point sent to the provider.
     private var merchantPickupLocation: GeoPoint = GeoPoint()
 
@@ -232,9 +232,9 @@ class CheckoutViewModel @Inject constructor(
 
             calculateOrderFees(
                 orderItems,
-                requiresDelivery,
-                if (requiresDelivery) deliveryAddress else null,
-                if (requiresDelivery) selectedDeliveryListingId else null
+                false,
+                null,
+                null
             ).fold(
                 onSuccess = { summary ->
                     _uiState.value = CheckoutUiState.CartLoaded(currentCartItems, summary, isRecalculating = false)
@@ -254,7 +254,7 @@ class CheckoutViewModel @Inject constructor(
         viewModelScope.launch { clearCartUseCase(currentUserId) }
     }
 
-    // ─── Delivery request ────────────────────────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Delivery request Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     /**
      * Called when the customer confirms their provider selection and taps
@@ -287,7 +287,7 @@ class CheckoutViewModel @Inject constructor(
 
     /**
      * Fetches the shop that owns the delivery listing and returns its GeoPoint.
-     * Falls back to GeoPoint(0,0) if unavailable — the CF will still accept it
+     * Falls back to GeoPoint(0,0) if unavailable Ã¢â‚¬â€ the CF will still accept it
      * but the provider's map will show a zeroed location.
      */
     private suspend fun resolvePickupLocation(listingId: String): GeoPoint {
@@ -311,7 +311,7 @@ class CheckoutViewModel @Inject constructor(
                 currentDeliveryRequest = request
                 when (request.status) {
                     DeliveryRequestStatus.ACCEPTED -> {
-                        // Snapshot the accepted delivery — fee is now authoritative.
+                        // Snapshot the accepted delivery Ã¢â‚¬â€ fee is now authoritative.
                         val providerListing = _deliveryListings.value
                             .firstOrNull { it.id == request.listingId }
                         _acceptedDelivery.value = AcceptedDelivery(
@@ -329,10 +329,10 @@ class CheckoutViewModel @Inject constructor(
                         _uiState.value = CheckoutUiState.Error("No response within 2 minutes. Choose another provider.")
                     }
                     DeliveryRequestStatus.CANCELLED -> {
-                        // User-initiated cancel — return to cart loaded state.
+                        // User-initiated cancel Ã¢â‚¬â€ return to cart loaded state.
                         updateFees()
                     }
-                    else -> { /* PENDING — waiting */ }
+                    else -> { /* PENDING Ã¢â‚¬â€ waiting */ }
                 }
             }
         }
@@ -350,7 +350,7 @@ class CheckoutViewModel @Inject constructor(
         deliveryObservationJob?.cancel()
         viewModelScope.launch {
             cancelDeliveryRequest(requestId)
-            // Ignore result — clear local state regardless.
+            // Ignore result Ã¢â‚¬â€ clear local state regardless.
             currentDeliveryRequest = null
             _acceptedDelivery.value = null
             merchantPickupLocation = GeoPoint()
@@ -358,7 +358,7 @@ class CheckoutViewModel @Inject constructor(
         }
     }
 
-    // ─── Order placement ─────────────────────────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Order placement Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     /**
      * Called after delivery is accepted (or skipped) and the customer
@@ -418,7 +418,7 @@ class CheckoutViewModel @Inject constructor(
         }
     }
 
-    // ─── Payment verification ─────────────────────────────────────────────────
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Payment verification Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     fun verifyPayment(sessionId: String) {
         val currentState = _uiState.value
