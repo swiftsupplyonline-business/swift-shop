@@ -190,10 +190,12 @@ object CommerceModule {
     fun provideIsListingLikedByUserUseCase(repo: CommerceRepository) = IsListingLikedByUserUseCase(repo)
 
     @Provides
-    fun provideBookmarkListingUseCase(repo: CommerceRepository) = BookmarkListingUseCase(repo)
+    fun provideBookmarkListingUseCase(repo: CommerceRepository) =
+        com.swiftshop.domain.commerce.BookmarkListingUseCase(repo)
 
     @Provides
-    fun provideUnbookmarkListingUseCase(repo: CommerceRepository) = UnbookmarkListingUseCase(repo)
+    fun provideUnbookmarkListingUseCase(repo: CommerceRepository) =
+        com.swiftshop.domain.commerce.UnbookmarkListingUseCase(repo)
 
     @Provides
     fun provideGetSimilarListingsUseCase(repo: CommerceRepository) = GetSimilarListingsUseCase(repo)
@@ -267,19 +269,12 @@ object SocialModule {
     fun provideLikePostUseCase(repo: FeedRepository) = LikePostUseCase(repo)
 
     @Provides
-    fun provideUnlikePostUseCase(repo: FeedRepository) = UnlikePostUseCase(repo)
+    fun provideBookmarkListingUseCase(repo: FeedRepository) =
+        com.swiftshop.domain.feed.BookmarkListingUseCase(repo)
 
     @Provides
-    fun provideBookmarkPostUseCase(repo: FeedRepository) = BookmarkPostUseCase(repo)
-
-    @Provides
-    fun provideUnbookmarkPostUseCase(repo: FeedRepository) = UnbookmarkPostUseCase(repo)
-
-    @Provides
-    fun provideBookmarkListingUseCase(repo: FeedRepository) = com.swiftshop.domain.feed.BookmarkListingUseCase(repo)
-
-    @Provides
-    fun provideUnbookmarkListingUseCase(repo: FeedRepository) = com.swiftshop.domain.feed.UnbookmarkListingUseCase(repo)
+    fun provideUnbookmarkListingUseCase(repo: FeedRepository) =
+        com.swiftshop.domain.feed.UnbookmarkListingUseCase(repo)
 
     @Provides
     fun provideGetBookmarkedListingIdsUseCase(repo: FeedRepository) = GetBookmarkedListingIdsUseCase(repo)

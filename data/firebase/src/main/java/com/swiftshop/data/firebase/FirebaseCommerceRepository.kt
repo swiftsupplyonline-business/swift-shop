@@ -9,6 +9,7 @@ import com.swiftshop.domain.commerce.*
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -65,7 +66,7 @@ class FirebaseCommerceRepository @Inject constructor(
             .limit(pageSize.toLong()) 
             .addSnapshotListener { snapshot, _ ->
                 val items = snapshot?.toObjects(FirestoreListing::class.java) ?: emptyList()
-                launch {
+                this@callbackFlow.launch {
                     val hydratedList = items.map { item ->
                         val isLiked = if (currentUserId != null) {
                             runCatching {

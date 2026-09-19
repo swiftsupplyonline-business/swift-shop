@@ -9,6 +9,7 @@ import com.swiftshop.domain.feed.RankingFactors
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -36,7 +37,7 @@ class FirebaseFeedRepository @Inject constructor(
             .limit(pageSize.toLong())
             .addSnapshotListener { snapshot, _ ->
                 val items = snapshot?.toObjects(FirestoreListing::class.java) ?: emptyList()
-                launch {
+                this@callbackFlow.launch {
                     val domainItems = items.map { item ->
                         val isLiked = if (currentUserId != null) {
                             runCatching {
@@ -85,7 +86,7 @@ class FirebaseFeedRepository @Inject constructor(
             .addSnapshotListener { snapshot, _ ->
                 val items = snapshot?.toObjects(FirestoreFeedPost::class.java) ?: emptyList()
                 
-                launch {
+                this@callbackFlow.launch {
                     val domainItems = items.map { item ->
                         val isLiked = if (currentUserId != null) {
                             runCatching {
