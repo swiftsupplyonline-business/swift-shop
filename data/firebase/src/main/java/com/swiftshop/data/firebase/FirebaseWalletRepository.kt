@@ -108,6 +108,12 @@ class FirebaseWalletRepository @Inject constructor(
         val result = functions.getHttpsCallable("confirmDeposit").call(data).await()
         @Suppress("UNCHECKED_CAST") result.data as Map<String, String>
     }
+
+    override suspend fun confirmWithdrawal(transactionId: String): Result<Map<String, String>> = runCatching {
+        val data = mapOf("transactionId" to transactionId)
+        val result = functions.getHttpsCallable("confirmWithdrawal").call(data).await()
+        @Suppress("UNCHECKED_CAST") result.data as Map<String, String>
+    }
 }
 
 // â”€â”€â”€ DTOs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -167,3 +173,6 @@ fun MoneyAmount.toFirestore() = mapOf(
     "minorUnits" to minorUnits,
     "currency" to currency
 )
+
+
+

@@ -412,3 +412,112 @@ export const initiateP2PTransfer = onCall(async (request) => {
         throw new HttpsError("failed-precondition", error.message);
     }
 });
+
+/**
+ * Settles a PENDING withdrawal — admin only.
+ *
+ * Invariants:
+ *  - Caller must hold the `admin` custom claim.
+ *  - Transaction must exist, be type WITHDRAWAL, and be status PENDING.
+ *  - Idempotent: a second call for an already-COMPLETED transaction returns
+ *    the transactionId without any further mutation.
+ *  - No client can call this; Firebase rules + admin claim enforce it.
+ *
+ * Settlement ledger entry:
+ *   debit : system_withdrawal_escrow
+ *   credit: external_${provider}
+ */
+export const confirmWithdrawal = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required.");
+
+    const isAdmin = auth.token?.admin === true;
+    if (!isAdmin) throw new HttpsError("permission-denied", "Admin access required.");
+
+    const { transactionId } = request.data;
+    if (!transactionId || typeof transactionId !== "string") {
+        throw new HttpsError("invalid-argument", "transactionId is required.");
+    }
+
+    const db = admin.firestore();
+
+    try {
+        return await db.runTransaction(async (transaction) => {
+            const txRef = db.collection("walletTransactions").doc(transactionId);
+            const txDoc = await transaction.get(txRef);
+
+            if (!txDoc.exists) {
+                throw new HttpsError("not-found", `Transaction ${transactionId} not found.`);
+            }
+
+            const txData = txDoc.data()!;
+
+            // Idempotency: already settled — return without mutation.
+            if (txData.status === "COMPLETED") {
+                return { transactionId, status: "COMPLETED", idempotent: true };
+            }
+
+            // Guard: must be a PENDING WITHDRAWAL.
+            if (txData.type !== "WITHDRAWAL") {
+                throw new HttpsError("failed-precondition",
+                    `Transaction ${transactionId} is not a WITHDRAWAL (got: ${txData.type}).`);
+            }
+            if (txData.status !== "PENDING") {
+                throw new HttpsError("failed-precondition",
+                    `Transaction ${transactionId} is not PENDING (got: ${txData.status}).`);
+            }
+
+            const userId    = txData.userId;
+            const amount    = txData.amountMinorUnits as number;
+            const currency  = txData.currency || "LSL";
+            const provider  = txData.provider || "UNKNOWN";
+
+            // Read wallet inside transaction to guard concurrent mutations.
+            const walletRef = db.collection("wallets").doc(userId);
+            const walletDoc = await transaction.get(walletRef);
+            if (!walletDoc.exists) {
+                throw new HttpsError("not-found", `Wallet for user ${userId} not found.`);
+            }
+
+            const walletData    = walletDoc.data()!;
+            const currentPending = walletData.pendingBalanceMinorUnits as number || 0;
+
+            if (currentPending < amount) {
+                throw new HttpsError("failed-precondition",
+                    "Pending balance is less than withdrawal amount — data integrity issue.");
+            }
+
+            const ledgerEntryId = db.collection("ledgerEntries").doc().id;
+
+            // 1. Mark transaction COMPLETED.
+            transaction.update(txRef, {
+                status: "COMPLETED",
+                completedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt:   admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            // 2. Decrement pendingBalance — available was already decremented at initiation.
+            transaction.update(walletRef, {
+                pendingBalanceMinorUnits: currentPending - amount,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            // 3. Settlement ledger entry: escrow → external provider.
+            transaction.set(db.collection("ledgerEntries").doc(ledgerEntryId), {
+                id:                ledgerEntryId,
+                transactionId,
+                debitAccount:      "system_withdrawal_escrow",
+                creditAccount:     `external_${provider}`,
+                amountMinorUnits:  amount,
+                currency,
+                reference:         `WITHDRAW_SETTLE_${transactionId}`,
+                timestamp:         admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            return { transactionId, status: "COMPLETED", idempotent: false };
+        });
+    } catch (error: any) {
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", error.message);
+    }
+});

@@ -1,4 +1,4 @@
-package com.swiftshop.di
+﻿package com.swiftshop.di
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -61,7 +61,7 @@ object FirebaseModule {
 object PaymentModule {
 
     /**
-     * The one place BuildConfig.FLAVOR is trustworthy for this decision —
+     * The one place BuildConfig.FLAVOR is trustworthy for this decision â€”
      * this is :app's own BuildConfig, matching whichever product flavor is
      * actually being assembled. dev builds get the in-memory mock so
      * wallet/checkout flows can be exercised without a live backend;
@@ -146,6 +146,9 @@ object WalletModule {
 
     @Provides
     fun provideConfirmDepositUseCase(repo: WalletRepository) = ConfirmDepositUseCase(repo)
+
+    @Provides
+    fun provideConfirmWithdrawalUseCase(repo: WalletRepository) = ConfirmWithdrawalUseCase(repo)
 }
 
 @Module

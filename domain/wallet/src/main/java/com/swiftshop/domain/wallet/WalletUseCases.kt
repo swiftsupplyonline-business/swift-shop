@@ -13,6 +13,7 @@ interface WalletRepository {
     suspend fun initiateP2PTransfer(fromUserId: String, toUserId: String, amount: MoneyAmount, idempotencyKey: String): Result<String>
     suspend fun getTransactionById(transactionId: String): Result<WalletTransaction>
     suspend fun confirmDeposit(sessionId: String): Result<Map<String, String>>
+    suspend fun confirmWithdrawal(transactionId: String): Result<Map<String, String>>
 }
 
 interface LedgerRepository {
@@ -95,5 +96,15 @@ class ConfirmDepositUseCase(private val repository: WalletRepository) {
     suspend operator fun invoke(sessionId: String): Result<Map<String, String>> {
         if (sessionId.isBlank()) return Result.failure(IllegalArgumentException("Session ID required"))
         return repository.confirmDeposit(sessionId)
+    }
+}
+
+
+class ConfirmWithdrawalUseCase(private val repository: WalletRepository) {
+    suspend operator fun invoke(transactionId: String): Result<Map<String, String>> {
+        if (transactionId.isBlank()) {
+            return Result.failure(IllegalArgumentException("Transaction ID required"))
+        }
+        return repository.confirmWithdrawal(transactionId)
     }
 }
