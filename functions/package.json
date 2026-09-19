@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "swiftshop-functions",
   "scripts": {
     "build": "tsc",
