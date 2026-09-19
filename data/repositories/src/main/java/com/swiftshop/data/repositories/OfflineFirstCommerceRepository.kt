@@ -79,6 +79,9 @@ class OfflineFirstCommerceRepository @Inject constructor(
 
     override suspend fun unlikeListing(listingId: String): Result<Unit> = remote.unlikeListing(listingId)
 
+    override suspend fun isListingLikedByUser(listingId: String, userId: String): Result<Boolean> =
+        remote.isListingLikedByUser(listingId, userId)
+
     override suspend fun bookmarkListing(listingId: String): Result<Unit> = remote.bookmarkListing(listingId)
 
     override suspend fun unbookmarkListing(listingId: String): Result<Unit> = remote.unbookmarkListing(listingId)

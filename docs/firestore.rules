@@ -47,6 +47,12 @@ service cloud.firestore {
         allow read: if isSignedIn() && isOwner(uid);
         allow write: if isSignedIn() && isOwner(uid) && isActive();
       }
+
+      // Bookmarks owned by user
+      match /bookmarks/{bookmarkId} {
+        allow read: if isSignedIn() && isOwner(uid);
+        allow write: if isSignedIn() && isOwner(uid);
+      }
     }
 
     // â”€â”€ Profiles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -81,6 +87,11 @@ service cloud.firestore {
         && !request.resource.data.diff(resource.data).affectedKeys()
             .hasAny(['id', 'sellerId', 'isSponsored', 'commitmentCount', 'likeCount', 'commentCount', 'bookmarkCount', 'rankingScore', 'createdAt', 'updatedAt']);
       allow delete: if false;
+
+      match /likes/{userId} {
+        allow read: if isSignedIn();
+        allow write: if isOwner(userId);
+      }
     }
 
     // ─── Posts ───────────────────────────────────────────────────────────
@@ -92,6 +103,11 @@ service cloud.firestore {
         && !request.resource.data.diff(resource.data).affectedKeys()
             .hasAny(['id', 'authorId', 'isSponsored', 'likeCount', 'commentCount', 'bookmarkCount', 'reshareCount', 'rankingScore', 'createdAt', 'updatedAt']);
       allow delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
+
+      match /likes/{userId} {
+        allow read: if isSignedIn();
+        allow write: if isOwner(userId);
+      }
     }
 
     // â”€â”€ Comments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

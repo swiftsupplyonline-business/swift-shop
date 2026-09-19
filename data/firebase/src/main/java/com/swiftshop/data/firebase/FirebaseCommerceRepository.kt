@@ -17,7 +17,8 @@ import javax.inject.Singleton
 @Singleton
 class FirebaseCommerceRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val functions: FirebaseFunctions
+    private val functions: FirebaseFunctions,
+    private val auth: com.google.firebase.auth.FirebaseAuth
 ) : CommerceRepository {
 
     private fun tsToLong(v: Any?): Long = when (v) {
@@ -57,13 +58,33 @@ class FirebaseCommerceRepository @Inject constructor(
     // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Listings Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     override fun getShopListings(shopId: String, page: Int, pageSize: Int): Flow<List<Listing>> = callbackFlow {
+        val currentUserId = auth.currentUser?.uid
         // Basic pagination via limit (cursor-based omitted for brevity in repository restoration)
         val subscription = firestore.collection("listings")
             .whereEqualTo("shopId", shopId)
             .limit(pageSize.toLong()) 
             .addSnapshotListener { snapshot, _ ->
-                val list = snapshot?.toObjects(FirestoreListing::class.java)?.map { it.toDomain() } ?: emptyList()
-                trySend(list)
+                val items = snapshot?.toObjects(FirestoreListing::class.java) ?: emptyList()
+                launch {
+                    val hydratedList = items.map { item ->
+                        val isLiked = if (currentUserId != null) {
+                            runCatching {
+                                firestore.collection("listings").document(item.id)
+                                    .collection("likes").document(currentUserId).get().await().exists()
+                            }.getOrDefault(false)
+                        } else false
+
+                        val isBookmarked = if (currentUserId != null) {
+                            runCatching {
+                                firestore.collection("users").document(currentUserId)
+                                    .collection("bookmarks").document(item.id).get().await().exists()
+                            }.getOrDefault(false)
+                        } else false
+
+                        item.toDomain(isLiked = isLiked, isBookmarked = isBookmarked)
+                    }
+                    trySend(hydratedList)
+                }
             }
         awaitClose { subscription.remove() }
     }
@@ -85,15 +106,50 @@ class FirebaseCommerceRepository @Inject constructor(
     }
 
     override suspend fun getListing(listingId: String): Result<Listing> = runCatching {
-        firestore.collection("listings").document(listingId).get().await()
-            .toObject(FirestoreListing::class.java)?.toDomain() ?: throw NoSuchElementException("Listing not found")
+        val doc = firestore.collection("listings").document(listingId).get().await()
+        val firestoreListing = doc.toObject(FirestoreListing::class.java) ?: throw NoSuchElementException("Listing not found")
+        
+        val currentUserId = auth.currentUser?.uid
+        val isLiked = if (currentUserId != null) {
+            runCatching {
+                firestore.collection("listings").document(listingId)
+                    .collection("likes").document(currentUserId).get().await().exists()
+            }.getOrDefault(false)
+        } else false
+
+        val isBookmarked = if (currentUserId != null) {
+            runCatching {
+                firestore.collection("users").document(currentUserId)
+                    .collection("bookmarks").document(listingId).get().await().exists()
+            }.getOrDefault(false)
+        } else false
+
+        firestoreListing.toDomain(isLiked = isLiked, isBookmarked = isBookmarked)
     }
 
     override suspend fun getUserListings(userId: String): Result<List<Listing>> = runCatching {
-        firestore.collection("listings")
+        val currentUserId = auth.currentUser?.uid
+        val snapshot = firestore.collection("listings")
             .whereEqualTo("sellerId", userId)
             .get().await()
-            .toObjects(FirestoreListing::class.java).map { it.toDomain() }
+        
+        snapshot.toObjects(FirestoreListing::class.java).map { item ->
+            val isLiked = if (currentUserId != null) {
+                runCatching {
+                    firestore.collection("listings").document(item.id)
+                        .collection("likes").document(currentUserId).get().await().exists()
+                }.getOrDefault(false)
+            } else false
+
+            val isBookmarked = if (currentUserId != null) {
+                runCatching {
+                    firestore.collection("users").document(currentUserId)
+                        .collection("bookmarks").document(item.id).get().await().exists()
+                }.getOrDefault(false)
+            } else false
+
+            item.toDomain(isLiked = isLiked, isBookmarked = isBookmarked)
+        }
     }
 
     override suspend fun searchListings(query: String): Result<List<Listing>> = runCatching {
@@ -136,6 +192,12 @@ class FirebaseCommerceRepository @Inject constructor(
         val data = mapOf("listingId" to listingId)
         functions.getHttpsCallable("unlikeListing").call(data).await()
         Unit
+    }
+
+    override suspend fun isListingLikedByUser(listingId: String, userId: String): Result<Boolean> = runCatching {
+        val doc = firestore.collection("listings").document(listingId)
+            .collection("likes").document(userId).get().await()
+        doc.exists()
     }
 
     override suspend fun bookmarkListing(listingId: String): Result<Unit> = runCatching {

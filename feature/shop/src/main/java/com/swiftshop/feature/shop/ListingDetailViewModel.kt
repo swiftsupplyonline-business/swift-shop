@@ -18,6 +18,9 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -61,6 +64,14 @@ class ListingDetailViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<ListingDetailState>(ListingDetailState.Loading)
     val uiState: StateFlow<ListingDetailState> = _uiState.asStateFlow()
+
+    val isLikedByMe: StateFlow<Boolean> = uiState.map { state ->
+        (state as? ListingDetailState.Loaded)?.listing?.isLikedByMe ?: false
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val isBookmarkedByMe: StateFlow<Boolean> = uiState.map { state ->
+        (state as? ListingDetailState.Loaded)?.listing?.isBookmarkedByMe ?: false
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private val _quantity = MutableStateFlow(1)
     val quantity = _quantity.asStateFlow()

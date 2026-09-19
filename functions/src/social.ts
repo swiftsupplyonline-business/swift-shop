@@ -62,12 +62,11 @@ export const likePost = onCall(async (request) => {
 
     const db = admin.firestore();
     const uid = auth.uid;
-    const relationshipId = `post_${postId}`;
 
     try {
         await db.runTransaction(async (transaction) => {
             const postRef = db.collection("posts").doc(postId);
-            const likeRef = db.collection("users").doc(uid).collection("likes").doc(relationshipId);
+            const likeRef = postRef.collection("likes").doc(uid);
 
             const [postDoc, likeDoc] = await Promise.all([
                 transaction.get(postRef),
@@ -79,8 +78,7 @@ export const likePost = onCall(async (request) => {
 
             transaction.set(likeRef, {
                 uid,
-                contentId: postId,
-                type: "POST",
+                postId,
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             });
 
@@ -107,12 +105,11 @@ export const unlikePost = onCall(async (request) => {
 
     const db = admin.firestore();
     const uid = auth.uid;
-    const relationshipId = `post_${postId}`;
 
     try {
         await db.runTransaction(async (transaction) => {
             const postRef = db.collection("posts").doc(postId);
-            const likeRef = db.collection("users").doc(uid).collection("likes").doc(relationshipId);
+            const likeRef = postRef.collection("likes").doc(uid);
 
             const [postDoc, likeDoc] = await Promise.all([
                 transaction.get(postRef),
@@ -148,12 +145,11 @@ export const bookmarkPost = onCall(async (request) => {
 
     const db = admin.firestore();
     const uid = auth.uid;
-    const relationshipId = `post_${postId}`;
 
     try {
         await db.runTransaction(async (transaction) => {
             const postRef = db.collection("posts").doc(postId);
-            const bookmarkRef = db.collection("users").doc(uid).collection("bookmarks").doc(relationshipId);
+            const bookmarkRef = db.collection("users").doc(uid).collection("bookmarks").doc(`post_${postId}`);
 
             const [postDoc, bookmarkDoc] = await Promise.all([
                 transaction.get(postRef),
@@ -193,12 +189,11 @@ export const unbookmarkPost = onCall(async (request) => {
 
     const db = admin.firestore();
     const uid = auth.uid;
-    const relationshipId = `post_${postId}`;
 
     try {
         await db.runTransaction(async (transaction) => {
             const postRef = db.collection("posts").doc(postId);
-            const bookmarkRef = db.collection("users").doc(uid).collection("bookmarks").doc(relationshipId);
+            const bookmarkRef = db.collection("users").doc(uid).collection("bookmarks").doc(`post_${postId}`);
 
             const [postDoc, bookmarkDoc] = await Promise.all([
                 transaction.get(postRef),
@@ -221,6 +216,174 @@ export const unbookmarkPost = onCall(async (request) => {
         throw new HttpsError("failed-precondition", error.message);
     }
 });
+
+/**
+ * Idempotent likeListing Cloud Function.
+ */
+export const likeListing = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { listingId } = request.data;
+    if (!listingId) throw new HttpsError("invalid-argument", "Missing listingId");
+
+    const db = admin.firestore();
+    const uid = auth.uid;
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const listingRef = db.collection("listings").doc(listingId);
+            const likeRef = listingRef.collection("likes").doc(uid);
+
+            const [listingDoc, likeDoc] = await Promise.all([
+                transaction.get(listingRef),
+                transaction.get(likeRef)
+            ]);
+
+            if (!listingDoc.exists) throw new Error("Listing not found");
+            if (likeDoc.exists) return; // Idempotent
+
+            transaction.set(likeRef, {
+                uid,
+                listingId,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+            transaction.update(listingRef, {
+                likeCount: admin.firestore.FieldValue.increment(1),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
+ * Idempotent unlikeListing Cloud Function.
+ */
+export const unlikeListing = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { listingId } = request.data;
+    if (!listingId) throw new HttpsError("invalid-argument", "Missing listingId");
+
+    const db = admin.firestore();
+    const uid = auth.uid;
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const listingRef = db.collection("listings").doc(listingId);
+            const likeRef = listingRef.collection("likes").doc(uid);
+
+            const [listingDoc, likeDoc] = await Promise.all([
+                transaction.get(listingRef),
+                transaction.get(likeRef)
+            ]);
+
+            if (!listingDoc.exists) throw new Error("Listing not found");
+            if (!likeDoc.exists) return; // Idempotent
+
+            transaction.delete(likeRef);
+
+            const currentLikeCount = listingDoc.data()?.likeCount || 0;
+            transaction.update(listingRef, {
+                likeCount: Math.max(0, currentLikeCount - 1),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
+ * Idempotent bookmarkListing Cloud Function.
+ */
+export const bookmarkListing = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { listingId } = request.data;
+    if (!listingId) throw new HttpsError("invalid-argument", "Missing listingId");
+
+    const db = admin.firestore();
+    const uid = auth.uid;
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const listingRef = db.collection("listings").doc(listingId);
+            const bookmarkRef = db.collection("users").doc(uid).collection("bookmarks").doc(listingId);
+
+            const [listingDoc, bookmarkDoc] = await Promise.all([
+                transaction.get(listingRef),
+                transaction.get(bookmarkRef)
+            ]);
+
+            if (!listingDoc.exists) throw new Error("Listing not found");
+            if (bookmarkDoc.exists) return; // Idempotent
+
+            transaction.set(bookmarkRef, {
+                uid,
+                listingId,
+                type: "LISTING",
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+            transaction.update(listingRef, {
+                bookmarkCount: admin.firestore.FieldValue.increment(1),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
+ * Idempotent unbookmarkListing Cloud Function.
+ */
+export const unbookmarkListing = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { listingId } = request.data;
+    if (!listingId) throw new HttpsError("invalid-argument", "Missing listingId");
+
+    const db = admin.firestore();
+    const uid = auth.uid;
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const listingRef = db.collection("listings").doc(listingId);
+            const bookmarkRef = db.collection("users").doc(uid).collection("bookmarks").doc(listingId);
+
+            const [listingDoc, bookmarkDoc] = await Promise.all([
+                transaction.get(listingRef),
+                transaction.get(bookmarkRef)
+            ]);
+
+            if (!listingDoc.exists) throw new Error("Listing not found");
+            if (!bookmarkDoc.exists) return; // Idempotent
+
+            transaction.delete(bookmarkRef);
+
+            const currentBookmarkCount = listingDoc.data()?.bookmarkCount || 0;
+            transaction.update(listingRef, {
+                bookmarkCount: Math.max(0, currentBookmarkCount - 1),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
 
 /**
  * Transactional, server-authoritative creation of a Post comment.

@@ -20,6 +20,7 @@ sealed interface ProfileUiState {
         val shops: List<Shop>,
         val recentListings: List<Listing>,
         val recentPosts: List<FeedPost>,
+        val savedListings: List<Listing> = emptyList(),
         val isOwnProfile: Boolean
     ) : ProfileUiState
     data class Error(val message: String) : ProfileUiState
@@ -50,6 +51,7 @@ class ProfileViewModel @Inject constructor(
     private val commerceRepository: com.swiftshop.domain.commerce.CommerceRepository,
     private val getUserListings: com.swiftshop.domain.commerce.GetUserListingsUseCase,
     private val getUserPosts: com.swiftshop.domain.feed.GetUserPostsUseCase,
+    private val feedRepository: com.swiftshop.domain.feed.FeedRepository,
     private val initiateSubscription: com.swiftshop.domain.commerce.InitiateSubscriptionUseCase,
     private val signOut: SignOutUseCase
 ) : ViewModel() {
@@ -84,8 +86,15 @@ class ProfileViewModel @Inject constructor(
                         observeProfile(uid).flatMapLatest { profile ->
                             combine(
                                 getUserPosts(uid),
-                                commerceRepository.getUserShops(uid)
-                            ) { posts, shops ->
+                                commerceRepository.getUserShops(uid),
+                                if (isOwnProfile) flow {
+                                    val ids = feedRepository.getBookmarkedListingIds(uid).getOrDefault(emptyList())
+                                    val bookmarked = ids.mapNotNull { id ->
+                                        commerceRepository.getListing(id).getOrNull()
+                                    }
+                                    emit(bookmarked)
+                                } else flowOf(emptyList<Listing>())
+                            ) { posts, shops, saved ->
                                 val listings = getUserListings(uid).getOrDefault(emptyList())
                                 val wallet = if (isOwnProfile)
                                     runCatching { WalletUiState.Loaded(observeWallet(uid).first()) as WalletUiState }
@@ -112,6 +121,7 @@ class ProfileViewModel @Inject constructor(
                                     shops = shops,
                                     recentListings = listings,
                                     recentPosts = posts,
+                                    savedListings = saved,
                                     isOwnProfile = isOwnProfile
                                 ) as ProfileUiState
                             }

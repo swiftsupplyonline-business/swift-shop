@@ -187,6 +187,9 @@ object CommerceModule {
     fun provideUnlikeListingUseCase(repo: CommerceRepository) = UnlikeListingUseCase(repo)
 
     @Provides
+    fun provideIsListingLikedByUserUseCase(repo: CommerceRepository) = IsListingLikedByUserUseCase(repo)
+
+    @Provides
     fun provideBookmarkListingUseCase(repo: CommerceRepository) = BookmarkListingUseCase(repo)
 
     @Provides
@@ -262,6 +265,24 @@ object SocialModule {
 
     @Provides
     fun provideLikePostUseCase(repo: FeedRepository) = LikePostUseCase(repo)
+
+    @Provides
+    fun provideUnlikePostUseCase(repo: FeedRepository) = UnlikePostUseCase(repo)
+
+    @Provides
+    fun provideBookmarkPostUseCase(repo: FeedRepository) = BookmarkPostUseCase(repo)
+
+    @Provides
+    fun provideUnbookmarkPostUseCase(repo: FeedRepository) = UnbookmarkPostUseCase(repo)
+
+    @Provides
+    fun provideBookmarkListingUseCase(repo: FeedRepository) = com.swiftshop.domain.feed.BookmarkListingUseCase(repo)
+
+    @Provides
+    fun provideUnbookmarkListingUseCase(repo: FeedRepository) = com.swiftshop.domain.feed.UnbookmarkListingUseCase(repo)
+
+    @Provides
+    fun provideGetBookmarkedListingIdsUseCase(repo: FeedRepository) = GetBookmarkedListingIdsUseCase(repo)
 
     @Provides
     fun provideObserveListingCommentsUseCase(repo: FeedRepository) = ObserveListingCommentsUseCase(repo)

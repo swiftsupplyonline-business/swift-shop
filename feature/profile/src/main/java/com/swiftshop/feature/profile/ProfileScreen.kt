@@ -61,6 +61,7 @@ fun ProfileScreen(
                 shops = state.shops,
                 listings = state.recentListings,
                 posts = state.recentPosts,
+                savedListings = state.savedListings,
                 wallet = walletState,
                 isOwnProfile = state.isOwnProfile,
                 onBack = { navController.popBackStack() },
@@ -100,6 +101,7 @@ private fun ProfileContent(
     shops: List<Shop>,
     listings: List<Listing>,
     posts: List<FeedPost>,
+    savedListings: List<Listing>,
     wallet: WalletUiState,
     isOwnProfile: Boolean,
     onBack: () -> Unit,
@@ -414,6 +416,33 @@ private fun ProfileContent(
                     items(shops, key = { it.id }) { shop ->
                         ShopListItem(shop = shop, onClick = { onShopClick(shop.id) })
                         Spacer(Modifier.height(8.dp))
+                    }
+                }
+            }
+            3 -> { // Saved
+                if (savedListings.isEmpty()) {
+                    item {
+                        EmptyState("No saved items", "Items you bookmark will appear here",
+                            modifier = Modifier.height(200.dp))
+                    }
+                } else {
+                    item {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(2),
+                            contentPadding = PaddingValues(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.height(
+                                ((savedListings.size / 2 + savedListings.size % 2) * 220).dp
+                            )
+                        ) {
+                            items(savedListings, key = { it.id }) { listing ->
+                                com.swiftshop.core.ui.components.ListingCard(
+                                    listing = listing,
+                                    onClick = { onListingClick(listing.id) }
+                                )
+                            }
+                        }
                     }
                 }
             }

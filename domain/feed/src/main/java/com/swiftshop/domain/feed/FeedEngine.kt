@@ -81,6 +81,10 @@ interface FeedRepository {
     suspend fun unlikePost(postId: String): Result<Unit>
     suspend fun bookmarkPost(postId: String): Result<Unit>
     suspend fun unbookmarkPost(postId: String): Result<Unit>
+    suspend fun bookmarkListing(listingId: String): Result<Unit>
+    suspend fun unbookmarkListing(listingId: String): Result<Unit>
+    suspend fun isListingBookmarkedByUser(listingId: String, userId: String): Result<Boolean>
+    suspend fun getBookmarkedListingIds(userId: String): Result<List<String>>
     fun observeListingComments(listingId: String): Flow<List<Comment>>
     suspend fun postListingComment(comment: Comment): Result<String>
     suspend fun deleteListingComment(commentId: String): Result<Unit>
@@ -117,6 +121,24 @@ class PostListingCommentUseCase(private val repository: FeedRepository) {
 
 class DeleteListingCommentUseCase(private val repository: FeedRepository) {
     suspend operator fun invoke(commentId: String): Result<Unit> = repository.deleteListingComment(commentId)
+}
+
+class BookmarkListingUseCase(private val repository: FeedRepository) {
+    suspend operator fun invoke(listingId: String): Result<Unit> {
+        if (listingId.isBlank()) return Result.failure(IllegalArgumentException("Listing ID required"))
+        return repository.bookmarkListing(listingId)
+    }
+}
+
+class UnbookmarkListingUseCase(private val repository: FeedRepository) {
+    suspend operator fun invoke(listingId: String): Result<Unit> {
+        if (listingId.isBlank()) return Result.failure(IllegalArgumentException("Listing ID required"))
+        return repository.unbookmarkListing(listingId)
+    }
+}
+
+class GetBookmarkedListingIdsUseCase(private val repository: FeedRepository) {
+    suspend operator fun invoke(userId: String): Result<List<String>> = repository.getBookmarkedListingIds(userId)
 }
 
 class CreatePostUseCase(

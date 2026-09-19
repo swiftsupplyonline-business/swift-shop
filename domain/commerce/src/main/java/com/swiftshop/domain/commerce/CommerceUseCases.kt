@@ -108,6 +108,7 @@ interface CommerceRepository {
     suspend fun deleteListing(listingId: String): Result<Unit>
     suspend fun likeListing(listingId: String): Result<Unit>
     suspend fun unlikeListing(listingId: String): Result<Unit>
+    suspend fun isListingLikedByUser(listingId: String, userId: String): Result<Boolean>
     suspend fun bookmarkListing(listingId: String): Result<Unit>
     suspend fun unbookmarkListing(listingId: String): Result<Unit>
     suspend fun getSimilarListings(category: String, excludeListingId: String, limit: Int = 10): Result<List<Listing>>
@@ -195,6 +196,10 @@ class LikeListingUseCase(private val repository: CommerceRepository) {
 
 class UnlikeListingUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(listingId: String): Result<Unit> = repository.unlikeListing(listingId)
+}
+
+class IsListingLikedByUserUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(listingId: String, userId: String): Result<Boolean> = repository.isListingLikedByUser(listingId, userId)
 }
 
 class BookmarkListingUseCase(private val repository: CommerceRepository) {

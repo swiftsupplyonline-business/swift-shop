@@ -29,13 +29,33 @@ class FirebaseFeedRepository @Inject constructor(
 ) : FeedRepository {
 
     override fun getShopFeed(page: Int, pageSize: Int): Flow<PagingState<Listing>> = callbackFlow {
+        val currentUserId = auth.currentUser?.uid
         val subscription = firestore.collection("listings")
             .whereEqualTo("isAvailable", true)
             .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
             .limit(pageSize.toLong())
             .addSnapshotListener { snapshot, _ ->
-                val items = snapshot?.toObjects(FirestoreListing::class.java)?.map { it.toDomain() } ?: emptyList()
-                trySend(PagingState.Success(items, hasMore = items.size == pageSize))
+                val items = snapshot?.toObjects(FirestoreListing::class.java) ?: emptyList()
+                launch {
+                    val domainItems = items.map { item ->
+                        val isLiked = if (currentUserId != null) {
+                            runCatching {
+                                firestore.collection("listings").document(item.id)
+                                    .collection("likes").document(currentUserId).get().await().exists()
+                            }.getOrDefault(false)
+                        } else false
+
+                        val isBookmarked = if (currentUserId != null) {
+                            runCatching {
+                                firestore.collection("users").document(currentUserId)
+                                    .collection("bookmarks").document(item.id).get().await().exists()
+                            }.getOrDefault(false)
+                        } else false
+
+                        item.toDomain(isLiked = isLiked, isBookmarked = isBookmarked)
+                    }
+                    trySend(PagingState.Success(domainItems, hasMore = items.size == pageSize))
+                }
             }
         awaitClose { subscription.remove() }
     }
@@ -58,17 +78,33 @@ class FirebaseFeedRepository @Inject constructor(
     }
 
     override fun getPostFeed(page: Int, pageSize: Int): Flow<PagingState<FeedPost>> = callbackFlow {
-        val uid = auth.uid ?: ""
+        val currentUserId = auth.currentUser?.uid
         val subscription = firestore.collection("posts")
             .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
             .limit(pageSize.toLong())
             .addSnapshotListener { snapshot, _ ->
                 val items = snapshot?.toObjects(FirestoreFeedPost::class.java) ?: emptyList()
                 
-                // For simplicity in this batch, we don't block the UI for relationship fetch
-                // Real-world would use combine() or a join query if possible.
-                val domainItems = items.map { it.toDomain() }
-                trySend(PagingState.Success(domainItems, hasMore = items.size == pageSize))
+                launch {
+                    val domainItems = items.map { item ->
+                        val isLiked = if (currentUserId != null) {
+                            runCatching {
+                                firestore.collection("posts").document(item.id)
+                                    .collection("likes").document(currentUserId).get().await().exists()
+                            }.getOrDefault(false)
+                        } else false
+
+                        val isBookmarked = if (currentUserId != null) {
+                            runCatching {
+                                firestore.collection("users").document(currentUserId)
+                                    .collection("bookmarks").document("post_${item.id}").get().await().exists()
+                            }.getOrDefault(false)
+                        } else false
+
+                        item.toDomain(isLiked = isLiked, isBookmarked = isBookmarked)
+                    }
+                    trySend(PagingState.Success(domainItems, hasMore = items.size == pageSize))
+                }
             }
         awaitClose { subscription.remove() }
     }
@@ -163,12 +199,51 @@ class FirebaseFeedRepository @Inject constructor(
     }
 
     override suspend fun getPost(postId: String): Result<FeedPost?> = runCatching {
-        val snapshot = firestore.collection("posts").document(postId).get().await()
-        if (snapshot.exists()) {
-            snapshot.toObject(FirestoreFeedPost::class.java)?.toDomain()
-        } else {
-            null
-        }
+        val doc = firestore.collection("posts").document(postId).get().await()
+        val item = doc.toObject(FirestoreFeedPost::class.java) ?: return@runCatching null
+        
+        val currentUserId = auth.currentUser?.uid
+        val isLiked = if (currentUserId != null) {
+            runCatching {
+                firestore.collection("posts").document(postId)
+                    .collection("likes").document(currentUserId).get().await().exists()
+            }.getOrDefault(false)
+        } else false
+
+        val isBookmarked = if (currentUserId != null) {
+            runCatching {
+                firestore.collection("users").document(currentUserId)
+                    .collection("bookmarks").document("post_${postId}").get().await().exists()
+            }.getOrDefault(false)
+        } else false
+
+        item.toDomain(isLiked = isLiked, isBookmarked = isBookmarked)
+    }
+
+    override suspend fun bookmarkListing(listingId: String): Result<Unit> = runCatching {
+        val data = mapOf("listingId" to listingId)
+        functions.getHttpsCallable("bookmarkListing").call(data).await()
+        Unit
+    }
+
+    override suspend fun unbookmarkListing(listingId: String): Result<Unit> = runCatching {
+        val data = mapOf("listingId" to listingId)
+        functions.getHttpsCallable("unbookmarkListing").call(data).await()
+        Unit
+    }
+
+    override suspend fun isListingBookmarkedByUser(listingId: String, userId: String): Result<Boolean> = runCatching {
+        val doc = firestore.collection("users").document(userId)
+            .collection("bookmarks").document(listingId).get().await()
+        doc.exists()
+    }
+
+    override suspend fun getBookmarkedListingIds(userId: String): Result<List<String>> = runCatching {
+        val snapshot = firestore.collection("users").document(userId)
+            .collection("bookmarks")
+            .whereEqualTo("type", "LISTING")
+            .get().await()
+        snapshot.documents.map { it.get("listingId") as? String ?: it.id }
     }
 
     override fun observePostComments(postId: String): Flow<List<Comment>> = callbackFlow {

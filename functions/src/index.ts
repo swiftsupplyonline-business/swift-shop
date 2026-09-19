@@ -9,12 +9,12 @@ export {
     calculateOrderFees, createOrder, verifyMopayPayment, confirmDelivery,
     updateOrderStatus, cancelOrder, confirmMopayPayment, initiateSubscription,
     createListing, deleteListing, createShop, updateListing,
-    likeListing, unlikeListing, bookmarkListing, unbookmarkListing,
     createListingComment, deleteListingComment
 } from "./commerce";
 export {
     onFollowCreated, onFollowDeleted,
     publishPost, likePost, unlikePost, bookmarkPost, unbookmarkPost,
+    likeListing, unlikeListing, bookmarkListing, unbookmarkListing,
     createPostComment, deletePostComment
 } from "./social";
 export { syncProfileCounters } from "./maintenance";
