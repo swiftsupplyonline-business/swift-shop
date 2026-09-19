@@ -47,23 +47,23 @@ export const calculateOrderFees = onCall(async (request) => {
             const deliveryListing = deliveryListingDoc.data()!;
             if (deliveryListing.listingType !== "DELIVER") throw new HttpsError("failed-precondition", "Invalid delivery listing type");
             if (!deliveryListing.isAvailable) throw new HttpsError("failed-precondition", "Delivery service is currently unavailable");
-            // Delivery provider may belong to a different shop than the merchant — cross-shop is valid.
+            // Delivery provider may belong to a different shop than the merchant ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â cross-shop is valid.
             deliveryFee = deliveryListing.priceMinorUnits || 0;
         } else {
-            // Fallback for backward compatibility or default merchant-owned delivery
-            const deliverySnap = await db.collection("listings")
-                .where("shopId", "==", shopId)
-                .where("listingType", "==", "DELIVER")
-                .where("isAvailable", "==", true)
-                .get();
-
-            if (deliverySnap.empty) {
-                throw new HttpsError("failed-precondition", "No delivery option is available for this shop.");
-            }
-            // If multiple exist and none selected, we don't know which one to pick safely.
-            deliveryFee = deliverySnap.docs[0].data().priceMinorUnits || 0;
+            // No listing selected Ã¢â‚¬â€ fee is 0; authoritative fee comes from the accepted request.
+            deliveryFee = 0;
         }
     }
+
+
+
+
+
+
+
+
+
+
 
     const platformFee = Math.floor((subtotal * 15) / 1000);
     const total = subtotal + deliveryFee + platformFee;
@@ -112,7 +112,7 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
             let deliveryFee = 0;
             let finalDeliveryListingId = selectedDeliveryListingId;
             // deliveryProviderSellerId is the uid of the seller who owns the delivery listing.
-            // This may differ from the product merchant — cross-shop delivery is valid.
+            // This may differ from the product merchant ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â cross-shop delivery is valid.
             let deliveryProviderSellerId = "";
 
             if (requiresDelivery) {
@@ -127,7 +127,7 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 deliveryFee = drData.deliveryFeeMinorUnits || 0;
                 finalDeliveryListingId = drData.listingId;
                 // The merchant who accepted the delivery request is the delivery provider.
-                // This is authoritative — set by createDeliveryRequest from listing.sellerId.
+                // This is authoritative ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â set by createDeliveryRequest from listing.sellerId.
                 deliveryProviderSellerId = drData.merchantId || "";
             }
 
@@ -695,7 +695,7 @@ export const cancelOrder = onCall(async (request) => {
             }
 
             // P0 #3: Release reservations for RESERVED orders only.
-            // createOrder increments reservedQuantity — it does NOT decrement stockQuantity.
+            // createOrder increments reservedQuantity ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â it does NOT decrement stockQuantity.
             // Therefore cancellation must mirror the payment-failure release path:
             // decrement reservedQuantity, mark reservation RELEASED, never touch stockQuantity.
             if (order.status === 'RESERVED') {
