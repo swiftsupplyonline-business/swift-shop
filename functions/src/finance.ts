@@ -452,16 +452,18 @@ export const confirmWithdrawal = onCall(async (request) => {
 
             const txData = txDoc.data()!;
 
+            // Guard: type must be WITHDRAWAL — checked before idempotency.
+            if (txData.type !== "WITHDRAWAL") {
+                throw new HttpsError("failed-precondition",
+                    `Transaction ${transactionId} is not a WITHDRAWAL (got: ${txData.type}).`);
+            }
+
             // Idempotency: already settled — return without mutation.
             if (txData.status === "COMPLETED") {
                 return { transactionId, status: "COMPLETED", idempotent: true };
             }
 
-            // Guard: must be a PENDING WITHDRAWAL.
-            if (txData.type !== "WITHDRAWAL") {
-                throw new HttpsError("failed-precondition",
-                    `Transaction ${transactionId} is not a WITHDRAWAL (got: ${txData.type}).`);
-            }
+            // Guard: must be PENDING to settle.
             if (txData.status !== "PENDING") {
                 throw new HttpsError("failed-precondition",
                     `Transaction ${transactionId} is not PENDING (got: ${txData.status}).`);
@@ -521,3 +523,4 @@ export const confirmWithdrawal = onCall(async (request) => {
         throw new HttpsError("internal", error.message);
     }
 });
+

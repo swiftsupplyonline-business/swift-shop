@@ -40,7 +40,6 @@ class WalletViewModel @Inject constructor(
     private val initiateWithdrawal: InitiateWithdrawalUseCase,
     private val initiateP2PTransfer: InitiateP2PTransferUseCase,
     private val confirmDepositUseCase: ConfirmDepositUseCase,
-    private val confirmWithdrawalUseCase: ConfirmWithdrawalUseCase,
     private val walletRepository: WalletRepository
 ) : ViewModel() {
 
