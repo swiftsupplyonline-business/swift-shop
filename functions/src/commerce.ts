@@ -1,4 +1,4 @@
-﻿import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { MopayClient, MOPAY_API_KEY } from "./mopay";
 import { resolveEntitlement } from "./entitlements";
