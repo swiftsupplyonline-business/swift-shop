@@ -3,6 +3,7 @@ package com.swiftshop.feature.profile
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.swiftshop.core.media.MediaConstraints
 import com.swiftshop.core.media.MediaUploadProgress
 import com.swiftshop.core.media.MediaUploader
 import com.swiftshop.core.model.UserProfile
@@ -126,7 +127,7 @@ class EditProfileViewModel @Inject constructor(
         if (uid.isBlank()) return
 
         viewModelScope.launch {
-            mediaUploader.uploadImage(uid, uri).collect { progress ->
+            mediaUploader.uploadImage(uid, uri, MediaConstraints.COVER_PHOTO).collect { progress ->
                 when (progress) {
                     is MediaUploadProgress.InProgress -> {
                         _uploadProgress.value = progress.percent

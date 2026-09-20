@@ -26,14 +26,28 @@ import javax.inject.Singleton
  *  - writes a [MediaAsset] Firestore doc via the CC-005 contract shape
  *
  * What this does NOT do, on purpose: server-side transcoding/compression.
- * That's the 🔴 RED backend gap in SWIFT_PHASE9G1_BACKEND_CONTRACT_GAP_REGISTER.md
- * ("Media Transcoding Engine") — it belongs in Cloud Functions per D-006
+ * That's the RED backend gap in SWIFT_PHASE9G1_BACKEND_CONTRACT_GAP_REGISTER.md
+ * ("Media Transcoding Engine") - it belongs in Cloud Functions per D-006
  * (server-authoritative processing), not the client. This uploader hands off
  * the original asset and the backend gap register item is what's still open.
  */
 interface MediaUploader {
-    fun uploadImage(ownerId: String, localUri: Uri): Flow<MediaUploadProgress>
+    fun uploadImage(ownerId: String, localUri: Uri, constraints: MediaConstraints? = null): Flow<MediaUploadProgress>
     fun uploadVideo(ownerId: String, localUri: Uri): Flow<MediaUploadProgress>
+}
+
+/**
+ * Optional client-side pre-upload validation. Callers that don't pass this
+ * (e.g. avatar uploads) get the pre-existing, unconstrained behavior.
+ */
+data class MediaConstraints(
+    val maxSizeBytes: Long,
+    val allowGif: Boolean = false
+) {
+    companion object {
+        /** Cover photos (profile + shop dashboard): 5MB cap, animated GIF allowed. */
+        val COVER_PHOTO = MediaConstraints(maxSizeBytes = 5L * 1024 * 1024, allowGif = true)
+    }
 }
 
 @Singleton
@@ -42,15 +56,53 @@ class FirebaseMediaUploader @Inject constructor(
     private val storage: FirebaseStorage
 ) : MediaUploader {
 
-    override fun uploadImage(ownerId: String, localUri: Uri): Flow<MediaUploadProgress> =
-        upload(ownerId, localUri, MediaType.IMAGE)
+    override fun uploadImage(ownerId: String, localUri: Uri, constraints: MediaConstraints?): Flow<MediaUploadProgress> =
+        upload(ownerId, localUri, MediaType.IMAGE, constraints)
 
     override fun uploadVideo(ownerId: String, localUri: Uri): Flow<MediaUploadProgress> =
-        upload(ownerId, localUri, MediaType.VIDEO)
+        upload(ownerId, localUri, MediaType.VIDEO, null)
 
-    private fun upload(ownerId: String, localUri: Uri, type: MediaType): Flow<MediaUploadProgress> = callbackFlow {
+    /** Returns a user-facing error message, or null if the file passes. */
+    private fun validate(localUri: Uri, constraints: MediaConstraints?): String? {
+        if (constraints == null) return null
+
+        val sizeBytes = try {
+            context.contentResolver.openAssetFileDescriptor(localUri, "r")?.use { it.length }
+        } catch (e: Exception) {
+            null
+        }
+        if (sizeBytes != null && sizeBytes > constraints.maxSizeBytes) {
+            val maxMb = constraints.maxSizeBytes / (1024 * 1024)
+            return "File is too large - please choose one under ${maxMb}MB"
+        }
+
+        if (!constraints.allowGif) {
+            val mimeType = context.contentResolver.getType(localUri)
+            if (mimeType == "image/gif") {
+                return "Animated GIFs aren't supported here"
+            }
+        }
+        return null
+    }
+
+    private fun upload(
+        ownerId: String,
+        localUri: Uri,
+        type: MediaType,
+        constraints: MediaConstraints?
+    ): Flow<MediaUploadProgress> = callbackFlow {
+        validate(localUri, constraints)?.let { errorMessage ->
+            trySend(MediaUploadProgress.Failed(errorMessage))
+            close()
+            return@callbackFlow
+        }
+
         val assetId = UUID.randomUUID().toString()
-        val extension = if (type == MediaType.VIDEO) "mp4" else "jpg"
+        val extension = when {
+            type == MediaType.VIDEO -> "mp4"
+            constraints?.allowGif == true && context.contentResolver.getType(localUri) == "image/gif" -> "gif"
+            else -> "jpg"
+        }
         val path = "media/$ownerId/$assetId.$extension"
         val ref: StorageReference = storage.reference.child(path)
 
@@ -64,7 +116,6 @@ class FirebaseMediaUploader @Inject constructor(
             trySend(MediaUploadProgress.InProgress(snapshot.bytesTransferred, snapshot.totalByteCount))
         }
         uploadTask.addOnSuccessListener {
-            // Resolve the download URL, then emit Complete off the callback chain.
             ref.downloadUrl.addOnSuccessListener { downloadUri ->
                 trySend(
                     MediaUploadProgress.Complete(
@@ -92,7 +143,6 @@ class FirebaseMediaUploader @Inject constructor(
         awaitClose { uploadTask.cancel() }
     }
 
-    /** Extracts a frame at the 1s mark and uploads it alongside the video. Local-only work, no backend dependency. */
     private suspend fun generateAndUploadThumbnail(
         ownerId: String,
         assetId: String,
@@ -102,7 +152,7 @@ class FirebaseMediaUploader @Inject constructor(
         val retriever = MediaMetadataRetriever()
         val bitmap: Bitmap? = try {
             retriever.setDataSource(context, videoUri)
-            retriever.getFrameAtTime(1_000_000L) // 1 second, in microseconds
+            retriever.getFrameAtTime(1_000_000L)
         } finally {
             retriever.release()
         }

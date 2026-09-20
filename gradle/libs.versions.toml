@@ -112,6 +112,7 @@ okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor",
 # Image Loading
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 coil-video = { group = "io.coil-kt", name = "coil-video", version.ref = "coil" }
+coil-gif = { group = "io.coil-kt", name = "coil-gif", version.ref = "coil" }
 
 # Video / ExoPlayer
 exoplayer-core = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "exoplayer" }
@@ -179,3 +180,4 @@ room = ["androidx-room-runtime", "androidx-room-ktx", "androidx-room-paging"]
 exoplayer = ["exoplayer-core", "exoplayer-ui", "exoplayer-hls", "exoplayer-dash"]
 camerax = ["camerax-core", "camerax-camera2", "camerax-lifecycle", "camerax-video", "camerax-view"]
 testing = ["junit", "mockk", "turbine", "kotlinx-coroutines-test"]
+

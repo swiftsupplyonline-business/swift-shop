@@ -149,7 +149,11 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.bundles.firebase)
 
-    // Coroutines
+    // Coil (GIF support)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.gif)
+
+// Coroutines
     implementation(libs.bundles.coroutines)
 
     // Timber
@@ -167,3 +171,4 @@ dependencies {
 }
 
 kapt { correctErrorTypes = true }
+
