@@ -18,6 +18,7 @@ export {
     createPostComment, deletePostComment
 } from "./social";
 export { syncProfileCounters } from "./maintenance";
+export { publicMarketplace } from "./publicMarketplace";
 
 // Financial Functions
 export * from "./finance";
