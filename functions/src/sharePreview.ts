@@ -7,7 +7,7 @@ const SHOPPING_APP_PACKAGE = "com.swiftshop.client";
 const PLAY_STORE_URL = `https://play.google.com/store/apps/details?id=${SHOPPING_APP_PACKAGE}`;
 const MAIN_APP_PACKAGE = "com.swiftsupply.app";
 const MAIN_APP_PLAY_STORE_URL = `https://play.google.com/store/apps/details?id=${MAIN_APP_PACKAGE}`;
-const SITE_ORIGIN = "https://swift-dev-3d3ae.web.app";
+const SITE_ORIGIN = "https://swift-d1baa.web.app";
 const SITE_NAME = "Swift Shop";
 
 // --- Utilities -------------------------------------------------------------
@@ -48,7 +48,7 @@ function renderPage(opts: PageOpts): string {
   const safeDesc = esc(description);
   const safeImage = esc(imageUrl);
   const safeUrl = esc(pageUrl);
-  const fullTitle = `${safeTitle} – ${SITE_NAME}`;
+  const fullTitle = `${safeTitle} â€“ ${SITE_NAME}`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -249,9 +249,9 @@ function sellerCta(): string {
   </div>`;
 }
 
-function ctaButtons(deepLink: string, primaryLabel: string): string {
+function ctaButtons(webUrl: string, deepLink: string, primaryLabel: string): string {
   return `
-    <a id="open-btn" class="btn btn-primary" href="${esc(deepLink)}">${esc(primaryLabel)}</a>
+    <a id="open-btn" class="btn btn-primary" href="${esc(webUrl)}">${esc(primaryLabel)}</a>
     <a class="btn btn-secondary" href="${esc(PLAY_STORE_URL)}">Get the Swift Shopping app</a>`;
 }
 
@@ -294,8 +294,8 @@ export const renderListingPreview = onRequest(async (req, res) => {
     }
 
     const priceDisplay = price;
-    const pageTitle = `${title} – ${priceDisplay}`;
-    const pageDesc = description || `${shopName ? shopName + " · " : ""}${priceDisplay} on Swift Shopping`;
+    const pageTitle = `${title} â€“ ${priceDisplay}`;
+    const pageDesc = description || `${shopName ? shopName + " Â· " : ""}${priceDisplay} on Swift Shopping`;
 
     const initials = shopName ? shopName.charAt(0).toUpperCase() : "S";
 
@@ -313,7 +313,7 @@ export const renderListingPreview = onRequest(async (req, res) => {
           </div>` : ""}
           ${!isAvailable ? `<p style="color:#ef4444;font-size:13px;font-weight:600;">Currently unavailable</p>` : ""}
           <hr class="divider">
-          ${isAvailable ? ctaButtons(deepLink, "Buy on Swift") : `<a class="btn btn-secondary" href="${esc(PLAY_STORE_URL)}">Get the Swift Shopping app</a>`}
+          ${isAvailable ? ctaButtons(pageUrl, deepLink, "Buy on Swift") : `<a class="btn btn-secondary" href="${esc(PLAY_STORE_URL)}">Get the Swift Shopping app</a>`}
         </div>
       </div>
       ${sellerCta()}`;
@@ -389,7 +389,7 @@ export const renderShopPreview = onRequest(async (req, res) => {
           </div>`).join("")}
       </div>` : "";
 
-    const pageDesc = description || `Shop ${name} on Swift Shopping${location ? " · " + location : ""}`;
+    const pageDesc = description || `Shop ${name} on Swift Shopping${location ? " Â· " + location : ""}`;
 
     const body = `
       <div class="card">
@@ -400,7 +400,7 @@ export const renderShopPreview = onRequest(async (req, res) => {
           ${location ? `<div class="meta-row">?? <span>${esc(location)}</span></div>` : ""}
           ${description ? `<p class="desc">${esc(description)}</p>` : ""}
           <hr class="divider">
-          ${ctaButtons(deepLink, "Open Shop in Swift")}
+          ${ctaButtons(pageUrl, deepLink, "Open Shop in Swift")}
         </div>
       </div>
       ${gridHtml}
@@ -489,7 +489,7 @@ export const renderSellerPreview = onRequest(async (req, res) => {
       </div>` : "";
 
     const initials = displayName.charAt(0).toUpperCase();
-    const pageDesc = bio || `${displayName} sells on Swift Shopping${shopName ? " · " + shopName : ""}`;
+    const pageDesc = bio || `${displayName} sells on Swift Shopping${shopName ? " Â· " + shopName : ""}`;
 
     const body = `
       <div class="card">
@@ -505,7 +505,7 @@ export const renderSellerPreview = onRequest(async (req, res) => {
           </div>
           ${bio ? `<p class="desc">${esc(bio)}</p>` : ""}
           <hr class="divider">
-          ${ctaButtons(deepLink, "View on Swift")}
+          ${ctaButtons(pageUrl, deepLink, "View on Swift")}
         </div>
       </div>
       ${gridHtml}
@@ -580,7 +580,7 @@ export const renderPostPreview = onRequest(async (req, res) => {
           </div>
           ${caption ? `<p class="desc" style="-webkit-line-clamp:6;">${esc(caption)}</p>` : ""}
           <hr class="divider">
-          ${ctaButtons(deepLink, "View on Swift")}
+          ${ctaButtons(pageUrl, deepLink, "View on Swift")}
         </div>
       </div>
       ${sellerCta()}`;
