@@ -23,3 +23,7 @@ class UnfollowUserUseCase(private val repository: ProfileRepository) {
 class IsFollowingUseCase(private val repository: ProfileRepository) {
     suspend operator fun invoke(targetUid: String): Boolean = repository.isFollowing(targetUid)
 }
+
+class UpdateFcmTokenUseCase(private val repository: ProfileRepository) {
+    suspend operator fun invoke(token: String): Result<Unit> = repository.updateFcmToken(token)
+}

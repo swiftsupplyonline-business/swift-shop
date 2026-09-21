@@ -10,15 +10,29 @@ import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.swiftshop.MainActivity
+import com.swiftshop.domain.profile.UpdateFcmTokenUseCase
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import timber.log.Timber
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class SwiftShopMessagingService : FirebaseMessagingService() {
+
+    @Inject
+    lateinit var updateFcmTokenUseCase: UpdateFcmTokenUseCase
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         Timber.d("New FCM token received")
-        // Token update registered server-side via SwiftBackendApi.updateFcmToken
-        // Using WorkManager to enqueue a one-time token sync job
+        serviceScope.launch {
+            updateFcmTokenUseCase(token)
+        }
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {

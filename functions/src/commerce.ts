@@ -92,14 +92,24 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
     const db = admin.firestore();
     let orderId = "";
     let finalTotal = 0;
+    let existingPayment: { paymentUrl?: string, mopaySessionId?: string } | null = null;
 
     try {
-        orderId = await db.runTransaction(async (transaction) => {
+        const transactionResult = await db.runTransaction(async (transaction) => {
             const idempotencyRef = db.collection("idempotencyKeys").doc(idempotencyKey);
             const idempotencyDoc = await transaction.get(idempotencyRef);
             if (idempotencyDoc.exists) {
-                console.log(`Idempotent request for key ${idempotencyKey}. Returning existing orderId.`);
-                return idempotencyDoc.data()?.orderId;
+                const existingId = idempotencyDoc.data()?.orderId;
+                const orderSnap = await transaction.get(db.collection("orders").doc(existingId));
+                const orderData = orderSnap.data();
+                console.log(`Idempotent request for key ${idempotencyKey}. Returning existing order id and payment info.`);
+                return {
+                    orderId: existingId,
+                    total: orderData?.totalMinorUnits || 0,
+                    paymentUrl: orderData?.paymentUrl,
+                    mopaySessionId: orderData?.mopaySessionId,
+                    isIdempotent: true
+                };
             }
 
             let subtotal = 0;
@@ -263,10 +273,27 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 createdAt: now
             });
 
-            return newOrderId;
+            return { orderId: newOrderId, total: total, isIdempotent: false };
         });
 
+        orderId = transactionResult.orderId;
+        finalTotal = transactionResult.total;
+        if (transactionResult.isIdempotent) {
+            existingPayment = {
+                paymentUrl: transactionResult.paymentUrl,
+                mopaySessionId: transactionResult.mopaySessionId
+            };
+        }
+
         if (paymentMethod === "MOPAY" && orderId) {
+            // SWIFT-002: If this is an idempotent retry and we already have a MoPay session, return it.
+            if (existingPayment?.paymentUrl) {
+                return {
+                    orderId,
+                    paymentUrl: existingPayment.paymentUrl,
+                    mopaySessionId: existingPayment.mopaySessionId
+                };
+            }
             const mopayRequest = {
                 amount: finalTotal / 100,
                 reference: orderId,

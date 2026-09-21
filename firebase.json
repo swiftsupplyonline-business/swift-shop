@@ -23,10 +23,10 @@
       "**/node_modules/**"
     ],
     "rewrites": [
-      {
-        "source": "/listing/**",
-        "function": "renderListingPreview"
-      }
+      { "source": "/listing/**", "function": "renderListingPreview" },
+      { "source": "/shop/**", "function": "renderShopPreview" },
+      { "source": "/seller/**", "function": "renderSellerPreview" },
+      { "source": "/post/**", "function": "renderPostPreview" }
     ]
   }
 }

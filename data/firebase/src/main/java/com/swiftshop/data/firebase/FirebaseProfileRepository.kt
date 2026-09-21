@@ -17,6 +17,7 @@ import javax.inject.Singleton
 @Singleton
 class FirebaseProfileRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
+    private val functions: com.google.firebase.functions.FirebaseFunctions,
     private val auth: FirebaseAuth
 ) : ProfileRepository {
 
@@ -112,6 +113,12 @@ class FirebaseProfileRepository @Inject constructor(
             .collection("blockedUsers").document(uid)
             .set(mapOf("blockedAt" to System.currentTimeMillis()))
             .await()
+    }
+
+    override suspend fun updateFcmToken(token: String): Result<Unit> = runCatching {
+        val data = mapOf("token" to token)
+        functions.getHttpsCallable("updateFcmToken").call(data).await()
+        Unit
     }
 
     override fun getAchievements(uid: String): Flow<List<Achievement>> = callbackFlow {

@@ -53,6 +53,7 @@ class ProfileViewModel @Inject constructor(
     private val getUserPosts: com.swiftshop.domain.feed.GetUserPostsUseCase,
     private val feedRepository: com.swiftshop.domain.feed.FeedRepository,
     private val initiateSubscription: com.swiftshop.domain.commerce.InitiateSubscriptionUseCase,
+    private val messagingRepository: com.swiftshop.domain.messaging.MessagingRepository,
     private val signOut: SignOutUseCase
 ) : ViewModel() {
 
@@ -142,6 +143,17 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             if (state.profile.isFollowedByMe) unfollowUser(state.profile.uid)
             else followUser(state.profile.uid)
+        }
+    }
+
+    fun startConversationWithProfile(onReady: (String) -> Unit) {
+        val target = targetUid ?: return
+        viewModelScope.launch {
+            val currentUser = observeCurrentUser().first()?.uid
+            if (currentUser.isNullOrBlank() || currentUser == target) return@launch
+            messagingRepository.getOrCreateConversation(listOf(currentUser, target))
+                .onSuccess { conversationId -> onReady(conversationId) }
+                .onFailure { _actionState.value = ActionState.Error(it.message ?: "Couldn't open conversation") }
         }
     }
 

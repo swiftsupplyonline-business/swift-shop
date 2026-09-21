@@ -20,7 +20,7 @@ data class MoneyAmount(
     companion object {
         val ZERO = MoneyAmount("LSL", 0L)
         fun fromMajorUnits(major: Double, currency: String = "LSL"): MoneyAmount =
-            MoneyAmount(currency, (major * 100).toLong())
+            MoneyAmount(currency, kotlin.math.round(major * 100).toLong())
     }
     fun toDisplayString(): String = "${currency} ${minorUnits / 100}.${(minorUnits % 100).toString().padStart(2, '0')}"
     operator fun plus(other: MoneyAmount): MoneyAmount {
@@ -377,7 +377,7 @@ data class Conversation(
     val participantIds: List<String> = emptyList(),
     val lastMessage: String = "",
     val lastMessageAt: Long = 0L,
-    val unreadCount: Int = 0,
+    val unreadCounts: Map<String, Int> = emptyMap(),
     val deliveryRouteId: String = ""
 ) : Parcelable
 

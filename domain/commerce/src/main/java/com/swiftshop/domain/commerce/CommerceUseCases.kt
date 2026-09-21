@@ -94,7 +94,7 @@ interface CommerceRepository {
     suspend fun getShop(shopId: String): Result<Shop>
     suspend fun createShop(shop: Shop): Result<String>
     suspend fun updateShop(shop: Shop): Result<Unit>
-    suspend fun deleteShop(shopId: String): Result<Unit> = Result.success(Unit)
+    suspend fun deleteShop(shopId: String): Result<Unit> = Result.failure(NotImplementedError("Shop deletion is not yet implemented backend-side"))
 
     // Listings
     fun getShopListings(shopId: String, page: Int, pageSize: Int): Flow<List<Listing>>

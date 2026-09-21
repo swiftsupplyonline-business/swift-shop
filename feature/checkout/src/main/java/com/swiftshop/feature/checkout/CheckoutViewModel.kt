@@ -271,6 +271,11 @@ class CheckoutViewModel @Inject constructor(
             // Resolve pickup location from the delivery listing's shop.
             val pickupLocation = resolvePickupLocation(listingId)
 
+            if (pickupLocation == null) {
+                _uiState.value = CheckoutUiState.Error("Merchant location not found. Please contact the shop.")
+                return@launch
+            }
+
             val dropoff = GeoPoint(deliveryAddress.lat, deliveryAddress.lng)
 
             createDeliveryRequest(listingId, pickupLocation, dropoff).fold(
@@ -287,19 +292,24 @@ class CheckoutViewModel @Inject constructor(
 
     /**
      * Fetches the shop that owns the delivery listing and returns its GeoPoint.
-     * Falls back to GeoPoint(0,0) if unavailable Ã¢â‚¬â€ the CF will still accept it
-     * but the provider's map will show a zeroed location.
+     * Falls back to null if unavailable or zeroed Ã¢â‚¬â€ prevents corrupted
+     * delivery requests with (0,0) pickup.
      */
-    private suspend fun resolvePickupLocation(listingId: String): GeoPoint {
+    private suspend fun resolvePickupLocation(listingId: String): GeoPoint? {
         // Fast path: reuse if already fetched.
         if (merchantPickupLocation.lat != 0.0 || merchantPickupLocation.lng != 0.0) {
             return merchantPickupLocation
         }
         // Find the listing in the cached set to get its shopId.
         val listing = _deliveryListings.value.firstOrNull { it.id == listingId }
-            ?: return GeoPoint()
+            ?: return null
         val shop = getShopUseCase(listing.shopId).getOrNull()
-            ?: return GeoPoint()
+            ?: return null
+        
+        if (shop.location.lat == 0.0 && shop.location.lng == 0.0) {
+            return null
+        }
+            
         merchantPickupLocation = shop.location
         return merchantPickupLocation
     }

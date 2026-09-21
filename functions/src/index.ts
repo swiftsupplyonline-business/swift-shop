@@ -34,3 +34,6 @@ export * from "./advertising";
 // Share Preview Functions
 export * from "./sharePreview";
 
+// Notification Functions
+export * from "./notifications";
+

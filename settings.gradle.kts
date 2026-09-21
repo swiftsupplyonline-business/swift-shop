@@ -22,7 +22,6 @@ include(":app")
 // Core modules
 include(":core:common")
 include(":core:model")
-include(":core:network")
 include(":core:database")
 include(":core:datastore")
 include(":core:ui")
@@ -33,7 +32,6 @@ include(":core:media")
 include(":data:repositories")
 include(":data:firebase")
 include(":data:local")
-include(":data:remote")
 
 // Domain layer
 include(":domain:auth")

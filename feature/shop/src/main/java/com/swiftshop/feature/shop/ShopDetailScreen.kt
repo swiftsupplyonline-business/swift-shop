@@ -115,6 +115,11 @@ fun ShopDetailScreen(
                     typeFilter      = typeFilter,
                     onFollowClick   = { viewModel.toggleFollow() },
                     onTypeFilter    = { viewModel.setTypeFilter(it) },
+                    onMessageClick  = {
+                        viewModel.startConversationWithOwner {
+                            navController.navigate(Screen.Conversation.createRoute(it))
+                        }
+                    },
                     onListingClick  = { navController.navigate(Screen.ListingDetail.createRoute(it)) },
                     onLocationClick = {
                         val shop = state.shop
@@ -141,6 +146,7 @@ private fun ShopContent(
     isOwner: Boolean,
     typeFilter: ListingType?,
     onFollowClick: () -> Unit,
+    onMessageClick: () -> Unit,
     onTypeFilter: (ListingType?) -> Unit,
     onListingClick: (String) -> Unit,
     onLocationClick: () -> Unit
@@ -165,6 +171,7 @@ private fun ShopContent(
                 isFollowLoading = isFollowLoading,
                 isOwner         = isOwner,
                 onFollowClick   = onFollowClick,
+                onMessageClick  = onMessageClick,
                 onLocationClick = onLocationClick
             )
         }
@@ -230,6 +237,7 @@ private fun ShopHeader(
     isFollowLoading: Boolean,
     isOwner: Boolean,
     onFollowClick: () -> Unit,
+    onMessageClick: () -> Unit,
     onLocationClick: () -> Unit
 ) {
     val colors = MaterialTheme.swiftColors
@@ -323,7 +331,16 @@ private fun ShopHeader(
                 }
 
                 if (!isOwner) {
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedButton(
+                        onClick = onMessageClick,
+                        shape = MaterialTheme.shapes.medium
+                    ) {
+                        Icon(Icons.Default.Message, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Message")
+                    }
+                    Spacer(Modifier.width(8.dp))
                     if (isFollowLoading) {
                         CircularProgressIndicator(modifier = Modifier.size(36.dp), strokeWidth = 2.dp)
                     } else {
