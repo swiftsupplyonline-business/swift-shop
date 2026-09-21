@@ -46,6 +46,22 @@
         "function": "publicMarketplace"
       },
       {
+        "source": "/listing/**",
+        "function": "renderListingPreview"
+      },
+      {
+        "source": "/shop/**",
+        "function": "renderShopPreview"
+      },
+      {
+        "source": "/seller/**",
+        "function": "renderSellerPreview"
+      },
+      {
+        "source": "/post/**",
+        "function": "renderPostPreview"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
