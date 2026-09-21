@@ -19,12 +19,12 @@ export const publicMarketplace = onRequest({ cors: true }, async (_request, resp
 
         const listings = listingSnap.docs
             .map(d => publicFields(d.data(), d.id))
-            .filter(x => x.isAvailable !== false)
+            .filter((x: any) => x.isAvailable !== false)
             .sort((a: any, b: any) => (b.createdAt || b.updatedAt || 0) - (a.createdAt || a.updatedAt || 0));
 
         const shops = shopSnap.docs
             .map(d => publicFields(d.data(), d.id))
-            .filter(x => x.isActive !== false)
+            .filter((x: any) => x.isActive !== false)
             .sort((a: any, b: any) => (b.createdAt || b.updatedAt || 0) - (a.createdAt || a.updatedAt || 0));
 
         const posts = postSnap.docs
