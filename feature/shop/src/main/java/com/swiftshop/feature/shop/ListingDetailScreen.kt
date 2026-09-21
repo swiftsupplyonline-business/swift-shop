@@ -151,7 +151,7 @@ fun ListingDetailScreen(
                                 }
                             }
                             IconButton(onClick = {
-                                val shareUrl = "https://swift-dev-3d3ae.web.app/listing/${listing.id}"
+                                val shareUrl = "https://swift-d1baa.web.app/listing/${listing.id}"
                                 val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(android.content.Intent.EXTRA_TEXT, "Check out ${listing.title} on SwiftShop: $shareUrl")
