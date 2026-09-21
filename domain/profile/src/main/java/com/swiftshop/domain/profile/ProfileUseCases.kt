@@ -27,3 +27,7 @@ class IsFollowingUseCase(private val repository: ProfileRepository) {
 class UpdateFcmTokenUseCase(private val repository: ProfileRepository) {
     suspend operator fun invoke(token: String): Result<Unit> = repository.updateFcmToken(token)
 }
+
+class SearchUsersUseCase(private val repository: ProfileRepository) {
+    suspend operator fun invoke(query: String): Result<List<UserProfile>> = repository.searchUsers(query)
+}

@@ -15,5 +15,6 @@ interface ProfileRepository {
     suspend fun reportUser(uid: String, reason: String): Result<Unit>
     suspend fun blockUser(uid: String): Result<Unit>
     suspend fun updateFcmToken(token: String): Result<Unit>
+    suspend fun searchUsers(query: String): Result<List<UserProfile>>
     fun getAchievements(uid: String): Flow<List<Achievement>>
 }

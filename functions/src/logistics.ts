@@ -1,5 +1,6 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
+import { onDocumentUpdated } from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
 
 const DELIVERY_REQUEST_WINDOW_MS = 120_000; // 120 seconds, server-authoritative
@@ -130,6 +131,15 @@ export const updateDeliveryStatus = onCall(async (request) => {
                 // A driver claims an unassigned request. Requires the 'DRIVER' role claim.
                 if (route.driverId) throw new Error("Route already has an assigned driver");
                 if (auth.token.role !== "DRIVER" && !isAdmin) throw new Error("Only a driver can accept a delivery");
+
+                // SWIFT-011: Enforce provider consistency if order has a designated deliveryProviderSellerId.
+                const orderDoc = await transaction.get(db.collection("orders").doc(route.orderId));
+                const order = orderDoc.data();
+                if (order?.deliveryProviderSellerId && order.deliveryProviderSellerId !== (driverId || auth.uid)) {
+                    // For now, we assume the driverId is the seller uid themselves (self-delivery).
+                    // In a multi-driver fleet model, this would check if auth.uid belongs to order.deliveryProviderSellerId.
+                    throw new Error("This delivery is reserved for a specific provider.");
+                }
 
                 transaction.update(routeRef, {
                     driverId: driverId || auth.uid,
@@ -359,4 +369,55 @@ export const expireDeliveryRequests = onSchedule("every 1 minutes", async () => 
         batch.update(doc.ref, { status: "EXPIRED", updatedAt: now });
     });
     await batch.commit();
+});
+
+/**
+ * Trigger: Order confirmed.
+ * Automatically creates a delivery route if delivery was requested and accepted.
+ */
+export const onOrderConfirmed = onDocumentUpdated("orders/{orderId}", async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after) return;
+
+    if (before.status !== "CONFIRMED" && after.status === "CONFIRMED" && after.requiresDelivery && after.deliveryRequestId) {
+        const db = admin.firestore();
+
+        // Fetch the accepted delivery request
+        const drDoc = await db.collection("deliveryRequests").doc(after.deliveryRequestId).get();
+        if (!drDoc.exists) return;
+        const dr = drDoc.data()!;
+
+        if (dr.status !== "ACCEPTED") return;
+
+        // Check if route already exists (idempotency)
+        const routeQuery = await db.collection("deliveryRoutes").where("orderId", "==", event.params.orderId).get();
+        if (!routeQuery.empty) return;
+
+        const routeId = db.collection("deliveryRoutes").doc().id;
+        const newRoute = {
+            id: routeId,
+            orderId: event.params.orderId,
+            buyerId: after.buyerId,
+            sellerId: after.sellerId,
+            driverId: dr.merchantId, // Designated provider from the request
+            pickupLat: dr.pickup.lat,
+            pickupLng: dr.pickup.lng,
+            dropoffLat: dr.dropoff.lat,
+            dropoffLng: dr.dropoff.lng,
+            status: "ASSIGNED", // Auto-assigned to the provider who accepted
+            distanceMeters: 0,
+            estimatedMinutes: 0,
+            conversationId: "",
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        await db.collection("deliveryRoutes").doc(routeId).set(newRoute);
+        await db.collection("orders").doc(event.params.orderId).update({
+            deliveryRouteId: routeId,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log(`Auto-created delivery route ${routeId} for order ${event.params.orderId}`);
+    }
 });

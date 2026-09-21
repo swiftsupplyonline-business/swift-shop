@@ -448,7 +448,9 @@ data class DeliveryRequest(
 data class GeoPoint(
     val lat: Double = 0.0,
     val lng: Double = 0.0
-) : Parcelable
+) : Parcelable {
+    fun isValid(): Boolean = lat in -90.0..90.0 && lng in -180.0..180.0 && lat.isFinite() && lng.isFinite()
+}
 
 // ─── Advertising ─────────────────────────────────────────────────────────────
 

@@ -72,11 +72,41 @@ fun SearchScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    if (state.users.isNotEmpty()) {
+                        item {
+                            SearchSectionHeader("People")
+                        }
+                        items(state.users, key = { it.uid }) { user ->
+                            UserSearchItem(user = user, onClick = { onNavigate("user/${user.uid}") })
+                        }
+                    }
+
                     if (state.listings.isNotEmpty()) {
+                        item { SearchSectionHeader("Listings") }
                         items(state.listings, key = { it.id }) { listing ->
                             ListingSearchItem(
                                 listing = listing,
                                 onClick = { onNavigate("listing/${listing.id}") }
+                            )
+                        }
+                    }
+
+                    if (state.shops.isNotEmpty()) {
+                        item { SearchSectionHeader("Shops") }
+                        items(state.shops, key = { it.id }) { shop ->
+                            ShopSearchItem(
+                                shop = shop,
+                                onClick = { onNavigate("shop/${shop.id}") }
+                            )
+                        }
+                    }
+
+                    if (state.posts.isNotEmpty()) {
+                        item { SearchSectionHeader("Posts") }
+                        items(state.posts, key = { it.id }) { post ->
+                            PostSearchItem(
+                                post = post,
+                                onClick = { onNavigate("post/${post.id}") }
                             )
                         }
                     }

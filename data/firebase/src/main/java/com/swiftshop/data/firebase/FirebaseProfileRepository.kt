@@ -121,6 +121,17 @@ class FirebaseProfileRepository @Inject constructor(
         Unit
     }
 
+    override suspend fun searchUsers(query: String): Result<List<UserProfile>> = runCatching {
+        val snapshot = firestore.collection("profiles")
+            .whereGreaterThanOrEqualTo("displayName", query)
+            .whereLessThanOrEqualTo("displayName", query + "\uf8ff")
+            .get().await()
+        
+        snapshot.documents.mapNotNull { doc ->
+            doc.toObject(FirestoreUserProfile::class.java)?.toDomain(doc.id)
+        }
+    }
+
     override fun getAchievements(uid: String): Flow<List<Achievement>> = callbackFlow {
         if (uid.isBlank()) { trySend(emptyList()); awaitClose {}; return@callbackFlow }
         // Achievements can be a subcollection or a list in profile. Assuming subcollection for scale.

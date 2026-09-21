@@ -52,7 +52,11 @@ class FirebaseCommerceRepository @Inject constructor(
     }
 
     override suspend fun updateShop(shop: Shop): Result<Unit> = runCatching {
-        firestore.collection("shops").document(shop.id).update(shop.toUpdateMap()).await()
+        val data = mapOf(
+            "shopId" to shop.id,
+            "updates" to shop.toUpdateMap()
+        )
+        functions.getHttpsCallable("updateShop").call(data).await()
         Unit
     }
 
@@ -156,12 +160,22 @@ class FirebaseCommerceRepository @Inject constructor(
     }
 
     override suspend fun searchListings(query: String): Result<List<Listing>> = runCatching {
-        // Basic title prefix search (limited by Firestore capabilities without external index)
+        // Basic title prefix search with availability filter.
         firestore.collection("listings")
+            .whereEqualTo("isAvailable", true)
             .whereGreaterThanOrEqualTo("title", query)
             .whereLessThanOrEqualTo("title", query + "\uf8ff")
             .get().await()
             .toObjects(FirestoreListing::class.java).map { it.toDomain() }
+    }
+
+    override suspend fun searchShops(query: String): Result<List<Shop>> = runCatching {
+        firestore.collection("shops")
+            .whereEqualTo("isActive", true)
+            .whereGreaterThanOrEqualTo("name", query)
+            .whereLessThanOrEqualTo("name", query + "\uf8ff")
+            .get().await()
+            .toObjects(FirestoreShop::class.java).map { it.toDomain() }
     }
 
     override suspend fun createListing(listing: Listing): Result<String> = runCatching {

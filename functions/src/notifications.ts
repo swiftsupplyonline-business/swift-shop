@@ -138,3 +138,24 @@ export const notifyOnDeliveryRequestResponded = onDocumentUpdated("deliveryReque
         }
     });
 });
+
+/**
+ * Trigger: Delivery route status change.
+ */
+export const notifyOnDeliveryStatusChange = onDocumentUpdated("deliveryRoutes/{routeId}", async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after || before.status === after.status) return;
+
+    // Notify buyer of the delivery update.
+    await sendNotification(after.buyerId, {
+        notification: {
+            title: "Delivery Update",
+            body: `Your delivery status is now ${after.status}.`,
+        },
+        data: {
+            type: "DELIVERY",
+            targetId: after.id,
+        }
+    });
+});

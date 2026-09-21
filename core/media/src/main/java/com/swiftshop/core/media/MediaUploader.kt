@@ -2,6 +2,7 @@ package com.swiftshop.core.media
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.google.firebase.storage.FirebaseStorage
@@ -110,7 +111,12 @@ class FirebaseMediaUploader @Inject constructor(
             runCatching { generateAndUploadThumbnail(ownerId, assetId, localUri, ref.parent!!) }.getOrNull().orEmpty()
         } else ""
 
-        val uploadTask = ref.putFile(localUri)
+        val uploadTask = if (type == MediaType.IMAGE) {
+            val compressed = runCatching { compressImage(localUri) }.getOrNull()
+            if (compressed != null) ref.putBytes(compressed) else ref.putFile(localUri)
+        } else {
+            ref.putFile(localUri)
+        }
 
         uploadTask.addOnProgressListener { snapshot ->
             trySend(MediaUploadProgress.InProgress(snapshot.bytesTransferred, snapshot.totalByteCount))
@@ -153,6 +159,8 @@ class FirebaseMediaUploader @Inject constructor(
         val bitmap: Bitmap? = try {
             retriever.setDataSource(context, videoUri)
             retriever.getFrameAtTime(1_000_000L)
+        } catch (e: Exception) {
+            null
         } finally {
             retriever.release()
         }
@@ -164,5 +172,14 @@ class FirebaseMediaUploader @Inject constructor(
         val thumbRef = parentFolder.child("$assetId-thumb.jpg")
         thumbRef.putBytes(bytes).await()
         return thumbRef.downloadUrl.await().toString()
+    }
+
+    private fun compressImage(localUri: Uri): ByteArray {
+        val inputStream = context.contentResolver.openInputStream(localUri)
+        val bitmap = BitmapFactory.decodeStream(inputStream) ?: throw IllegalStateException("Failed to decode bitmap")
+        val outputStream = ByteArrayOutputStream()
+        // Authoritative client-side optimization: 85% quality JPEG.
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
+        return outputStream.toByteArray()
     }
 }

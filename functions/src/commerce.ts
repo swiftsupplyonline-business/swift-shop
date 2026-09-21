@@ -1043,6 +1043,51 @@ export const createShop = onCall(async (request) => {
 });
 
 /**
+ * Authoritative shop update.
+ */
+export const updateShop = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { shopId, updates } = request.data;
+    if (!shopId) throw new HttpsError("invalid-argument", "shopId required");
+
+    const db = admin.firestore();
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const shopRef = db.collection("shops").doc(shopId);
+            const shopDoc = await transaction.get(shopRef);
+            if (!shopDoc.exists) throw new Error("Shop not found");
+            const shop = shopDoc.data()!;
+
+            if (shop.ownerId !== auth.uid && !auth.token.admin) {
+                throw new Error("Unauthorized");
+            }
+
+            const allowedUpdateKeys = [
+                "name", "description", "category", "logoUrl", "coverUrl",
+                "locationLat", "locationLng", "locationAddress", "isActive"
+            ];
+            const filteredUpdates: Record<string, any> = {};
+            for (const key of allowedUpdateKeys) {
+                if (updates && updates[key] !== undefined) {
+                    filteredUpdates[key] = updates[key];
+                }
+            }
+
+            transaction.update(shopRef, {
+                ...filteredUpdates,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
  * Updates a listing and maintains active count.
  */
 export const updateListing = onCall(async (request) => {

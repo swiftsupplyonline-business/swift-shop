@@ -92,6 +92,7 @@ interface FeedRepository {
     fun observePostComments(postId: String): Flow<List<Comment>>
     suspend fun postPostComment(comment: Comment): Result<String>
     suspend fun deletePostComment(commentId: String): Result<Unit>
+    suspend fun searchPosts(query: String): Result<List<FeedPost>>
 }
 
 // â”€â”€â”€ Use Cases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -237,6 +238,10 @@ class PostPostCommentUseCase(private val repository: FeedRepository) {
 
 class DeletePostCommentUseCase(private val repository: FeedRepository) {
     suspend operator fun invoke(commentId: String): Result<Unit> = repository.deletePostComment(commentId)
+}
+
+class SearchPostsUseCase(private val repository: FeedRepository) {
+    suspend operator fun invoke(query: String): Result<List<FeedPost>> = repository.searchPosts(query)
 }
 
 

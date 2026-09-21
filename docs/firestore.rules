@@ -70,10 +70,9 @@ service cloud.firestore {
       allow read: if true;  // public
       // Created via Cloud Function only to enforce tier limits
       allow create: if false;
-      allow update: if isSignedIn() && isActive()
-        && resource.data.ownerId == request.auth.uid
-        && !request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny(['ownerId', 'isVerified']);
+      // All shop updates must flow through Cloud Functions to ensure
+      // authoritative field protection (ownerId, isVerified, etc).
+      allow update: if false;
       allow delete: if isAdmin();
     }
 
@@ -85,7 +84,7 @@ service cloud.firestore {
       allow update: if isSignedIn()
         && resource.data.sellerId == request.auth.uid
         && !request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny(['id', 'sellerId', 'isSponsored', 'commitmentCount', 'likeCount', 'commentCount', 'bookmarkCount', 'rankingScore', 'createdAt', 'updatedAt']);
+            .hasAny(['id', 'sellerId', 'shopId', 'listingType', 'priceMinorUnits', 'priceCurrency', 'stockQuantity', 'isSponsored', 'commitmentCount', 'likeCount', 'commentCount', 'bookmarkCount', 'rankingScore', 'createdAt', 'updatedAt']);
       allow delete: if false;
 
       match /likes/{userId} {
@@ -185,7 +184,9 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/conversations/$(resource.data.conversationId))
            .data.participantIds.hasAny([request.auth.uid]);
       allow create: if isSignedIn() && isActive()
-        && request.resource.data.senderId == request.auth.uid;
+        && request.resource.data.senderId == request.auth.uid
+        && get(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId))
+           .data.participantIds.hasAny([request.auth.uid]);
       allow update: if isSignedIn()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
       allow delete: if false;

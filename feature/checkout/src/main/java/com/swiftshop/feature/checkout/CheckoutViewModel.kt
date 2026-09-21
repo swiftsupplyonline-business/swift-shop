@@ -104,8 +104,8 @@ class CheckoutViewModel @Inject constructor(
     // This is the authoritative pickup point sent to the provider.
     private var merchantPickupLocation: GeoPoint = GeoPoint()
 
-    private var currentUserId: String = ""
-    private var feeCalculationJob: Job? = null
+    private val _paymentIntent = MutableSharedFlow<OrderSummary>()
+    val paymentIntent = _paymentIntent.asSharedFlow()
 
     init {
         viewModelScope.launch {
@@ -386,6 +386,20 @@ class CheckoutViewModel @Inject constructor(
                 return
             }
         }
+
+        if (paymentMethod == PaymentMethod.SWIFT_WALLET) {
+            viewModelScope.launch {
+                _paymentIntent.emit(cartState.summary)
+            }
+            return
+        }
+
+        executePlaceOrder()
+    }
+
+    fun executePlaceOrder() {
+        val cartState = _uiState.value as? CheckoutUiState.CartLoaded ?: return
+        if (_uiState.value is CheckoutUiState.PlacingOrder) return
 
         viewModelScope.launch {
             _uiState.value = CheckoutUiState.PlacingOrder

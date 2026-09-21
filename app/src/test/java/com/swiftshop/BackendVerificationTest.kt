@@ -29,7 +29,7 @@ class BackendVerificationTest {
         // Verifying that the data classes match the new intent-based signature
         val items = listOf(OrderItem("listing_1", "Title", 2, MoneyAmount("LSL", 1000)))
         val address = DeliveryAddress(city = "Maseru")
-        val method = PaymentMethod.MPESA
+        val method = PaymentMethod.MOPAY
         val phone = "58000000"
         val idempotencyKey = UUID.randomUUID().toString()
 

@@ -22,13 +22,17 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.swiftshop.core.model.*
+import com.swiftshop.core.security.BiometricGuard
+import com.swiftshop.core.security.BiometricResult
 import com.swiftshop.core.ui.components.*
 import com.swiftshop.core.ui.navigation.Screen
 import com.swiftshop.domain.commerce.CartItem
+import kotlinx.coroutines.flow.collectLatest
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint as OsmGeoPoint
@@ -59,6 +63,7 @@ enum class CheckoutStep {
 @Composable
 fun CheckoutScreen(
     navController: NavController,
+    biometricGuard: BiometricGuard,
     sessionId: String? = null,
     viewModel: CheckoutViewModel = hiltViewModel()
 ) {
@@ -70,6 +75,22 @@ fun CheckoutScreen(
     var step by remember { mutableStateOf(CheckoutStep.CART) }
     var showClearCartConfirm by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
+    val context = androidx.compose.platform.LocalContext.current
+
+    // Security Gate Side-Effect
+    LaunchedEffect(Unit) {
+        viewModel.paymentIntent.collectLatest { summary ->
+            val activity = context as? FragmentActivity ?: return@collectLatest
+            val result = biometricGuard.authenticate(
+                activity = activity,
+                title = "Confirm Payment",
+                subtitle = "Authorize payment of ${summary.total.toDisplayString()}"
+            )
+            if (result is BiometricResult.Success) {
+                viewModel.executePlaceOrder()
+            }
+        }
+    }
 
     // Handle return from MoPay deep-link
     LaunchedEffect(sessionId) {

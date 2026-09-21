@@ -8,7 +8,7 @@ export { provisionNewUser } from "./auth";
 export {
     calculateOrderFees, createOrder, verifyMopayPayment, confirmDelivery,
     updateOrderStatus, cancelOrder, confirmMopayPayment, initiateSubscription,
-    createListing, deleteListing, createShop, updateListing,
+    createListing, deleteListing, createShop, updateShop, updateListing,
     createListingComment, deleteListingComment
 } from "./commerce";
 export {
@@ -23,7 +23,7 @@ export { syncProfileCounters } from "./maintenance";
 export * from "./finance";
 
 // Logistics Functions
-export * from "./logistics";
+export { requestDelivery, updateDeliveryStatus, createDeliveryRequest, respondToDeliveryRequest, cancelDeliveryRequest, expireDeliveryRequests, onOrderConfirmed } from "./logistics";
 
 // Reservation Functions
 export * from "./reservations";
@@ -35,5 +35,9 @@ export * from "./advertising";
 export * from "./sharePreview";
 
 // Notification Functions
-export * from "./notifications";
+export {
+    updateFcmToken, notifyOnMessage, notifyOnOrderStatusChange,
+    notifyOnDeliveryRequestCreated, notifyOnDeliveryRequestResponded,
+    notifyOnDeliveryStatusChange
+} from "./notifications";
 
