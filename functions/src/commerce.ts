@@ -103,12 +103,14 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 const orderSnap = await transaction.get(db.collection("orders").doc(existingId));
                 const orderData = orderSnap.data();
 
-                // SWIFT-021: Check session lifecycle
+                // SWIFT-021: Check session lifecycle with LEASE
                 const sessionStatus = orderData?.paymentSessionStatus || "FAILED";
                 const isCreated = sessionStatus === "CREATED";
                 const isCreating = sessionStatus === "CREATING";
-                const createdAt = orderData?.updatedAt?.toMillis() || 0;
-                const timedOut = isCreating && (Date.now() - createdAt > 5 * 60 * 1000);
+                const lastUpdated = orderData?.updatedAt?.toMillis() || 0;
+
+                // 2-minute lease for session creation
+                const leaseExpired = isCreating && (Date.now() - lastUpdated > 120 * 1000);
 
                 if (isCreated) {
                     console.log(`Idempotent request: Session already exists for ${existingId}`);
@@ -122,11 +124,11 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                     };
                 }
 
-                if (isCreating && !timedOut) {
-                    throw new Error("Payment session is currently being created by another request.");
+                if (isCreating && !leaseExpired) {
+                    throw new Error("RETRY_TOO_SOON: Payment session creation is still in progress.");
                 }
 
-                // Recovery needed
+                // Recovery needed (FAILED or STALE_CREATING)
                 console.log(`Recovery needed for order ${existingId} (status: ${sessionStatus})`);
                 transaction.update(db.collection("orders").doc(existingId), {
                     paymentSessionStatus: "CREATING",
@@ -335,6 +337,8 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 description: `Order ${orderId} at Swift Shop`,
                 customerEmail: auth.token.email,
                 customerName: auth.token.name || auth.uid,
+                // SWIFT-021: Deterministic provider-side idempotency
+                idempotencyKey: `mopay_order_${orderId}_${idempotencyKey}`
             };
 
             const mopayResponse = await MopayClient.initiatePaymentSession(mopayRequest);

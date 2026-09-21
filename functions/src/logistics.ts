@@ -144,15 +144,30 @@ export const updateDeliveryStatus = onCall(async (request) => {
                 throw new Error(`Cannot transition delivery from ${route.status} to ${status}`);
             }
 
-            // SWIFT-019: Implement Route Claiming
+            // SWIFT-019: Implement Secure Route Claiming
             if (status === "ASSIGNED" && route.status === "REQUESTED") {
                 if (route.driverId) throw new Error("Route already has an assigned driver");
-                if (auth.token.role !== "DRIVER" && !isAdmin) throw new Error("Only a driver can claim a delivery");
 
-                // Consistency check: ensure driver belongs to the provider if designated
-                if (route.providerId && route.providerId !== auth.uid && !isAdmin) {
-                   // Fleet check logic would go here. For now, strict UID match or self-delivery.
-                   throw new Error("This delivery is reserved for a specific provider.");
+                const isAdmin = auth.token.admin === true;
+                if (auth.token.role !== "DRIVER" && !isAdmin) {
+                    throw new Error("Only a driver can claim a delivery");
+                }
+
+                // Membership check: Is driver authorized by this provider?
+                const isProviderSelf = route.providerId === auth.uid;
+                let isAuthorizedMember = false;
+
+                if (!isProviderSelf && !isAdmin) {
+                    const authRef = db.collection("deliveryProviders")
+                        .doc(route.providerId)
+                        .collection("drivers")
+                        .doc(auth.uid);
+                    const authDoc = await transaction.get(authRef);
+                    isAuthorizedMember = authDoc.exists && authDoc.data()?.authorized === true;
+                }
+
+                if (!isProviderSelf && !isAuthorizedMember && !isAdmin) {
+                   throw new Error("You are not an authorized driver for this provider.");
                 }
 
                 transaction.update(routeRef, {
@@ -471,4 +486,35 @@ export const onOrderConfirmed = onDocumentUpdated("orders/{orderId}", async (eve
 
         console.log(`Auto-created delivery route ${routeId} for order ${event.params.orderId}`);
     }
+});
+
+/**
+ * Merchant authorizes a driver to operate their routes.
+ * Request: { driverUid: string, authorized: boolean }
+ */
+export const authorizeDriver = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { driverUid, authorized } = request.data;
+    if (!driverUid || typeof authorized !== "boolean") {
+        throw new HttpsError("invalid-argument", "driverUid and authorized (boolean) required");
+    }
+
+    const db = admin.firestore();
+    const providerId = auth.uid;
+
+    // Optional: verify provider actually has a shop or provider listing
+    // Scoped to simple relationship record for now.
+
+    await db.collection("deliveryProviders")
+        .doc(providerId)
+        .collection("drivers")
+        .doc(driverUid)
+        .set({
+            authorized,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+    return { success: true };
 });

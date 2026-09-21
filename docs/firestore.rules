@@ -197,6 +197,7 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && (resource.data.buyerId == request.auth.uid
             || resource.data.driverId == request.auth.uid
+            || resource.data.providerId == request.auth.uid
             || isAdmin());
       allow create: if false;  // Cloud Function only
       allow update: if isSignedIn()
@@ -206,6 +207,16 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['driverCurrentLocationLat', 'driverCurrentLocationLng']);
       allow delete: if false;
+    }
+
+    // ── Delivery Providers ─────────────────────────────────────────────────
+    match /deliveryProviders/{providerId} {
+      allow read: if isSignedIn();
+      match /drivers/{driverId} {
+        allow read: if isSignedIn();
+        // Only the provider (merchant) can manage their drivers
+        allow write: if isOwner(providerId) || isAdmin();
+      }
     }
 
     // ── Advertising Campaigns ──────────────────────────────────────────────

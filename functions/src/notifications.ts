@@ -26,40 +26,68 @@ export const updateFcmToken = onCall(async (request) => {
 });
 
 /**
- * Helper to send a notification to all active devices of a user.
+ * Helper to claim and send a notification to all active devices of a user.
+ * Implements a durable state machine: PENDING -> CLAIMED -> SENT/FAILED.
  */
-async function sendNotification(userId: string, payload: { notification: { title: string, body: string }, data: Record<string, string> }, eventId?: string) {
+async function sendNotification(userId: string, payload: { notification: { title: string, body: string }, data: Record<string, string> }, eventId: string) {
     const db = admin.firestore();
+    const eventRef = db.collection("notificationEvents").doc(`${eventId}_${userId}`);
+    const leaseTime = 30 * 1000; // 30 second lease
 
-    // Idempotency check: has this notification already been sent for this event?
-    if (eventId) {
-        const processedRef = db.collection("processedNotifications").doc(`${userId}_${eventId}`);
-        const processedDoc = await processedRef.get();
-        if (processedDoc.exists) {
-            console.log(`Notification already sent for event ${eventId} to user ${userId}, skipping.`);
-            return;
+    // 1. Atomic Claim
+    const claimResult = await db.runTransaction(async (transaction) => {
+        const doc = await transaction.get(eventRef);
+        const data = doc.data();
+
+        if (doc.exists) {
+            if (data?.status === "SENT") return "ALREADY_SENT";
+            if (data?.status === "FAILED_PERMANENT") return "FAILED_PERMANENT";
+
+            // If claimed but lease not expired, skip (concurrency protection)
+            if (data?.status === "CLAIMED" && (Date.now() - data?.claimedAt?.toMillis() < leaseTime)) {
+                return "LOCKED";
+            }
         }
-        await processedRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp() });
+
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        transaction.set(eventRef, {
+            userId,
+            payload,
+            status: "CLAIMED",
+            claimedAt: now,
+            updatedAt: now,
+            attemptCount: (data?.attemptCount || 0) + 1
+        }, { merge: true });
+
+        return "OK";
+    });
+
+    if (claimResult !== "OK") {
+        console.log(`Notification ${eventId} for user ${userId} skip: ${claimResult}`);
+        return;
     }
 
+    // 2. Fetch tokens
     const devicesSnap = await db.collection("users").doc(userId).collection("devices")
         .where("isActive", "==", true)
         .get();
 
     if (devicesSnap.empty) {
-        console.log(`No active devices found for user ${userId}, skipping notification.`);
+        console.log(`No active devices found for user ${userId}. Marking as FAILED_PERMANENT.`);
+        await eventRef.update({ status: "FAILED_PERMANENT", updatedAt: admin.firestore.FieldValue.serverTimestamp() });
         return;
     }
 
     const tokens = devicesSnap.docs.map(doc => doc.data().token);
 
+    // 3. Dispatch
     try {
         const response = await admin.messaging().sendEachForMulticast({
             ...payload,
             tokens: tokens
         });
 
-        console.log(`Sent notification to ${response.successCount} devices for user ${userId}.`);
+        console.log(`Sent notification ${eventId} to ${response.successCount} devices for user ${userId}.`);
 
         // Handle invalid tokens
         if (response.failureCount > 0) {
@@ -77,8 +105,24 @@ async function sendNotification(userId: string, payload: { notification: { title
             });
             await batch.commit();
         }
-    } catch (error) {
-        console.error(`Error sending multi-device notification to user ${userId}:`, error);
+
+        // Terminal Success
+        await eventRef.update({
+            status: "SENT",
+            sentAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+    } catch (error: any) {
+        console.error(`Error sending notification ${eventId} to user ${userId}:`, error);
+
+        // Decide if retryable
+        const isPermanent = error?.code === "messaging/invalid-argument";
+        await eventRef.update({
+            status: isPermanent ? "FAILED_PERMANENT" : "PENDING", // PENDING allows retry after lease
+            lastError: error.message,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
     }
 }
 
