@@ -17,10 +17,9 @@
 <div id="modal" class="modal" onclick="if(event.target===this)closeProduct()"><div class="modalcard"><div style="display:flex;justify-content:flex-end"><button class="close" onclick="closeProduct()">×</button></div><div id="product"></div></div></div><div id="toast" class="toast"></div>
 <script src="https://www.gstatic.com/firebasejs/12.9.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.9.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.9.0/firebase-functions-compat.js"></script>
 <script>
-const swiftApp=firebase.initializeApp({apiKey:"AIzaSyC40d8gP1xYS9L1MOygFLfBu224R4e7XvQ",projectId:"swift-d1baa",storageBucket:"swift-d1baa.firebasestorage.app"});
-window.swiftDb=firebase.firestore();
 const PLAY="https://play.google.com/store/apps/details?id=com.swiftshop.client";let listings=[],shops=[],posts=[],cart=JSON.parse(localStorage.getItem("swift_cart")||"[]"),cat="All",marketplaceTimer=null,swiftUser=null,swiftFunctions=null;
 const swiftApp=firebase.initializeApp({apiKey:"AIzaSyC40d8gP1xYS9L1MOygFLfBu224R4e7XvQ",projectId:"swift-d1baa",storageBucket:"swift-d1baa.firebasestorage.app"});
 swiftFunctions=firebase.app().functions();
