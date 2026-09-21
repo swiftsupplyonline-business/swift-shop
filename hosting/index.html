@@ -17,7 +17,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
 import { getFirestore, collection, query as windowQuery, orderBy, limit, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
-const swiftApp=initializeApp({apiKey:"AIzaSyC40d8gP1xYS9L1MOygFLfBu224R4e7XvQ",projectId:"swift-d1baa",storageBucket:"swift-d1baa.firebasestorage.app",appId:"1:638577051798:web:swift-web-companion"});
+const swiftApp=initializeApp({apiKey:"AIzaSyC40d8gP1xYS9L1MOygFLfBu224R4e7XvQ",projectId:"swift-d1baa",storageBucket:"swift-d1baa.firebasestorage.app"});
 window.swiftDb=getFirestore(swiftApp);window.collection=collection;window.windowQuery=windowQuery;window.orderBy=orderBy;window.limit=limit;window.getDocs=getDocs;window.onSnapshot=onSnapshot;
 const P="swift-d1baa",PLAY="https://play.google.com/store/apps/details?id=com.swiftshop.client";let listings=[],shops=[],posts=[],cart=JSON.parse(localStorage.getItem("swift_cart")||"[]"),cat="All",liveUnsubs=[];
 const v=x=>x?.stringValue??(x?.integerValue!==undefined?Number(x.integerValue):x?.doubleValue!==undefined?Number(x.doubleValue):x?.booleanValue??(x?.timestampValue??(x?.arrayValue?(x.arrayValue.values||[]).map(v):x?.mapValue?o(x.mapValue.fields||{}):null)));
