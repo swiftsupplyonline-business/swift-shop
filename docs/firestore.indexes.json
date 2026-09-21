@@ -185,11 +185,18 @@
       ]
     },
     {
+      "collectionGroup": "profiles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "displayName_lowercase", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "listings",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "isAvailable", "order": "ASCENDING" },
-        { "fieldPath": "title", "order": "ASCENDING" }
+        { "fieldPath": "title_lowercase", "order": "ASCENDING" }
       ]
     },
     {
@@ -197,7 +204,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "isActive", "order": "ASCENDING" },
-        { "fieldPath": "name", "order": "ASCENDING" }
+        { "fieldPath": "name_lowercase", "order": "ASCENDING" }
       ]
     }
   ],

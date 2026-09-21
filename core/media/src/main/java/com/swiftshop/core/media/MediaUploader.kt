@@ -48,6 +48,9 @@ data class MediaConstraints(
     companion object {
         /** Cover photos (profile + shop dashboard): 5MB cap, animated GIF allowed. */
         val COVER_PHOTO = MediaConstraints(maxSizeBytes = 5L * 1024 * 1024, allowGif = true)
+        
+        /** Video Reels: 50MB cap. */
+        val VIDEO_REEL = MediaConstraints(maxSizeBytes = 50L * 1024 * 1024)
     }
 }
 
@@ -61,7 +64,7 @@ class FirebaseMediaUploader @Inject constructor(
         upload(ownerId, localUri, MediaType.IMAGE, constraints)
 
     override fun uploadVideo(ownerId: String, localUri: Uri): Flow<MediaUploadProgress> =
-        upload(ownerId, localUri, MediaType.VIDEO, null)
+        upload(ownerId, localUri, MediaType.VIDEO, MediaConstraints.VIDEO_REEL)
 
     /** Returns a user-facing error message, or null if the file passes. */
     private fun validate(localUri: Uri, constraints: MediaConstraints?): String? {

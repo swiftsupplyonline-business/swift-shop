@@ -8,21 +8,22 @@ const DELIVERY_REQUEST_WINDOW_MS = 120_000; // 120 seconds, server-authoritative
 /**
  * Creates a delivery route for a paid order.
  *
+ * Server-authoritative: resolves pickup from order's shop.
+ *
  * Contract (matches FirebaseDeliveryRepository.requestDelivery on Android):
- * - Request: { orderId: string, pickup: {lat, lng}, dropoff: {lat, lng} }
+ * - Request: { orderId: string, dropoff: {lat, lng} }
  * - Response: routeId (string)
  */
 export const requestDelivery = onCall(async (request) => {
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { orderId, pickup, dropoff } = request.data;
+    const { orderId, dropoff } = request.data;
     if (
-        !orderId || !pickup || !dropoff ||
-        typeof pickup.lat !== "number" || typeof pickup.lng !== "number" ||
+        !orderId || !dropoff ||
         typeof dropoff.lat !== "number" || typeof dropoff.lng !== "number"
     ) {
-        throw new HttpsError("invalid-argument", "orderId, pickup, and dropoff ({lat, lng}) are required");
+        throw new HttpsError("invalid-argument", "orderId and dropoff ({lat, lng}) are required");
     }
 
     const db = admin.firestore();
@@ -49,12 +50,28 @@ export const requestDelivery = onCall(async (request) => {
                 return order.deliveryRouteId as string;
             }
 
+            // Resolve pickup from the shop associated with the order.
+            const shopRef = db.collection("shops").doc(order.shopId);
+            const shopDoc = await transaction.get(shopRef);
+            if (!shopDoc.exists) throw new Error("Order's shop not found");
+            const shopData = shopDoc.data()!;
+
+            const pickup = {
+                lat: shopData.locationLat,
+                lng: shopData.locationLng
+            };
+
+            if (typeof pickup.lat !== "number" || typeof pickup.lng !== "number" || (pickup.lat === 0 && pickup.lng === 0)) {
+                throw new Error("Shop location not configured correctly for pickup");
+            }
+
             const routeId = db.collection("deliveryRoutes").doc().id;
             const newRoute = {
                 id: routeId,
                 orderId,
                 buyerId: order.buyerId,
                 sellerId: order.sellerId,
+                providerId: order.shopId, // Default provider is the shop themselves
                 driverId: "",
                 pickupLat: pickup.lat,
                 pickupLng: pickup.lng,
@@ -127,6 +144,25 @@ export const updateDeliveryStatus = onCall(async (request) => {
                 throw new Error(`Cannot transition delivery from ${route.status} to ${status}`);
             }
 
+            // SWIFT-019: Implement Route Claiming
+            if (status === "ASSIGNED" && route.status === "REQUESTED") {
+                if (route.driverId) throw new Error("Route already has an assigned driver");
+                if (auth.token.role !== "DRIVER" && !isAdmin) throw new Error("Only a driver can claim a delivery");
+
+                // Consistency check: ensure driver belongs to the provider if designated
+                if (route.providerId && route.providerId !== auth.uid && !isAdmin) {
+                   // Fleet check logic would go here. For now, strict UID match or self-delivery.
+                   throw new Error("This delivery is reserved for a specific provider.");
+                }
+
+                transaction.update(routeRef, {
+                    driverId: auth.uid,
+                    status: "ASSIGNED",
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+                return;
+            }
+
             if (status === "ASSIGNED") {
                 // A driver claims an unassigned request. Requires the 'DRIVER' role claim.
                 if (route.driverId) throw new Error("Route already has an assigned driver");
@@ -184,25 +220,23 @@ export const updateDeliveryStatus = onCall(async (request) => {
 /**
  * Creates a delivery job request against a DELIVER-type listing.
  *
- * Contract (matches FirebaseDeliveryRepository.createDeliveryRequest on Android):
- * - Request: { listingId: string, pickup: {lat, lng}, dropoff: {lat, lng} }
- * - Response: requestId (string)
+ * Server-authoritative: ignores client-supplied pickup coordinates.
+ * Fetches the shop's stored location from Firestore.
  *
- * The merchant has DELIVERY_REQUEST_WINDOW_MS to respond (see
- * respondToDeliveryRequest below, B6/B7). expiresAt is set here,
- * server-side, and is the sole source of truth for the countdown.
+ * Contract (matches FirebaseDeliveryRepository.createDeliveryRequest on Android):
+ * - Request: { listingId: string, dropoff: {lat, lng} }
+ * - Response: requestId (string)
  */
 export const createDeliveryRequest = onCall(async (request) => {
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { listingId, pickup, dropoff } = request.data;
+    const { listingId, dropoff } = request.data;
     if (
-        !listingId || !pickup || !dropoff ||
-        typeof pickup.lat !== "number" || typeof pickup.lng !== "number" ||
+        !listingId || !dropoff ||
         typeof dropoff.lat !== "number" || typeof dropoff.lng !== "number"
     ) {
-        throw new HttpsError("invalid-argument", "listingId, pickup, and dropoff ({lat, lng}) are required");
+        throw new HttpsError("invalid-argument", "listingId and dropoff ({lat, lng}) are required");
     }
 
     const db = admin.firestore();
@@ -218,6 +252,22 @@ export const createDeliveryRequest = onCall(async (request) => {
         throw new HttpsError("failed-precondition", "This delivery listing is not currently available");
     }
 
+    // Resolve authoritative pickup from the merchant's shop
+    const shopRef = db.collection("shops").doc(listing.shopId);
+    const shopDoc = await shopRef.get();
+    if (!shopDoc.exists) {
+        throw new HttpsError("failed-precondition", "Merchant shop not found");
+    }
+    const shopData = shopDoc.data()!;
+    const pickup = {
+        lat: shopData.locationLat,
+        lng: shopData.locationLng
+    };
+
+    if (typeof pickup.lat !== "number" || typeof pickup.lng !== "number" || (pickup.lat === 0 && pickup.lng === 0)) {
+        throw new HttpsError("failed-precondition", "Merchant shop has no valid location configured");
+    }
+
     const now = Date.now();
     const requestRef = db.collection("deliveryRequests").doc();
     const newRequest = {
@@ -227,7 +277,7 @@ export const createDeliveryRequest = onCall(async (request) => {
         requesterId: auth.uid,
         pickup,
         dropoff,
-        pickupLabel: "",
+        pickupLabel: shopData.name || "Merchant Shop",
         dropoffLabel: "",
         deliveryFeeMinorUnits: listing.priceMinorUnits ?? 0,
         deliveryFeeCurrency: listing.priceCurrency ?? "LSL",
@@ -400,12 +450,13 @@ export const onOrderConfirmed = onDocumentUpdated("orders/{orderId}", async (eve
             orderId: event.params.orderId,
             buyerId: after.buyerId,
             sellerId: after.sellerId,
-            driverId: dr.merchantId, // Designated provider from the request
+            providerId: dr.merchantId, // Designated provider from the request
+            driverId: "", // SWIFT-019: Unassigned initially
             pickupLat: dr.pickup.lat,
             pickupLng: dr.pickup.lng,
             dropoffLat: dr.dropoff.lat,
             dropoffLng: dr.dropoff.lng,
-            status: "ASSIGNED", // Auto-assigned to the provider who accepted
+            status: "REQUESTED", // SWIFT-019: Waiting for a driver to claim
             distanceMeters: 0,
             estimatedMinutes: 0,
             conversationId: "",

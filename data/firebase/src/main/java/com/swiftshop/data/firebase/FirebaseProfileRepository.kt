@@ -115,16 +115,20 @@ class FirebaseProfileRepository @Inject constructor(
             .await()
     }
 
-    override suspend fun updateFcmToken(token: String): Result<Unit> = runCatching {
-        val data = mapOf("token" to token)
+    override suspend fun updateFcmToken(token: String, deviceId: String): Result<Unit> = runCatching {
+        val data = mapOf(
+            "token" to token,
+            "deviceId" to deviceId,
+            "platform" to "android"
+        )
         functions.getHttpsCallable("updateFcmToken").call(data).await()
         Unit
     }
 
     override suspend fun searchUsers(query: String): Result<List<UserProfile>> = runCatching {
         val snapshot = firestore.collection("profiles")
-            .whereGreaterThanOrEqualTo("displayName", query)
-            .whereLessThanOrEqualTo("displayName", query + "\uf8ff")
+            .whereGreaterThanOrEqualTo("displayName_lowercase", query.lowercase())
+            .whereLessThanOrEqualTo("displayName_lowercase", query.lowercase() + "\uf8ff")
             .get().await()
         
         snapshot.documents.mapNotNull { doc ->
@@ -198,6 +202,7 @@ fun UserProfile.toFirestore() = mapOf(
 
 fun UserProfile.toFirestoreUpdateMap() = mapOf(
     "displayName" to displayName,
+    "displayName_lowercase" to displayName.toLowerCase(),
     "bio" to bio,
     "location" to location,
     "avatarUrl" to avatarUrl,

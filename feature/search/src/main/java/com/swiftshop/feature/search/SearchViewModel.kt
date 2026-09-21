@@ -73,11 +73,12 @@ class SearchViewModel @Inject constructor(
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             _results.value = SearchState.Loading
+            val normalizedQuery = query.trim().lowercase()
             
-            val listingsDeferred = async { searchListings(query) }
-            val shopsDeferred = async { searchShops(query) }
-            val usersDeferred = async { searchUsers(query) }
-            val postsDeferred = async { searchPosts(query) }
+            val listingsDeferred = async { searchListings(normalizedQuery) }
+            val shopsDeferred = async { searchShops(normalizedQuery) }
+            val usersDeferred = async { searchUsers(normalizedQuery) }
+            val postsDeferred = async { searchPosts(normalizedQuery) }
 
             val listings = listingsDeferred.await().getOrDefault(emptyList())
             val shops = shopsDeferred.await().getOrDefault(emptyList())

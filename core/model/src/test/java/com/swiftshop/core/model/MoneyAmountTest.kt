@@ -47,4 +47,20 @@ class MoneyAmountTest {
         assertEquals(1500L, (a + b).minorUnits)
         assertEquals(500L, (a - b).minorUnits)
     }
+
+    @Test
+    fun `fromDecimalString parses correctly`() {
+        assertEquals(1050L, MoneyAmount.fromDecimalString("10.5").getOrThrow().minorUnits)
+        assertEquals(1050L, MoneyAmount.fromDecimalString("10.50").getOrThrow().minorUnits)
+        assertEquals(1000L, MoneyAmount.fromDecimalString("10").getOrThrow().minorUnits)
+        assertEquals(99L, MoneyAmount.fromDecimalString("0.99").getOrThrow().minorUnits)
+        assertEquals(5L, MoneyAmount.fromDecimalString("0.05").getOrThrow().minorUnits)
+    }
+
+    @Test
+    fun `fromDecimalString rejects invalid inputs`() {
+        assertTrue(MoneyAmount.fromDecimalString("abc").isFailure)
+        assertTrue(MoneyAmount.fromDecimalString("10.555").isFailure)
+        assertTrue(MoneyAmount.fromDecimalString("-10").isFailure)
+    }
 }

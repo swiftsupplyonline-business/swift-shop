@@ -3,46 +3,82 @@ import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/fire
 import * as admin from "firebase-admin";
 
 /**
- * Registers or updates the FCM token for the authenticated user.
+ * Registers or updates the FCM token for a specific device.
  */
 export const updateFcmToken = onCall(async (request) => {
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { token } = request.data;
-    if (!token) throw new HttpsError("invalid-argument", "Token required");
+    const { token, deviceId, platform } = request.data;
+    if (!token || !deviceId) throw new HttpsError("invalid-argument", "Token and deviceId required");
 
     const db = admin.firestore();
-    // Using { merge: true } to avoid overwriting other user data if stored in the same doc.
-    await db.collection("users").doc(auth.uid).set({
-        fcmToken: token,
+
+    // Store token in devices subcollection to support multiple devices per user.
+    await db.collection("users").doc(auth.uid).collection("devices").doc(deviceId).set({
+        token,
+        platform: platform || "android",
+        isActive: true,
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
+    });
 
     return { success: true };
 });
 
 /**
- * Helper to send a notification to a specific user.
+ * Helper to send a notification to all active devices of a user.
  */
-async function sendNotification(userId: string, payload: { notification: { title: string, body: string }, data: Record<string, string> }) {
+async function sendNotification(userId: string, payload: { notification: { title: string, body: string }, data: Record<string, string> }, eventId?: string) {
     const db = admin.firestore();
-    const userDoc = await db.collection("users").doc(userId).get();
-    const fcmToken = userDoc.data()?.fcmToken;
 
-    if (!fcmToken) {
-        console.log(`No FCM token found for user ${userId}, skipping notification.`);
+    // Idempotency check: has this notification already been sent for this event?
+    if (eventId) {
+        const processedRef = db.collection("processedNotifications").doc(`${userId}_${eventId}`);
+        const processedDoc = await processedRef.get();
+        if (processedDoc.exists) {
+            console.log(`Notification already sent for event ${eventId} to user ${userId}, skipping.`);
+            return;
+        }
+        await processedRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp() });
+    }
+
+    const devicesSnap = await db.collection("users").doc(userId).collection("devices")
+        .where("isActive", "==", true)
+        .get();
+
+    if (devicesSnap.empty) {
+        console.log(`No active devices found for user ${userId}, skipping notification.`);
         return;
     }
 
+    const tokens = devicesSnap.docs.map(doc => doc.data().token);
+
     try {
-        await admin.messaging().send({
+        const response = await admin.messaging().sendEachForMulticast({
             ...payload,
-            token: fcmToken
+            tokens: tokens
         });
-        console.log(`Successfully sent notification to user ${userId}`);
+
+        console.log(`Sent notification to ${response.successCount} devices for user ${userId}.`);
+
+        // Handle invalid tokens
+        if (response.failureCount > 0) {
+            const batch = db.batch();
+            response.responses.forEach((resp, idx) => {
+                if (!resp.success) {
+                    const errorCode = resp.error?.code;
+                    if (errorCode === "messaging/registration-token-not-registered" ||
+                        errorCode === "messaging/invalid-argument") {
+                        const deviceDoc = devicesSnap.docs[idx].ref;
+                        console.log(`Removing invalid token for device ${deviceDoc.id}`);
+                        batch.update(deviceDoc, { isActive: false, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+                    }
+                }
+            });
+            await batch.commit();
+        }
     } catch (error) {
-        console.error(`Error sending notification to user ${userId}:`, error);
+        console.error(`Error sending multi-device notification to user ${userId}:`, error);
     }
 }
 
@@ -74,7 +110,7 @@ export const notifyOnMessage = onDocumentCreated("messages/{messageId}", async (
             type: "MESSAGE",
             targetId: message.conversationId,
         }
-    });
+    }, event.id);
 });
 
 /**
@@ -95,7 +131,7 @@ export const notifyOnOrderStatusChange = onDocumentUpdated("orders/{orderId}", a
             type: "ORDER",
             targetId: event.params.orderId,
         }
-    });
+    }, event.id);
 });
 
 /**
@@ -115,7 +151,7 @@ export const notifyOnDeliveryRequestCreated = onDocumentCreated("deliveryRequest
             type: "DELIVERY",
             targetId: event.params.requestId,
         }
-    });
+    }, event.id);
 });
 
 /**
@@ -136,7 +172,7 @@ export const notifyOnDeliveryRequestResponded = onDocumentUpdated("deliveryReque
             type: "DELIVERY",
             targetId: event.params.requestId,
         }
-    });
+    }, event.id);
 });
 
 /**
@@ -157,5 +193,5 @@ export const notifyOnDeliveryStatusChange = onDocumentUpdated("deliveryRoutes/{r
             type: "DELIVERY",
             targetId: after.id,
         }
-    });
+    }, event.id);
 });

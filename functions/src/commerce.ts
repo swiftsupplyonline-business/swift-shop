@@ -102,13 +102,42 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 const existingId = idempotencyDoc.data()?.orderId;
                 const orderSnap = await transaction.get(db.collection("orders").doc(existingId));
                 const orderData = orderSnap.data();
-                console.log(`Idempotent request for key ${idempotencyKey}. Returning existing order id and payment info.`);
+
+                // SWIFT-021: Check session lifecycle
+                const sessionStatus = orderData?.paymentSessionStatus || "FAILED";
+                const isCreated = sessionStatus === "CREATED";
+                const isCreating = sessionStatus === "CREATING";
+                const createdAt = orderData?.updatedAt?.toMillis() || 0;
+                const timedOut = isCreating && (Date.now() - createdAt > 5 * 60 * 1000);
+
+                if (isCreated) {
+                    console.log(`Idempotent request: Session already exists for ${existingId}`);
+                    return {
+                        orderId: existingId,
+                        total: orderData?.totalMinorUnits || 0,
+                        paymentUrl: orderData?.paymentUrl,
+                        mopaySessionId: orderData?.mopaySessionId,
+                        isIdempotent: true,
+                        recoveryNeeded: false
+                    };
+                }
+
+                if (isCreating && !timedOut) {
+                    throw new Error("Payment session is currently being created by another request.");
+                }
+
+                // Recovery needed
+                console.log(`Recovery needed for order ${existingId} (status: ${sessionStatus})`);
+                transaction.update(db.collection("orders").doc(existingId), {
+                    paymentSessionStatus: "CREATING",
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+
                 return {
                     orderId: existingId,
                     total: orderData?.totalMinorUnits || 0,
-                    paymentUrl: orderData?.paymentUrl,
-                    mopaySessionId: orderData?.mopaySessionId,
-                    isIdempotent: true
+                    isIdempotent: true,
+                    recoveryNeeded: true
                 };
             }
 
@@ -261,6 +290,7 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 paymentMethod: paymentMethod || "MOPAY",
                 provider: provider || null,
                 idempotencyKey: idempotencyKey,
+                paymentSessionStatus: paymentMethod === "MOPAY" ? "CREATING" : "NA",
                 reservationExpiresAt: reservationExpiresAt,
                 createdAt: now,
                 updatedAt: now
@@ -283,11 +313,15 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 paymentUrl: transactionResult.paymentUrl,
                 mopaySessionId: transactionResult.mopaySessionId
             };
+            if (!transactionResult.recoveryNeeded && !existingPayment.paymentUrl) {
+               // This shouldn't happen with the new logic, but safety first.
+               return { orderId };
+            }
         }
 
         if (paymentMethod === "MOPAY" && orderId) {
-            // SWIFT-002: If this is an idempotent retry and we already have a MoPay session, return it.
-            if (existingPayment?.paymentUrl) {
+            // SWIFT-021: Recovery/Creation logic
+            if (existingPayment?.paymentUrl && !transactionResult.recoveryNeeded) {
                 return {
                     orderId,
                     paymentUrl: existingPayment.paymentUrl,
@@ -309,6 +343,7 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 await db.collection("orders").doc(orderId).update({
                     mopaySessionId: mopayResponse.sessionId,
                     paymentUrl: mopayResponse.paymentUrl,
+                    paymentSessionStatus: "CREATED",
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 });
 
@@ -319,6 +354,10 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 };
             } else {
                 console.error("MoPay Session Creation Failed:", mopayResponse.message);
+                await db.collection("orders").doc(orderId).update({
+                    paymentSessionStatus: "FAILED",
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
                 return {
                     orderId,
                     error: mopayResponse.message || "Failed to initiate payment gateway"
@@ -909,6 +948,7 @@ export const createListing = onCall(async (request) => {
                 likeCount: 0,
                 commentCount: 0,
                 rankingScore: 0,
+                title_lowercase: clientOwnedFields.title?.toLowerCase() || "",
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             };
@@ -1025,6 +1065,7 @@ export const createShop = onCall(async (request) => {
                 ...shop,
                 id: shopId,
                 ownerId: uid,
+                name_lowercase: shop.name?.toLowerCase() || "",
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             };
@@ -1074,6 +1115,10 @@ export const updateShop = onCall(async (request) => {
                 if (updates && updates[key] !== undefined) {
                     filteredUpdates[key] = updates[key];
                 }
+            }
+
+            if (filteredUpdates.name) {
+                filteredUpdates.name_lowercase = filteredUpdates.name.toLowerCase();
             }
 
             transaction.update(shopRef, {
@@ -1130,6 +1175,10 @@ export const updateListing = onCall(async (request) => {
 
             const oldAvailable = listing.isAvailable !== false;
             const newAvailable = filteredUpdates.isAvailable !== undefined ? filteredUpdates.isAvailable : oldAvailable;
+
+            if (filteredUpdates.title) {
+                filteredUpdates.title_lowercase = filteredUpdates.title.toLowerCase();
+            }
 
             transaction.update(listingRef, {
                 ...filteredUpdates,
