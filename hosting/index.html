@@ -14,18 +14,18 @@
 <footer><div class="shell footer"><div><div class="brand" style="color:#fff"><span class="mark"><img src="https://raw.githubusercontent.com/swiftsupplyonline-business/swift-shop/delivery-first-checkout/app/src/main/res/drawable/swift_icon_flat.png" alt="Swift"></span><span>swift</span></div><p>A web companion for Swift. Discover listings and shops, then use the Swift app for authenticated checkout, payment and order tracking.</p></div><a class="cta" href="https://play.google.com/store/apps/details?id=com.swiftshop.client" target="_blank">Download the app</a></div></footer>
 <div id="drawer" class="drawer"><div class="shade" onclick="closeCart()"></div><aside class="panel"><div class="panelhead"><h2>Your bag</h2><button class="close" onclick="closeCart()">×</button></div><div id="cart"></div><div id="cartfoot"></div></aside></div>
 <div id="modal" class="modal" onclick="if(event.target===this)closeProduct()"><div class="modalcard"><div style="display:flex;justify-content:flex-end"><button class="close" onclick="closeProduct()">×</button></div><div id="product"></div></div></div><div id="toast" class="toast"></div>
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-import { getFirestore, collection, query as windowQuery, orderBy, limit, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
-const swiftApp=initializeApp({apiKey:"AIzaSyC40d8gP1xYS9L1MOygFLfBu224R4e7XvQ",projectId:"swift-d1baa",storageBucket:"swift-d1baa.firebasestorage.app"});
-window.swiftDb=getFirestore(swiftApp);window.collection=collection;window.windowQuery=windowQuery;window.orderBy=orderBy;window.limit=limit;window.getDocs=getDocs;window.onSnapshot=onSnapshot;
+<script src="https://www.gstatic.com/firebasejs/12.9.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore-compat.js"></script>
+<script>
+const swiftApp=firebase.initializeApp({apiKey:"AIzaSyC40d8gP1xYS9L1MOygFLfBu224R4e7XvQ",projectId:"swift-d1baa",storageBucket:"swift-d1baa.firebasestorage.app"});
+window.swiftDb=firebase.firestore();
 const P="swift-d1baa",PLAY="https://play.google.com/store/apps/details?id=com.swiftshop.client";let listings=[],shops=[],posts=[],cart=JSON.parse(localStorage.getItem("swift_cart")||"[]"),cat="All",liveUnsubs=[];
 const v=x=>x?.stringValue??(x?.integerValue!==undefined?Number(x.integerValue):x?.doubleValue!==undefined?Number(x.doubleValue):x?.booleanValue??(x?.timestampValue??(x?.arrayValue?(x.arrayValue.values||[]).map(v):x?.mapValue?o(x.mapValue.fields||{}):null)));
 function o(f){let z={};for(const k in f)z[k]=v(f[k]);return z}
 function sortNewest(a,b){const toMs=x=>x?.toMillis?x.toMillis():(typeof x==="string"?Date.parse(x):Number(x)||0),av=toMs(a.createdAt||a.updatedAt),bv=toMs(b.createdAt||b.updatedAt);return bv-av}
-async function col(n){const snap=await window.getDocs(window.windowQuery(window.collection(window.swiftDb,n),window.orderBy("createdAt","desc"),window.limit(100)));return snap.docs.map(x=>({id:x.id,...x.data()}))}
+async function col(n){const snap=await window.swiftDb.collection(n).orderBy("createdAt","desc").limit(100).get();return snap.docs.map(x=>({id:x.id,...x.data()}))}
 function applyLiveSnapshot(n,snap){return snap.docs.map(x=>({id:x.id,...x.data()})).sort(sortNewest)}
-function startLive(){liveUnsubs.forEach(x=>x());liveUnsubs=[window.onSnapshot(window.windowQuery(window.collection(window.swiftDb,"listings"),window.orderBy("createdAt","desc"),window.limit(100)),s=>{listings=applyLiveSnapshot("listings",s);chips();render()}),window.onSnapshot(window.windowQuery(window.collection(window.swiftDb,"shops"),window.orderBy("createdAt","desc"),window.limit(100)),s=>{shops=applyLiveSnapshot("shops",s);renderShops()}),window.onSnapshot(window.windowQuery(window.collection(window.swiftDb,"posts"),window.orderBy("createdAt","desc"),window.limit(100)),s=>{posts=applyLiveSnapshot("posts",s);renderFeed()})]}
+function startLive(){liveUnsubs.forEach(x=>x());const bind=(n,fn)=>{const unsub=window.swiftDb.collection(n).orderBy("createdAt","desc").limit(100).onSnapshot(fn,e=>console.warn("Swift "+n+" listener failed:",e));liveUnsubs.push(unsub)};bind("listings",s=>{listings=applyLiveSnapshot("listings",s);chips();render()});bind("shops",s=>{shops=applyLiveSnapshot("shops",s);renderShops()});bind("posts",s=>{posts=applyLiveSnapshot("posts",s);renderFeed()})}
 async function refreshLive(){try{const [nextListings,nextShops,nextPosts]=await Promise.all([col("listings"),col("shops"),col("posts")]);listings=nextListings;shops=nextShops;posts=nextPosts;render();renderFeed();renderShops()}catch(e){console.warn("Swift live feed refresh failed",e)}}
 
 const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m])),price=(n,c="LSL")=>c+" "+((Number(n)||0)/100).toFixed(2),image=x=>Array.isArray(x)&&x[0]?x[0]:"https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80";
