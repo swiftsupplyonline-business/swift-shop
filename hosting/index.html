@@ -1,18 +1,73 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SwiftShop</title>
-  <style>
-    body { font-family: -apple-system, Roboto, sans-serif; max-width: 480px; margin: 80px auto; padding: 0 20px; text-align: center; color: #1a1a1a; }
-    h1 { font-size: 24px; }
-    a.btn { display: inline-block; padding: 14px 24px; border-radius: 10px; text-decoration: none; font-weight: 600; background: #1b6ef3; color: white; margin-top: 20px; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Swift — Buy from local shops</title>
+<meta name="description" content="Swift connects customers with local shops and products across Lesotho.">
+<link rel="icon" href="https://raw.githubusercontent.com/swiftsupplyonline-business/swift-shop/master/app/src/main/res/drawable/swift_icon_flat.png">
+<style>
+:root{--ink:#111318;--muted:#747983;--line:#e8e9ec;--paper:#f7f7f5;--card:#fff;--accent:#111318;--radius:24px;--shadow:0 18px 60px rgba(17,19,24,.10)}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input{font:inherit}button{cursor:pointer;border:0}.app{min-height:100vh}
+.top{position:sticky;top:0;z-index:20;background:rgba(247,247,245,.84);backdrop-filter:blur(18px);border-bottom:1px solid rgba(0,0,0,.05)}
+.nav{height:72px;max-width:1180px;margin:auto;padding:0 22px;display:flex;align-items:center;gap:22px}.brand{display:flex;align-items:center;gap:10px;font-weight:900;font-size:21px;letter-spacing:-.04em}.brand img{width:34px;height:34px;object-fit:contain}.search{flex:1;max-width:480px;margin:auto;position:relative}.search input{width:100%;border:1px solid var(--line);background:#fff;border-radius:999px;padding:13px 18px 13px 44px;outline:none}.search span{position:absolute;left:16px;top:11px;font-size:18px}.nav-actions{display:flex;gap:9px}.pill{background:#fff;border:1px solid var(--line);border-radius:999px;padding:10px 14px}.cart{position:relative}.badge{position:absolute;right:-2px;top:-4px;background:#111;color:#fff;border-radius:99px;min-width:18px;height:18px;font-size:11px;display:grid;place-items:center}
+main{max-width:1180px;margin:auto;padding:26px 22px 100px}.hero{min-height:390px;border-radius:34px;overflow:hidden;position:relative;background:radial-gradient(circle at 78% 32%,#fff 0,#ecebe6 26%,#d7d5cf 55%,#bbb9b2 100%);display:grid;grid-template-columns:1.05fr .95fr;align-items:center;padding:48px}.hero:before{content:"";position:absolute;width:360px;height:360px;border-radius:50%;right:80px;top:10px;background:linear-gradient(145deg,rgba(255,255,255,.9),rgba(0,0,0,.12));box-shadow:inset -35px -35px 80px rgba(0,0,0,.12),0 35px 80px rgba(0,0,0,.16);transform:rotate(-14deg);animation:float 6s ease-in-out infinite}.hero:after{content:"SWIFT";position:absolute;right:62px;bottom:24px;font-size:110px;font-weight:1000;letter-spacing:-.09em;color:rgba(255,255,255,.35);transform:rotate(-8deg)}.hero-copy{position:relative;z-index:2;max-width:570px}.eyebrow{text-transform:uppercase;font-size:12px;letter-spacing:.18em;font-weight:800;color:#606269}.hero h1{font-size:clamp(42px,6vw,78px);line-height:.9;letter-spacing:-.075em;margin:14px 0 22px}.hero p{font-size:18px;line-height:1.55;color:#4e5158;max-width:510px}.cta{background:#111;color:#fff;border-radius:999px;padding:14px 20px;font-weight:800;margin-top:12px;box-shadow:0 12px 30px rgba(0,0,0,.16);transition:.25s}.cta:hover{transform:translateY(-3px);box-shadow:0 18px 38px rgba(0,0,0,.22)}
+.section{margin-top:46px}.section-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:18px}.section h2{font-size:29px;letter-spacing:-.05em;margin:0}.sub{color:var(--muted);font-size:14px;margin-top:5px}.link{background:none;color:#555;font-weight:700}
+.categories{display:flex;gap:12px;overflow:auto;padding:2px 0 8px}.cat{min-width:120px;height:96px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:14px;display:flex;flex-direction:column;justify-content:space-between;transition:.25s}.cat:hover{transform:translateY(-4px);box-shadow:var(--shadow)}.cat b{font-size:25px}.cat span{font-weight:750;font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.product{background:#fff;border:1px solid var(--line);border-radius:24px;overflow:hidden;transition:.28s;cursor:pointer}.product:hover{transform:translateY(-6px);box-shadow:var(--shadow)}.photo{height:220px;display:grid;place-items:center;position:relative;overflow:hidden;background:#ecebe7}.photo .orb{width:135px;height:135px;border-radius:36px;background:linear-gradient(145deg,#fff,#bfc0bd);box-shadow:18px 24px 45px rgba(0,0,0,.2),inset -14px -14px 25px rgba(0,0,0,.13);transform:rotate(-8deg);transition:.5s}.product:hover .orb{transform:rotate(3deg) scale(1.08)}.tag{position:absolute;left:12px;top:12px;background:#fff;border-radius:99px;padding:6px 9px;font-size:10px;font-weight:900}.heart{position:absolute;right:11px;top:11px;background:rgba(255,255,255,.88);border-radius:50%;width:34px;height:34px}.info{padding:15px}.shop{font-size:11px;color:#888;font-weight:700}.name{font-weight:850;margin:5px 0}.price{font-weight:900;font-size:18px}.product-foot{display:flex;justify-content:space-between;align-items:center}.add{background:#111;color:#fff;width:34px;height:34px;border-radius:50%;font-size:20px}
+.shops{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.shop-card{background:#111;color:#fff;border-radius:26px;padding:22px;min-height:190px;position:relative;overflow:hidden}.shop-card:after{content:"";position:absolute;width:180px;height:180px;border-radius:50%;right:-45px;top:-40px;background:radial-gradient(circle,#777,#222 70%);opacity:.8}.shop-card h3{font-size:26px;letter-spacing:-.05em;margin:35px 0 6px;position:relative;z-index:2}.shop-card p{color:#aaa;position:relative;z-index:2}.shop-avatar{position:absolute;left:20px;top:20px;width:42px;height:42px;border-radius:15px;background:#fff;color:#111;display:grid;place-items:center;font-weight:900;z-index:3}
+.drawer{position:fixed;inset:0;background:rgba(0,0,0,.38);z-index:50;display:none}.drawer.open{display:block}.panel{position:absolute;right:0;top:0;height:100%;width:min(440px,100%);background:#fff;padding:25px;overflow:auto;animation:slide .3s ease}.panel-head{display:flex;justify-content:space-between;align-items:center}.close{background:#f1f1ef;border-radius:50%;width:38px;height:38px}.cart-item{display:flex;gap:12px;padding:16px 0;border-bottom:1px solid var(--line)}.mini{width:70px;height:70px;border-radius:17px;background:#e8e7e3;display:grid;place-items:center}.summary{margin-top:22px;border-top:1px solid var(--line);padding-top:18px}.row{display:flex;justify-content:space-between;margin:10px 0}.checkout{width:100%;background:#111;color:#fff;border-radius:16px;padding:15px;font-weight:900;margin-top:14px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translate(-50%,20px);background:#111;color:#fff;padding:12px 17px;border-radius:999px;opacity:0;pointer-events:none;z-index:100;transition:.3s}.toast.show{opacity:1;transform:translate(-50%,0)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.48);z-index:60;display:none;place-items:center;padding:20px}.modal.open{display:grid}.modal-card{background:#fff;width:min(820px,100%);max-height:90vh;overflow:auto;border-radius:30px;padding:24px}.detail{display:grid;grid-template-columns:1fr 1fr;gap:25px}.detail-photo{min-height:400px;border-radius:25px;background:#e8e7e3;display:grid;place-items:center}.detail-photo .orb{width:230px;height:230px;border-radius:60px;background:linear-gradient(145deg,#fff,#b9bab7);box-shadow:30px 40px 70px rgba(0,0,0,.2);transform:rotate(-9deg)}.detail h2{font-size:42px;letter-spacing:-.06em;line-height:.95}.detail-price{font-size:30px;font-weight:900;margin:20px 0}.qty{display:flex;align-items:center;gap:14px;margin:20px 0}.qty button{width:35px;height:35px;border-radius:50%;background:#eee}.full{width:100%}
+@keyframes float{0%,100%{transform:rotate(-14deg) translateY(0)}50%{transform:rotate(-10deg) translateY(-14px)}}@keyframes slide{from{transform:translateX(100%)}to{transform:translateX(0)}}
+@media(max-width:850px){.nav{gap:10px}.search{order:3;flex-basis:100%;max-width:none}.nav{height:auto;min-height:72px;flex-wrap:wrap;padding-bottom:10px}.hero{grid-template-columns:1fr;min-height:480px;padding:32px}.hero:before{right:-60px;bottom:-90px;top:auto}.hero:after{font-size:70px;right:18px}.grid{grid-template-columns:repeat(2,1fr)}.shops{grid-template-columns:1fr}.photo{height:180px}.detail{grid-template-columns:1fr}.detail-photo{min-height:300px}}
+@media(max-width:500px){main{padding:16px 14px 90px}.hero{border-radius:25px;padding:25px}.hero h1{font-size:49px}.grid{gap:10px}.product{border-radius:18px}.photo{height:155px}.info{padding:12px}.nav-actions .pill:not(.cart){display:none}.detail h2{font-size:35px}}
+</style>
 </head>
 <body>
-  <h1>SwiftShop</h1>
-  <p>Buy and sell in Maseru.</p>
-  <a class="btn" href="https://play.google.com/store/apps/details?id=com.swiftshop.client">Get the app</a>
-</body>
-</html>
+<div class="app">
+<header class="top"><nav class="nav">
+<a class="brand" href="#" onclick="goHome()"><img src="https://raw.githubusercontent.com/swiftsupplyonline-business/swift-shop/master/app/src/main/res/drawable/swift_icon_flat.png">Swift</a>
+<div class="search"><span>⌕</span><input id="search" placeholder="Search products, shops..." oninput="filterProducts(this.value)"></div>
+<div class="nav-actions"><button class="pill">♡</button><button class="pill cart" onclick="openCart()">Bag <i class="badge" id="count">0</i></button></div>
+</nav></header>
+<main>
+<section class="hero">
+<div class="hero-copy"><div class="eyebrow">Swift marketplace · Lesotho</div><h1>Local finds.<br>Delivered fast.</h1><p>Discover products from local shops, share a listing with one smart link, and buy directly from your phone.</p><button class="cta" onclick="document.getElementById('products').scrollIntoView()">Explore products ↗</button></div>
+</section>
+<section class="section"><div class="section-head"><div><h2>Shop by category</h2><div class="sub">Everything you need, from shops near you.</div></div></div>
+<div class="categories"><button class="cat" onclick="filterProducts('Beauty')"><b>✦</b><span>Beauty</span></button><button class="cat" onclick="filterProducts('Fashion')"><b>◈</b><span>Fashion</span></button><button class="cat" onclick="filterProducts('Gadgets')"><b>⌁</b><span>Gadgets</span></button><button class="cat" onclick="filterProducts('Home')"><b>⌂</b><span>Home</span></button><button class="cat" onclick="filterProducts('Baby')"><b>♡</b><span>Baby</span></button><button class="cat" onclick="filterProducts('Food')"><b>◉</b><span>Food</span></button></div></section>
+<section class="section" id="products"><div class="section-head"><div><h2>Trending on Swift</h2><div class="sub">A visual preview of the customer marketplace.</div></div><button class="link" onclick="filterProducts('')">See all →</button></div><div class="grid" id="grid"></div></section>
+<section class="section"><div class="section-head"><div><h2>Local shops</h2><div class="sub">Meet the people behind the products.</div></div></div><div class="shops">
+<div class="shop-card"><div class="shop-avatar">S</div><h3>Swift Beauty</h3><p>Beauty · Hair · Skincare</p></div>
+<div class="shop-card"><div class="shop-avatar">K</div><h3>Khubetsoana Finds</h3><p>Fashion · Accessories · Gifts</p></div>
+<div class="shop-card"><div class="shop-avatar">M</div><h3>Maseru Tech</h3><p>Gadgets · Mobile · Electronics</p></div>
+</div></section>
+</main>
+</div>
+<div class="drawer" id="drawer" onclick="if(event.target===this)closeCart()"><aside class="panel"><div class="panel-head"><h2>Your bag</h2><button class="close" onclick="closeCart()">×</button></div><div id="cart"></div><div class="summary"><div class="row"><span>Subtotal</span><b id="subtotal">M0</b></div><div class="row"><span>Delivery</span><span>Calculated at checkout</span></div><button class="checkout" onclick="checkout()">Continue to checkout</button></div></aside></div>
+<div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="modal-card" id="modalContent"></div></div>
+<div class="toast" id="toast"></div>
+<script>
+const products=[
+{id:1,name:"Glow Essentials Set",shop:"Swift Beauty",category:"Beauty",price:250},
+{id:2,name:"Everyday Tote",shop:"Khubetsoana Finds",category:"Fashion",price:200},
+{id:3,name:"Pocket Speaker",shop:"Maseru Tech",category:"Gadgets",price:350},
+{id:4,name:"Skin Care Duo",shop:"Swift Beauty",category:"Beauty",price:175},
+{id:5,name:"Minimal Watch",shop:"Khubetsoana Finds",category:"Fashion",price:450},
+{id:6,name:"USB-C Power Hub",shop:"Maseru Tech",category:"Gadgets",price:290},
+{id:7,name:"Home Fragrance",shop:"Swift Beauty",category:"Home",price:160},
+{id:8,name:"Baby Care Pack",shop:"Swift Beauty",category:"Baby",price:220}
+];
+let cart=[];
+function money(n){return "M"+n.toLocaleString("en-ZA")}
+function render(list=products){document.getElementById("grid").innerHTML=list.map(p=>`<article class="product" onclick="openProduct(${p.id})"><div class="photo"><span class="tag">${p.category}</span><button class="heart" onclick="event.stopPropagation();toast('Saved to favourites')">♡</button><div class="orb"></div></div><div class="info"><div class="shop">${p.shop}</div><div class="name">${p.name}</div><div class="product-foot"><span class="price">${money(p.price)}</span><button class="add" onclick="event.stopPropagation();add(${p.id})">+</button></div></div></article>`).join("")}
+function filterProducts(q){q=q.toLowerCase();render(products.filter(p=>(p.name+" "+p.shop+" "+p.category).toLowerCase().includes(q)));document.getElementById("products").scrollIntoView({behavior:"smooth"})}
+function add(id){const p=products.find(x=>x.id===id),x=cart.find(x=>x.id===id);if(x)x.qty++;else cart.push({...p,qty:1});updateCart();toast(p.name+" added to your bag")}
+function updateCart(){let n=cart.reduce((s,x)=>s+x.qty,0);document.getElementById("count").textContent=n;document.getElementById("cart").innerHTML=cart.length?cart.map(x=>`<div class="cart-item"><div class="mini"><div class="orb" style="width:42px;height:42px;border-radius:13px;background:linear-gradient(145deg,#fff,#bbb)"></div></div><div style="flex:1"><b>${x.name}</b><div class="sub">${x.shop}</div><div class="row"><span>${money(x.price)}</span><span>× ${x.qty}</span></div></div></div>`).join(""):"<p class='sub'>Your bag is empty. Add something beautiful.</p>";document.getElementById("subtotal").textContent=money(cart.reduce((s,x)=>s+x.price*x.qty,0))}
+function openCart(){document.getElementById("drawer").classList.add("open");updateCart()}function closeCart(){document.getElementById("drawer").classList.remove("open")}
+function openProduct(id){const p=products.find(x=>x.id===id);document.getElementById("modalContent").innerHTML=`<div class="panel-head"><span class="eyebrow">${p.shop}</span><button class="close" onclick="closeModal()">×</button></div><div class="detail"><div class="detail-photo"><div class="orb"></div></div><div><div class="eyebrow">${p.category}</div><h2>${p.name}</h2><div class="detail-price">${money(p.price)}</div><p class="sub">Available from ${p.shop}. Order online and choose delivery at checkout.</p><div class="qty"><button>−</button><b>1</b><button>+</button></div><button class="checkout full" onclick="add(${p.id});closeModal();openCart()">Add to bag · ${money(p.price)}</button><button class="pill full" style="margin-top:10px" onclick="toast('Smart link copied')">↗ Share smart link</button></div></div>`;document.getElementById("modal").classList.add("open")}
+function closeModal(){document.getElementById("modal").classList.remove("open")}function checkout(){if(!cart.length){toast("Your bag is empty");return}toast("Checkout flow ready for Firebase integration")}function goHome(){scrollTo(0,0)}function toast(t){const e=document.getElementById("toast");e.textContent=t;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),2200)}
+render();updateCart();
+</script>
+</body></html>
