@@ -81,7 +81,7 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { items, requiresDelivery, deliveryAddress, paymentMethod, provider, idempotencyKey, selectedDeliveryListingId, deliveryRequestId } = request.data;
+    const { items, requiresDelivery, deliveryAddress, paymentMethod, provider, idempotencyKey, selectedDeliveryListingId, deliveryRequestId, customerEmail, customerName } = request.data;
     if (!items || !Array.isArray(items) || !idempotencyKey) {
         throw new HttpsError("invalid-argument", "Missing items or idempotencyKey");
     }
@@ -344,8 +344,8 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 reference: orderId,
                 redirectUrl: "swiftshop://checkout/verify",
                 description: `Order ${orderId} at Swift Shop`,
-                customerEmail: auth.token.email,
-                customerName: auth.token.name || auth.uid,
+                customerEmail: customerEmail || auth.token.email || "",
+                customerName: customerName || auth.token.name || auth.uid,
                 // SWIFT-021: Deterministic provider-side idempotency incorporating attempt index
                 idempotencyKey: `mopay_order_${orderId}_v${attemptIndex}`
             };
