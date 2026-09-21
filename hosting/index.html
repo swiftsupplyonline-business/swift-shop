@@ -47,7 +47,7 @@ function shopName(id){return shops.find(x=>x.id===id)?.name||"Swift seller"}func
 function chips(){let a=["All",...new Set(listings.map(x=>x.category).filter(Boolean))];document.getElementById("chips").innerHTML=a.slice(0,12).map(x=>'<button class="chip '+(x===cat?"active":"")+'" onclick="setCat('+JSON.stringify(x)+')">'+esc(x)+'</button>').join("")}function setCat(x){cat=x;render()}
 function render(q=""){let a=listings.filter(x=>x.isAvailable!==false);if(cat!=="All")a=a.filter(x=>String(x.category||"").toLowerCase()===cat.toLowerCase());if(q)a=a.filter(x=>(x.title+" "+x.description+" "+shopName(x.shopId)).toLowerCase().includes(q.toLowerCase()));document.getElementById("count").textContent=a.length+" listings";document.getElementById("products").innerHTML=a.slice(0,24).map(x=>'<article class="card" onclick="openProduct('+JSON.stringify(x.id)+')"><div class="pic"><img loading="lazy" src="'+esc(image(x.imageUrls))+'" alt="'+esc(x.title)+'"><span class="tag">'+esc(x.category||"Product")+'</span></div><div class="body"><div class="title">'+esc(x.title)+'</div><div class="shop">'+esc(shopName(x.shopId))+'</div><div class="footrow"><div class="price">'+price(x.priceMinorUnits,x.priceCurrency)+'</div><button class="add" onclick="event.stopPropagation();add('+JSON.stringify(x.id)+')">+</button></div></div></article>').join("")||'<div class="empty">No listings match your search.</div>'}
 function renderFeed(){const e=document.getElementById("feed");if(!e)return;if(!posts.length){e.innerHTML='<div class="empty">The Swift feed will appear here as sellers start sharing.</div>';return}e.innerHTML=posts.slice(0,12).map(p=>{const media=Array.isArray(p.mediaUrls)&&p.mediaUrls[0]?p.mediaUrls[0]:(p.thumbnailUrl||p.videoUrl||"");const tagged=Array.isArray(p.taggedListings)?p.taggedListings[0]:"";const product=listings.find(x=>x.id===tagged);return '<article class="feedcard" onclick="openPost('+JSON.stringify(p.id)+')"><div class="feedmedia">'+(media?'<img loading="lazy" src="'+esc(media)+'" alt="">':'<div style="height:100%;display:grid;place-items:center;color:var(--blue);font-weight:900;font-size:22px">swift</div>')+'</div><div class="feedbody"><div class="feedauthor">'+(p.authorAvatarUrl?'<img class="avatar" src="'+esc(p.authorAvatarUrl)+'" alt="">':'<span class="avatar"></span>')+'<span>'+esc(p.authorName||"Swift seller")+'</span></div><div class="feedcaption">'+esc(p.caption||"Shared on Swift")+'</div><div class="feedstats"><span>♥ '+(p.likeCount||0)+'</span><span>💬 '+(p.commentCount||0)+'</span><span>↗ Share</span></div>'+(product?'<div class="feedproduct" onclick="event.stopPropagation();openProduct('+JSON.stringify(product.id)+')"><img src="'+esc(image(product.imageUrls))+'" alt=""><div><b>'+esc(product.title)+'</b><span>'+price(product.priceMinorUnits,product.priceCurrency)+'</span></div></div>':"")+'</div></article>'}).join("")}\nfunction openPost(id){const p=posts.find(x=>x.id===id);if(!p)return;const tagged=Array.isArray(p.taggedListings)?p.taggedListings[0]:"";const product=listings.find(x=>x.id===tagged);document.getElementById("product").innerHTML='<div class="product"><div class="feedmedia" style="border-radius:22px;overflow:hidden">'+(p.mediaUrls?.[0]?'<img src="'+esc(p.mediaUrls[0])+'" style="width:100%;height:100%;object-fit:cover" alt="">':'<div style="height:100%;display:grid;place-items:center;color:var(--blue);font-weight:900">swift</div>')+'</div><div><div class="eyebrow">Swift feed</div><h1>'+esc(p.authorName||"Swift seller")+'</h1><p class="muted">'+esc(p.caption||"Shared on Swift.")+'</p>'+(product?'<button class="full" onclick="openProduct('+JSON.stringify(product.id)+')">View tagged product</button>':"")+'</div></div>';document.getElementById("modal").classList.add("show")}\n\nfunction renderShops(){document.getElementById("shops").innerHTML=shops.filter(x=>x.isActive!==false).slice(0,9).map(s=>'<article class="shopcard"><img class="logo" src="'+esc(s.logoUrl||s.coverUrl||"")+'" onerror="this.style.visibility=\'hidden\'"><div><div class="shopname">'+esc(s.name||"Swift Shop")+'</div><div class="muted" style="font-size:12px">'+esc(s.category||"Local seller")+(s.locationAddress?" · "+esc(s.locationAddress):"")+'</div></div></article>').join("")||'<div class="empty">Shops will appear as sellers publish.</div>'}
-function add(id){let p=listings.find(x=>x.id===id);if(!p)return;let x=cart.find(x=>x.listingId===id);x?x.quantity++:cart.push({listingId:p.id,title:p.title,imageUrl:image(p.imageUrls),quantity:1,unitPriceMinorUnits:p.priceMinorUnits||0,currency:p.priceCurrency||"LSL",shopId:p.shopId});save();msg("Added to your bag")}
+function add(id){let p=listings.find(x=>x.id===id);if(!p)return;if(p.listingType==="DELIVER"){msg("Delivery services are selected during checkout");return}let x=cart.find(x=>x.listingId===id);x?x.quantity++:cart.push({listingId:p.id,title:p.title,imageUrl:image(p.imageUrls),quantity:1,unitPriceMinorUnits:p.priceMinorUnits||0,currency:p.priceCurrency||"LSL",shopId:p.shopId});save();msg("Added to your bag")}
 function openCart(){renderCart();document.getElementById("drawer").classList.add("show")}function closeCart(){document.getElementById("drawer").classList.remove("show")}
 function renderCart(){let e=document.getElementById("cart"),f=document.getElementById("cartfoot");if(!cart.length){e.innerHTML='<div class="empty">Your bag is empty.</div>';f.innerHTML="";return}e.innerHTML=cart.map((x,i)=>'<div class="cartitem"><img class="cartimg" src="'+esc(x.imageUrl)+'"><div class="cartinfo"><b>'+esc(x.title)+'</b><div class="shop">'+price(x.unitPriceMinorUnits,x.currency)+'</div><div class="qty"><button onclick="change('+i+',-1)">−</button><span>'+x.quantity+'</span><button onclick="change('+i+',1)">+</button><button onclick="change('+i+',-99)">Remove</button></div></div></div>').join("");let t=cart.reduce((n,x)=>n+x.unitPriceMinorUnits*x.quantity,0);f.innerHTML='<div class="total"><span>Subtotal</span><span>'+price(t,cart[0].currency)+'</span></div><button class="full" onclick="openCheckout()">Checkout</button><p class="muted" style="font-size:12px">Secure payment is handled by Swift backend services. Delivery can be requested after payment confirmation.</p>'}
 function change(i,d){if(d===-99)cart.splice(i,1);else{cart[i].quantity+=d;if(cart[i].quantity<=0)cart.splice(i,1)}save();renderCart()}
@@ -55,30 +55,63 @@ function closeCheckout(){document.getElementById("checkout").classList.remove("s
 function openCheckout(){
   if(!cart.length){msg("Your bag is empty");return}
   const subtotal=cart.reduce((n,x)=>n+x.unitPriceMinorUnits*x.quantity,0);
-  document.getElementById("checkoutbody").innerHTML='<p class="muted">Your order will be created against the live Swift marketplace.</p><label>Email (optional)<input id="checkoutEmail" type="email" placeholder="you@example.com" style="width:100%;height:46px;border:1px solid var(--line);border-radius:12px;padding:0 12px;margin:6px 0 14px"></label><label>Customer name<input id="checkoutName" type="text" placeholder="Your name" style="width:100%;height:46px;border:1px solid var(--line);border-radius:12px;padding:0 12px;margin:6px 0 14px"></label><div class="step" style="margin:10px 0"><b>Pickup order</b><span class="muted">Pay securely through MoPay. Delivery can be requested after the payment is confirmed.</span></div><div class="total"><span>Total before payment</span><span>'+price(subtotal,cart[0].currency)+'</span></div><button class="full" onclick="submitCheckout()">Continue to secure payment</button>';
+  const deliveryOptions=listings.filter(x=>x.listingType==="DELIVER"&&x.isAvailable!==false);
+  const deliveryHtml=deliveryOptions.length?deliveryOptions.slice(0,8).map((x,i)=>'<label style="display:flex;gap:10px;align-items:flex-start;padding:11px;border:1px solid var(--line);border-radius:14px;margin:7px 0"><input type="radio" name="deliveryListing" value="'+esc(x.id)+'" '+(i===0?"checked":"")+'><span><b>'+esc(x.title)+'</b><br><span class="muted" style="font-size:12px">'+price(x.priceMinorUnits,x.priceCurrency)+' · '+esc(shopName(x.shopId))+'</span></span></label>').join(""):'<div class="step"><b>No delivery service is currently listed</b><span class="muted">You can still place a pickup order.</span></div>';
+  document.getElementById("checkoutbody").innerHTML='<p class="muted">Choose pickup or delivery. Delivery requests are sent to the selected provider before payment starts.</p><label>Email (optional)<input id="checkoutEmail" type="email" placeholder="you@example.com" style="width:100%;height:46px;border:1px solid var(--line);border-radius:12px;padding:0 12px;margin:6px 0 14px"></label><label>Customer name<input id="checkoutName" type="text" placeholder="Your name" style="width:100%;height:46px;border:1px solid var(--line);border-radius:12px;padding:0 12px;margin:6px 0 14px"></label><div class="step" style="margin:10px 0"><b>Order type</b><label style="display:block;margin-top:10px"><input type="radio" name="orderType" value="pickup" checked onchange="toggleDeliveryFields()"> Pickup</label><label style="display:block;margin-top:8px"><input type="radio" name="orderType" value="delivery" onchange="toggleDeliveryFields()"> Delivery</label></div><div id="deliveryFields" style="display:none"><label>Drop-off address / description<input id="deliveryAddress" type="text" placeholder="Area, street, landmark" style="width:100%;height:46px;border:1px solid var(--line);border-radius:12px;padding:0 12px;margin:6px 0 8px"></label><button class="chip" type="button" onclick="captureDropoff()">Use my current location</button><div id="dropoffStatus" class="muted" style="font-size:12px;margin:8px 0"></div><div style="margin-top:12px"><b>Delivery service</b>'+deliveryHtml+'</div></div><div class="total"><span>Estimated total</span><span>'+price(subtotal,cart[0].currency)+'</span></div><button class="full" onclick="submitCheckout()">Continue</button>';
   document.getElementById("checkout").classList.add("show")
+}
+function toggleDeliveryFields(){const delivery=document.querySelector('input[name="orderType"]:checked')?.value==="delivery";const el=document.getElementById("deliveryFields");if(el)el.style.display=delivery?"block":"none"}
+async function captureDropoff(){
+  const status=document.getElementById("dropoffStatus");
+  if(!navigator.geolocation){if(status)status.textContent="Location is not available in this browser.";return}
+  if(status)status.textContent="Getting your location…";
+  navigator.geolocation.getCurrentPosition(pos=>{window.swiftDropoff={lat:pos.coords.latitude,lng:pos.coords.longitude};if(status)status.textContent="Location captured ✓";},()=>{if(status)status.textContent="Could not capture location. Try again."},{enableHighAccuracy:true,timeout:15000,maximumAge:60000});
 }
 async function submitCheckout(){
   const btn=document.querySelector("#checkoutbody .full");if(btn)btn.disabled=true;
   try{
     await ensureWebAuth();
     const items=cart.map(x=>({listingId:x.listingId,title:x.title,quantity:x.quantity}));
-    const fee=await callable("calculateOrderFees")({items,requiresDelivery:false});
-    const summary=fee.data;
+    const mode=document.querySelector('input[name="orderType"]:checked')?.value||"pickup";
     const email=document.getElementById("checkoutEmail")?.value?.trim()||"";
     const name=document.getElementById("checkoutName")?.value?.trim()||"Web customer";
-    const idem="web_"+crypto.randomUUID();
-    const result=await callable("createOrder")({items,requiresDelivery:false,paymentMethod:"MOPAY",provider:"MOPAY",idempotencyKey:idem,customerEmail:email,customerName:name});
+    let deliveryAddress=null,deliveryRequestId=null,selectedDeliveryListingId=null;
+    if(mode==="delivery"){
+      selectedDeliveryListingId=document.querySelector('input[name="deliveryListing"]:checked')?.value||"";
+      if(!selectedDeliveryListingId)throw new Error("Choose a delivery service.");
+      if(!window.swiftDropoff)throw new Error("Capture your drop-off location before requesting delivery.");
+      deliveryAddress={label:document.getElementById("deliveryAddress")?.value?.trim()||"Web drop-off",lat:window.swiftDropoff.lat,lng:window.swiftDropoff.lng};
+      const existing=JSON.parse(localStorage.getItem("swift_pending_delivery")||"null");
+      if(existing?.requestId&&existing.listingId===selectedDeliveryListingId&&existing.uid===swiftUser?.uid){deliveryRequestId=existing.requestId}
+      else{
+        const requestResult=await callable("createDeliveryRequest")({listingId:selectedDeliveryListingId,dropoff:window.swiftDropoff});
+        deliveryRequestId=requestResult.data;
+        localStorage.setItem("swift_pending_delivery",JSON.stringify({requestId:deliveryRequestId,listingId:selectedDeliveryListingId,uid:swiftUser.uid,createdAt:Date.now()}));
+      }
+      const status=await waitForDeliveryAcceptance(deliveryRequestId);
+      if(status!=="ACCEPTED")throw new Error("Delivery request is "+status+". You can return and check again later.");
+    }
+    await callable("calculateOrderFees")({items,requiresDelivery:mode==="delivery",deliveryAddress,selectedDeliveryListingId});
+    const result=await callable("createOrder")({items,requiresDelivery:mode==="delivery",deliveryAddress,paymentMethod:"MOPAY",provider:"MOPAY",idempotencyKey:"web_"+crypto.randomUUID(),customerEmail:email,customerName:name,selectedDeliveryListingId,deliveryRequestId});
     const data=result.data||{};
     if(data.error)throw new Error(data.error);
     if(data.paymentUrl){
       localStorage.setItem("swift_pending_order",JSON.stringify({orderId:data.orderId,sessionId:data.mopaySessionId}));
-      document.getElementById("checkoutbody").innerHTML='<div class="step"><b>Order '+esc(data.orderId)+'</b><p class="muted">Your cart is reserved. Complete payment in the secure MoPay checkout.</p></div><a class="full" style="display:block;text-align:center;text-decoration:none" href="'+esc(data.paymentUrl)+'" target="_blank" rel="noopener">Open secure MoPay payment ↗</a><p class="muted" style="font-size:12px;margin-top:12px">After payment, return here and use the verification button below.</p><button class="full" style="margin-top:8px" onclick="verifyPendingPayment()">Verify payment</button>';
-    }else{
-      throw new Error("Payment session was not created.");
-    }
+      document.getElementById("checkoutbody").innerHTML='<div class="step"><b>Order '+esc(data.orderId)+'</b><p class="muted">Your cart is reserved. Complete payment in the secure MoPay checkout.</p></div><a class="full" style="display:block;text-align:center;text-decoration:none" href="'+esc(data.paymentUrl)+'" target="_blank" rel="noopener">Open secure MoPay payment ↗</a><p class="muted" style="font-size:12px;margin-top:12px">After payment, return here and verify the payment.</p><button class="full" style="margin-top:8px" onclick="verifyPendingPayment()">Verify payment</button>';
+    }else throw new Error("Payment session was not created.");
   }catch(e){document.getElementById("checkoutbody").insertAdjacentHTML("beforeend",'<div class="empty">'+esc(e.message||"Checkout failed")+'</div>')}
   finally{if(btn)btn.disabled=false}
+}
+async function waitForDeliveryAcceptance(requestId){
+  for(let i=0;i<30;i++){
+    const snap=await firebase.firestore().collection("deliveryRequests").doc(requestId).get();
+    if(!snap.exists)throw new Error("Delivery request was not found.");
+    const status=snap.data()?.status||"PENDING";
+    if(status!=="PENDING")return status;
+    if(i===0)document.getElementById("checkoutbody").insertAdjacentHTML("beforeend",'<div class="step" id="deliveryWaiting"><b>Delivery request sent ✓</b><span class="muted">Waiting for the provider to accept. Keep this window open.</span></div>');
+    await new Promise(r=>setTimeout(r,5000));
+  }
+  return "PENDING";
 }
 async function verifyPendingPayment(){
   const pending=JSON.parse(localStorage.getItem("swift_pending_order")||"null");if(!pending?.sessionId){msg("No pending payment");return}
@@ -86,7 +119,7 @@ async function verifyPendingPayment(){
     await ensureWebAuth();
     const r=await callable("verifyMopayPayment")({sessionId:pending.sessionId});
     if(r.data?.status!=="SUCCESS")throw new Error("Payment is not confirmed yet.");
-    cart=[];save();localStorage.removeItem("swift_pending_order");
+    cart=[];save();localStorage.removeItem("swift_pending_order");localStorage.removeItem("swift_pending_delivery");
     document.getElementById("checkoutbody").innerHTML='<div class="step"><b>Payment confirmed ✓</b><p class="muted">Order '+esc(pending.orderId)+' is confirmed. You can now request delivery from the Swift app.</p></div><a class="full" style="display:block;text-align:center;text-decoration:none" href="'+PLAY+'" target="_blank">Open Swift for delivery & order tracking ↗</a>';
     renderCart();
   }catch(e){msg(e.message||"Payment verification failed")}
