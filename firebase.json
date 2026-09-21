@@ -9,6 +9,24 @@
       "firebase-debug.*.log"
     ]
   },
+  "emulators": {
+    "functions": {
+      "port": 5001
+    },
+    "firestore": {
+      "port": 8080
+    },
+    "storage": {
+      "port": 9199
+    },
+    "hosting": {
+      "port": 5000
+    },
+    "ui": {
+      "enabled": true
+    },
+    "single_project_mode": true
+  },
   "firestore": {
     "rules": "docs/firestore.rules",
     "indexes": "docs/firestore.indexes.json"

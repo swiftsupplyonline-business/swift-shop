@@ -246,6 +246,12 @@ service cloud.firestore {
       allow write: if false;  // Server only
     }
 
+    // ── Notifications ──────────────────────────────────────────────────────
+    match /notificationEvents/{eventId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow write: if false; // Server only
+    }
+
     // ── Audit Logs ─────────────────────────────────────────────────────────
     match /auditLogs/{logId} {
       allow read: if isAdmin();

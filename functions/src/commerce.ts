@@ -130,8 +130,13 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
 
                 // Recovery needed (FAILED or STALE_CREATING)
                 console.log(`Recovery needed for order ${existingId} (status: ${sessionStatus})`);
+
+                // SWIFT-021: Exclusive creation ownership / lease
+                const nextAttempt = (orderData?.paymentAttemptCount || 0) + 1;
+
                 transaction.update(db.collection("orders").doc(existingId), {
                     paymentSessionStatus: "CREATING",
+                    paymentAttemptCount: nextAttempt,
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 });
 
@@ -139,7 +144,8 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                     orderId: existingId,
                     total: orderData?.totalMinorUnits || 0,
                     isIdempotent: true,
-                    recoveryNeeded: true
+                    recoveryNeeded: true,
+                    attemptIndex: nextAttempt
                 };
             }
 
@@ -293,6 +299,7 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 provider: provider || null,
                 idempotencyKey: idempotencyKey,
                 paymentSessionStatus: paymentMethod === "MOPAY" ? "CREATING" : "NA",
+                paymentAttemptCount: paymentMethod === "MOPAY" ? 1 : 0,
                 reservationExpiresAt: reservationExpiresAt,
                 createdAt: now,
                 updatedAt: now
@@ -316,7 +323,6 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 mopaySessionId: transactionResult.mopaySessionId
             };
             if (!transactionResult.recoveryNeeded && !existingPayment.paymentUrl) {
-               // This shouldn't happen with the new logic, but safety first.
                return { orderId };
             }
         }
@@ -330,6 +336,9 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                     mopaySessionId: existingPayment.mopaySessionId
                 };
             }
+
+            const attemptIndex = transactionResult.recoveryNeeded ? transactionResult.attemptIndex : 1;
+
             const mopayRequest = {
                 amount: finalTotal / 100,
                 reference: orderId,
@@ -337,8 +346,8 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 description: `Order ${orderId} at Swift Shop`,
                 customerEmail: auth.token.email,
                 customerName: auth.token.name || auth.uid,
-                // SWIFT-021: Deterministic provider-side idempotency
-                idempotencyKey: `mopay_order_${orderId}_${idempotencyKey}`
+                // SWIFT-021: Deterministic provider-side idempotency incorporating attempt index
+                idempotencyKey: `mopay_order_${orderId}_v${attemptIndex}`
             };
 
             const mopayResponse = await MopayClient.initiatePaymentSession(mopayRequest);

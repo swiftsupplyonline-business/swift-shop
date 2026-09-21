@@ -27,26 +27,43 @@ export const updateFcmToken = onCall(async (request) => {
 
 /**
  * Helper to claim and send a notification to all active devices of a user.
- * Implements a durable state machine: PENDING -> CLAIMED -> SENT/FAILED.
+ * Implements a durable state machine with per-device accounting.
  */
 async function sendNotification(userId: string, payload: { notification: { title: string, body: string }, data: Record<string, string> }, eventId: string) {
     const db = admin.firestore();
     const eventRef = db.collection("notificationEvents").doc(`${eventId}_${userId}`);
     const leaseTime = 30 * 1000; // 30 second lease
 
-    // 1. Atomic Claim
-    const claimResult = await db.runTransaction(async (transaction) => {
+    // 1. Atomic Claim & Device Resolution
+    const result = await db.runTransaction(async (transaction) => {
         const doc = await transaction.get(eventRef);
-        const data = doc.data();
+        const eventData = doc.data();
 
         if (doc.exists) {
-            if (data?.status === "SENT") return "ALREADY_SENT";
-            if (data?.status === "FAILED_PERMANENT") return "FAILED_PERMANENT";
+            if (eventData?.status === "SENT") return { type: "SKIP", reason: "ALREADY_SENT" };
+            if (eventData?.status === "FAILED_PERMANENT") return { type: "SKIP", reason: "FAILED_PERMANENT" };
 
-            // If claimed but lease not expired, skip (concurrency protection)
-            if (data?.status === "CLAIMED" && (Date.now() - data?.claimedAt?.toMillis() < leaseTime)) {
-                return "LOCKED";
+            // Concurrency protection: active lease
+            const lastUpdated = eventData?.updatedAt?.toMillis() || 0;
+            if (eventData?.status === "CLAIMED" && (Date.now() - lastUpdated < leaseTime)) {
+                return { type: "SKIP", reason: "LOCKED" };
             }
+        }
+
+        // Fetch target devices inside transaction to ensure consistency
+        const devicesSnap = await transaction.get(db.collection("users").doc(userId).collection("devices").where("isActive", "==", true));
+        if (devicesSnap.empty) {
+            return { type: "SKIP", reason: "NO_ACTIVE_DEVICES" };
+        }
+
+        const devices = devicesSnap.docs.map(d => ({ id: d.id, token: d.data().token }));
+        const deviceAccounting = eventData?.deviceAccounting || {};
+
+        // Filter for devices that haven't succeeded yet
+        const targetDevices = devices.filter(d => deviceAccounting[d.id]?.status !== "SENT");
+
+        if (targetDevices.length === 0) {
+            return { type: "SKIP", reason: "ALL_DEVICES_ACCOUNTED" };
         }
 
         const now = admin.firestore.FieldValue.serverTimestamp();
@@ -54,72 +71,90 @@ async function sendNotification(userId: string, payload: { notification: { title
             userId,
             payload,
             status: "CLAIMED",
-            claimedAt: now,
             updatedAt: now,
-            attemptCount: (data?.attemptCount || 0) + 1
+            deviceAccounting: deviceAccounting, // Keep existing accounting
+            attemptCount: (eventData?.attemptCount || 0) + 1
         }, { merge: true });
 
-        return "OK";
+        return { type: "PROCEED", targetDevices };
     });
 
-    if (claimResult !== "OK") {
-        console.log(`Notification ${eventId} for user ${userId} skip: ${claimResult}`);
+    if (result.type === "SKIP") {
+        console.log(`Notification ${eventId} for user ${userId} skip: ${result.reason}`);
+        if (result.reason === "NO_ACTIVE_DEVICES") {
+            await eventRef.set({ status: "FAILED_PERMANENT", updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        }
         return;
     }
 
-    // 2. Fetch tokens
-    const devicesSnap = await db.collection("users").doc(userId).collection("devices")
-        .where("isActive", "==", true)
-        .get();
+    const { targetDevices } = result as { targetDevices: { id: string, token: string }[] };
+    const tokens = targetDevices.map(d => d.token);
 
-    if (devicesSnap.empty) {
-        console.log(`No active devices found for user ${userId}. Marking as FAILED_PERMANENT.`);
-        await eventRef.update({ status: "FAILED_PERMANENT", updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-        return;
-    }
-
-    const tokens = devicesSnap.docs.map(doc => doc.data().token);
-
-    // 3. Dispatch
+    // 2. Dispatch
     try {
         const response = await admin.messaging().sendEachForMulticast({
             ...payload,
             tokens: tokens
         });
 
-        console.log(`Sent notification ${eventId} to ${response.successCount} devices for user ${userId}.`);
+        console.log(`Sent notification ${eventId} to ${response.successCount}/${tokens.length} devices for user ${userId}.`);
 
-        // Handle invalid tokens
-        if (response.failureCount > 0) {
-            const batch = db.batch();
-            response.responses.forEach((resp, idx) => {
-                if (!resp.success) {
-                    const errorCode = resp.error?.code;
-                    if (errorCode === "messaging/registration-token-not-registered" ||
-                        errorCode === "messaging/invalid-argument") {
-                        const deviceDoc = devicesSnap.docs[idx].ref;
-                        console.log(`Removing invalid token for device ${deviceDoc.id}`);
-                        batch.update(deviceDoc, { isActive: false, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-                    }
+        const deviceAccountingUpdate: Record<string, any> = {};
+        const batch = db.batch();
+
+        response.responses.forEach((resp, idx) => {
+            const device = targetDevices[idx];
+            if (resp.success) {
+                deviceAccountingUpdate[`deviceAccounting.${device.id}`] = {
+                    status: "SENT",
+                    messageId: resp.messageId,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                };
+            } else {
+                const errorCode = resp.error?.code;
+                const isPermanent = errorCode === "messaging/registration-token-not-registered" ||
+                                   errorCode === "messaging/invalid-argument";
+
+                deviceAccountingUpdate[`deviceAccounting.${device.id}`] = {
+                    status: isPermanent ? "FAILED_PERMANENT" : "FAILED_RETRYABLE",
+                    error: resp.error?.message,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                };
+
+                if (isPermanent) {
+                    console.log(`Deactivating invalid token for device ${device.id}`);
+                    batch.update(db.collection("users").doc(userId).collection("devices").doc(device.id), {
+                        isActive: false,
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    });
                 }
-            });
-            await batch.commit();
-        }
-
-        // Terminal Success
-        await eventRef.update({
-            status: "SENT",
-            sentAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }
         });
 
-    } catch (error: any) {
-        console.error(`Error sending notification ${eventId} to user ${userId}:`, error);
+        // 3. Update Accounting & Determine Terminal State
+        await eventRef.update(deviceAccountingUpdate);
+        await batch.commit();
 
-        // Decide if retryable
-        const isPermanent = error?.code === "messaging/invalid-argument";
+        const finalDoc = await eventRef.get();
+        const finalData = finalDoc.data()!;
+        const allAccounted = targetDevices.every(d => finalData.deviceAccounting[d.id].status === "SENT" || finalData.deviceAccounting[d.id].status === "FAILED_PERMANENT");
+
+        if (allAccounted) {
+            await eventRef.update({
+                status: "SENT",
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        } else {
+            await eventRef.update({
+                status: "PENDING", // Allow retry for retryable device failures
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        }
+
+    } catch (error: any) {
+        console.error(`Fatal dispatch error for event ${eventId}:`, error);
         await eventRef.update({
-            status: isPermanent ? "FAILED_PERMANENT" : "PENDING", // PENDING allows retry after lease
+            status: "PENDING", // Back to pending for full retry if entire multicast failed
             lastError: error.message,
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
@@ -136,16 +171,17 @@ export const notifyOnMessage = onDocumentCreated("messages/{messageId}", async (
     const db = admin.firestore();
     const conversationDoc = await db.collection("conversations").doc(message.conversationId).get();
     const conversation = conversationDoc.data();
-    if (!conversation) return;
+    if (!conversation || !conversation.participantIds) return;
 
-    const recipientId = conversation.participantIds.find((id: string) => id !== message.senderId);
-    if (!recipientId) return;
+    // SWIFT-022: Multi-recipient resolution (don't assume 2 people)
+    const recipients = conversation.participantIds.filter((id: string) => id !== message.senderId);
+    if (recipients.length === 0) return;
 
     // Fetch sender name from their profile
     const senderDoc = await db.collection("profiles").doc(message.senderId).get();
     const senderName = senderDoc.data()?.displayName || "Someone";
 
-    await sendNotification(recipientId, {
+    const payload = {
         notification: {
             title: `New message from ${senderName}`,
             body: message.text,
@@ -154,7 +190,12 @@ export const notifyOnMessage = onDocumentCreated("messages/{messageId}", async (
             type: "MESSAGE",
             targetId: message.conversationId,
         }
-    }, event.id);
+    };
+
+    // Fan-out to all recipients
+    await Promise.all(recipients.map((recipientId: string) =>
+        sendNotification(recipientId, payload, event.id)
+    ));
 });
 
 /**

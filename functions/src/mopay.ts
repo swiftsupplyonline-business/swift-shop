@@ -14,6 +14,7 @@ export interface MopaySessionRequest {
     customerEmail?: string;
     customerName?: string;
     notificationPhoneNumber?: string;
+    idempotencyKey?: string;
 }
 
 export interface MopaySessionResponse {
@@ -51,6 +52,7 @@ export class MopayClient {
             headers: {
                 "Authorization": `Bearer ${apiKey}`,
                 "Content-Type": "application/json",
+                ...(request.idempotencyKey ? { "X-Idempotency-Key": request.idempotencyKey } : {})
             },
             body: JSON.stringify(request),
         });

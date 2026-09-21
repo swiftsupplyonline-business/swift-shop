@@ -69,11 +69,23 @@ class SearchViewModel @Inject constructor(
         _recentSearches.value = emptyList()
     }
 
+    /**
+     * Performs a prefix-based search across listings, shops, and users.
+     * 
+     * IMPORTANT: Current implementation uses Firestore prefix range queries on 
+     * lowercase shadow fields. This is NOT a full-text search engine.
+     * Typo tolerance and ranking are not yet implemented.
+     */
     private fun performSearch(query: String) {
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             _results.value = SearchState.Loading
+            // SWIFT-013: Canonical case normalization for prefix search
             val normalizedQuery = query.trim().lowercase()
+            if (normalizedQuery.isEmpty()) {
+                _results.value = SearchState.Idle
+                return@launch
+            }
             
             val listingsDeferred = async { searchListings(normalizedQuery) }
             val shopsDeferred = async { searchShops(normalizedQuery) }

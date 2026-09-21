@@ -71,7 +71,7 @@ export const requestDelivery = onCall(async (request) => {
                 orderId,
                 buyerId: order.buyerId,
                 sellerId: order.sellerId,
-                providerId: order.shopId, // Default provider is the shop themselves
+                providerId: shopData.ownerId, // SWIFT-019: Canonical provider is Merchant UID
                 driverId: "",
                 pickupLat: pickup.lat,
                 pickupLng: pickup.lng,
@@ -121,7 +121,7 @@ export const updateDeliveryStatus = onCall(async (request) => {
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { routeId, status, driverId } = request.data;
+    const { routeId, status } = request.data;
     if (!routeId || !status || !VALID_DELIVERY_STATUSES.includes(status)) {
         throw new HttpsError("invalid-argument", "routeId and a valid status are required");
     }
@@ -144,7 +144,7 @@ export const updateDeliveryStatus = onCall(async (request) => {
                 throw new Error(`Cannot transition delivery from ${route.status} to ${status}`);
             }
 
-            // SWIFT-019: Implement Secure Route Claiming
+            // SWIFT-019: Implement Authoritative Driver Claiming
             if (status === "ASSIGNED" && route.status === "REQUESTED") {
                 if (route.driverId) throw new Error("Route already has an assigned driver");
 
@@ -170,31 +170,10 @@ export const updateDeliveryStatus = onCall(async (request) => {
                    throw new Error("You are not an authorized driver for this provider.");
                 }
 
+                // SWIFT-019: Derive driverId from authenticated UID, never trust client parameter
                 transaction.update(routeRef, {
                     driverId: auth.uid,
                     status: "ASSIGNED",
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                });
-                return;
-            }
-
-            if (status === "ASSIGNED") {
-                // A driver claims an unassigned request. Requires the 'DRIVER' role claim.
-                if (route.driverId) throw new Error("Route already has an assigned driver");
-                if (auth.token.role !== "DRIVER" && !isAdmin) throw new Error("Only a driver can accept a delivery");
-
-                // SWIFT-011: Enforce provider consistency if order has a designated deliveryProviderSellerId.
-                const orderDoc = await transaction.get(db.collection("orders").doc(route.orderId));
-                const order = orderDoc.data();
-                if (order?.deliveryProviderSellerId && order.deliveryProviderSellerId !== (driverId || auth.uid)) {
-                    // For now, we assume the driverId is the seller uid themselves (self-delivery).
-                    // In a multi-driver fleet model, this would check if auth.uid belongs to order.deliveryProviderSellerId.
-                    throw new Error("This delivery is reserved for a specific provider.");
-                }
-
-                transaction.update(routeRef, {
-                    driverId: driverId || auth.uid,
-                    status,
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 });
                 return;

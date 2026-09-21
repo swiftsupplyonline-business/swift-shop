@@ -160,20 +160,22 @@ class FirebaseCommerceRepository @Inject constructor(
     }
 
     override suspend fun searchListings(query: String): Result<List<Listing>> = runCatching {
+        val normalized = query.trim().lowercase()
         // Basic title prefix search using lowercase shadow field.
         firestore.collection("listings")
             .whereEqualTo("isAvailable", true)
-            .whereGreaterThanOrEqualTo("title_lowercase", query.lowercase())
-            .whereLessThanOrEqualTo("title_lowercase", query.lowercase() + "\uf8ff")
+            .whereGreaterThanOrEqualTo("title_lowercase", normalized)
+            .whereLessThanOrEqualTo("title_lowercase", normalized + "\uf8ff")
             .get().await()
             .toObjects(FirestoreListing::class.java).map { it.toDomain() }
     }
 
     override suspend fun searchShops(query: String): Result<List<Shop>> = runCatching {
+        val normalized = query.trim().lowercase()
         firestore.collection("shops")
             .whereEqualTo("isActive", true)
-            .whereGreaterThanOrEqualTo("name_lowercase", query.lowercase())
-            .whereLessThanOrEqualTo("name_lowercase", query.lowercase() + "\uf8ff")
+            .whereGreaterThanOrEqualTo("name_lowercase", normalized)
+            .whereLessThanOrEqualTo("name_lowercase", normalized + "\uf8ff")
             .get().await()
             .toObjects(FirestoreShop::class.java).map { it.toDomain() }
     }
