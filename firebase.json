@@ -42,6 +42,10 @@
     ],
     "rewrites": [
       {
+        "source": "/api/marketplace",
+        "function": "publicMarketplace"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
