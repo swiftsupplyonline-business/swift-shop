@@ -264,6 +264,7 @@ export const renderListingPreview = onRequest(async (req, res) => {
 
   const db = admin.firestore();
   const pageUrl = `${SITE_ORIGIN}/listing/${listingId}`;
+  const webUrl = `${SITE_ORIGIN}/?listing=${encodeURIComponent(listingId)}`;
 
   try {
     const doc = await db.collection("listings").doc(listingId).get();
@@ -313,7 +314,7 @@ export const renderListingPreview = onRequest(async (req, res) => {
           </div>` : ""}
           ${!isAvailable ? `<p style="color:#ef4444;font-size:13px;font-weight:600;">Currently unavailable</p>` : ""}
           <hr class="divider">
-          ${isAvailable ? ctaButtons(pageUrl, deepLink, "Buy on Swift") : `<a class="btn btn-secondary" href="${esc(PLAY_STORE_URL)}">Get the Swift Shopping app</a>`}
+          ${isAvailable ? ctaButtons(webUrl, deepLink, "Shop on Swift Web") : `<a class="btn btn-secondary" href="${esc(PLAY_STORE_URL)}">Get the Swift Shopping app</a>`}
         </div>
       </div>
       ${sellerCta()}`;
