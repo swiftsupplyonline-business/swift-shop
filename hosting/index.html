@@ -81,7 +81,7 @@ async function submitCheckout(){
       if(!window.swiftDropoff)throw new Error("Capture your drop-off location before requesting delivery.");
       deliveryAddress={label:document.getElementById("deliveryAddress")?.value?.trim()||"Web drop-off",lat:window.swiftDropoff.lat,lng:window.swiftDropoff.lng};
       const existing=JSON.parse(localStorage.getItem("swift_pending_delivery")||"null");
-      if(existing?.requestId&&existing.listingId===selectedDeliveryListingId&&existing.uid===swiftUser?.uid){deliveryRequestId=existing.requestId}
+      if(existing?.requestId&&existing.listingId===selectedDeliveryListingId&&existing.uid===swiftUser?.uid&&Date.now()-Number(existing.createdAt||0)<110000){deliveryRequestId=existing.requestId}
       else{
         const requestResult=await callable("createDeliveryRequest")({listingId:selectedDeliveryListingId,dropoff:window.swiftDropoff});
         deliveryRequestId=requestResult.data;
