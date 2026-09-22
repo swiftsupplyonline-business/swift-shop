@@ -1,9 +1,8 @@
 name: Deploy Swift Hosting
 
 on:
-  push:
-    branches:
-      - delivery-first-checkout
+  # Production deployment is intentionally manual. A push to a development
+  # branch must never implicitly deploy to the production Firebase project.
   workflow_dispatch:
 
 concurrency:
