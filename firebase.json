@@ -9,24 +9,6 @@
       "firebase-debug.*.log"
     ]
   },
-  "emulators": {
-    "functions": {
-      "port": 5001
-    },
-    "firestore": {
-      "port": 8080
-    },
-    "storage": {
-      "port": 9199
-    },
-    "hosting": {
-      "port": 5000
-    },
-    "ui": {
-      "enabled": true
-    },
-    "single_project_mode": true
-  },
   "firestore": {
     "rules": "docs/firestore.rules",
     "indexes": "docs/firestore.indexes.json"
@@ -42,27 +24,19 @@
     ],
     "rewrites": [
       {
-        "source": "/api/marketplace",
-        "function": "publicMarketplace"
-      },
-      {
         "source": "/listing/**",
         "function": "renderListingPreview"
       },
       {
         "source": "/shop/**",
-        "function": "renderShopPreview"
+        "destination": "/index.html"
       },
       {
-        "source": "/seller/**",
-        "function": "renderSellerPreview"
+        "source": "/cart",
+        "destination": "/index.html"
       },
       {
-        "source": "/post/**",
-        "function": "renderPostPreview"
-      },
-      {
-        "source": "**",
+        "source": "/checkout",
         "destination": "/index.html"
       }
     ]
