@@ -15,15 +15,14 @@ import {
   getFunctions, httpsCallable
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyBio3_Gk8CH5FUbeL1x9bWQJlslm3snU7o",
-  authDomain: "swift-d1baa.firebaseapp.com",
-  projectId: "swift-d1baa",
-  storageBucket: "swift-d1baa.firebasestorage.app",
-  messagingSenderId: "638577051798",
-  appId: "1:638577051798:web:032a399efc355526eb9ab7",
-  measurementId: "G-HC3S8PH6L4"
-};
+// Firebase Hosting exposes the configuration for the project serving this page.
+// This keeps Dev, Staging, and Production aligned with their Hosting target.
+const firebaseConfig = await fetch("/__/firebase/init.json").then(async response => {
+  if (!response.ok) {
+    throw new Error(`Firebase Hosting config returned HTTP ${response.status}`);
+  }
+  return response.json();
+});
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
