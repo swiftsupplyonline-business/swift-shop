@@ -37,7 +37,15 @@ jobs:
       - name: Install Firebase CLI
         run: npm install --global firebase-tools
 
-      - name: Deploy Firebase Hosting and Functions
+      - name: Install function dependencies
+        working-directory: functions
+        run: npm ci
+
+      - name: Build Firebase Functions
+        working-directory: functions
+        run: npm run build
+
+      - name: Deploy Firebase Hosting and Marketplace API
         run: firebase deploy --only hosting,functions:publicMarketplace --project swift-d1baa --non-interactive
 
       - name: Deployment summary
