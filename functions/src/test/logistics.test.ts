@@ -3,7 +3,7 @@ import * as admin from 'firebase-admin';
 import { updateDeliveryStatus } from '../logistics';
 
 const testEnv = firebaseTest({
-  projectId: 'swift-shop-reconciled',
+  projectId: 'demo-swift-shop-reconciled',
 });
 
 describe('Logistics Authoritative Logic (SWIFT-019)', () => {
