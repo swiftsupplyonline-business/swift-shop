@@ -4,7 +4,7 @@ import { createOrder } from '../commerce';
 import { MopayClient } from '../mopay';
 
 const testEnv = firebaseTest({
-  projectId: 'swift-shop-reconciled',
+  projectId: 'demo-swift-shop-reconciled',
 });
 
 // Mock MopayClient
