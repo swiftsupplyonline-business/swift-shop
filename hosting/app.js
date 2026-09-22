@@ -9,10 +9,6 @@
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
-  getFirestore, collection, doc, getDoc, getDocs, query, where,
-  orderBy, limit as fbLimit
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
-import {
   getAuth, onAuthStateChanged, signInAnonymously
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
@@ -30,7 +26,6 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
 const auth = getAuth(app);
 const functions = getFunctions(app);
 
@@ -88,44 +83,58 @@ function ensureSignedIn() {
   });
 }
 
-// ---------- Data (real reads, public per firestore.rules) ----------
+// ---------- Data (server-backed public marketplace API) ----------
+// The browser deliberately does not read Firestore directly. The public
+// marketplace Cloud Function uses the Admin SDK against the same canonical
+// collections written by the Kotlin app. This keeps the web client independent
+// of Firestore security-rule state and prevents a second web catalogue.
+
+let marketplacePromise = null;
+
+async function fetchMarketplace() {
+  if (!marketplacePromise) {
+    marketplacePromise = fetch("/api/marketplace", {
+      headers: { "Accept": "application/json" },
+      cache: "no-store"
+    }).then(async response => {
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.error || `Marketplace API returned HTTP ${response.status}`);
+      }
+      return data;
+    });
+  }
+  try {
+    return await marketplacePromise;
+  } catch (error) {
+    marketplacePromise = null;
+    throw error;
+  }
+}
 
 async function fetchListings({ max = 24 } = {}) {
-  const q = query(
-    collection(db, "listings"),
-    where("isAvailable", "==", true),
-    orderBy("createdAt", "desc"),
-    fbLimit(max)
-  );
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const data = await fetchMarketplace();
+  return (data.listings || []).slice(0, max);
 }
 
 async function fetchShops({ max = 12 } = {}) {
-  const q = query(collection(db, "shops"), orderBy("createdAt", "desc"), fbLimit(max));
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const data = await fetchMarketplace();
+  return (data.shops || []).slice(0, max);
 }
 
 async function fetchShop(shopId) {
-  const d = await getDoc(doc(db, "shops", shopId));
-  return d.exists() ? { id: d.id, ...d.data() } : null;
+  const data = await fetchMarketplace();
+  return (data.shops || []).find(s => s.id === shopId) || null;
 }
 
 async function fetchShopListings(shopId, { max = 48 } = {}) {
-  const q = query(
-    collection(db, "listings"),
-    where("shopId", "==", shopId),
-    where("isAvailable", "==", true),
-    fbLimit(max)
-  );
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const data = await fetchMarketplace();
+  return (data.listings || []).filter(l => l.shopId === shopId).slice(0, max);
 }
 
 async function fetchListing(listingId) {
-  const d = await getDoc(doc(db, "listings", listingId));
-  return d.exists() ? { id: d.id, ...d.data() } : null;
+  const data = await fetchMarketplace();
+  return (data.listings || []).find(l => l.id === listingId) || null;
 }
 
 // ---------- Rendering helpers ----------
