@@ -38,7 +38,7 @@ jobs:
         run: npm install --global firebase-tools
 
       - name: Deploy Firebase Hosting and Functions
-        run: firebase deploy --only hosting,functions --project swift-d1baa --non-interactive
+        run: firebase deploy --only hosting,functions:publicMarketplace --project swift-d1baa --non-interactive
 
       - name: Deployment summary
         run: |
