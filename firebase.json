@@ -24,6 +24,10 @@
     ],
     "rewrites": [
       {
+        "source": "/api/marketplace",
+        "function": "publicMarketplace"
+      },
+      {
         "source": "/listing/**",
         "function": "renderListingPreview"
       },
