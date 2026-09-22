@@ -2,7 +2,7 @@ name: Verify Swift Shop
 
 on:
   push:
-    branches: [ master, delivery-first-checkout ]
+    branches: [ master, delivery-first-checkout, go-live-brick0-7-remediation ]
   pull_request:
     branches: [ master, delivery-first-checkout ]
 
@@ -32,14 +32,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: functions/package-lock.json
 
       - name: Install dependencies
-        run: npm --prefix functions install
+        run: npm ci
+        working-directory: functions
 
       - name: Typecheck and Build
-        run: npm --prefix functions run build
+        run: npm run build
+        working-directory: functions
 
   functions-test:
     runs-on: ubuntu-latest
@@ -56,14 +58,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: functions/package-lock.json
 
       - name: Install dependencies
-        run: npm --prefix functions install
+        run: npm ci
+        working-directory: functions
+
+      - name: Build functions before emulator tests
+        run: npm run build
+        working-directory: functions
 
       - name: Install Firebase Tools
         run: npm install -g firebase-tools
 
       - name: Run Tests with Emulator
-        run: firebase emulators:exec --project swift-shop-reconciled "npm --prefix functions test"
+        run: firebase emulators:exec --project demo-swift-shop-reconciled "npm --prefix functions test"
