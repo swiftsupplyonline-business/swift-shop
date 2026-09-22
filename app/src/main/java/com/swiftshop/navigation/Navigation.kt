@@ -132,7 +132,11 @@ fun SwiftShopNavHost(
 
         composable(
             route = Screen.ShopDetail.route,
-            arguments = listOf(navArgument("shopId") { type = NavType.StringType })
+            arguments = listOf(navArgument("shopId") { type = NavType.StringType }),
+            deepLinks = listOf(
+                navDeepLink { uriPattern = "swiftshop://shop/{shopId}" },
+                navDeepLink { uriPattern = "https://swift-dev-3d3ae.web.app/shop/{shopId}" }
+            )
         ) { ShopDetailScreen(navController = navController) }
 
         composable(

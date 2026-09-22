@@ -33,7 +33,7 @@
       },
       {
         "source": "/shop/**",
-        "destination": "/index.html"
+        "function": "renderShopPreview"
       },
       {
         "source": "/cart",

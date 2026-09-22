@@ -170,3 +170,66 @@ export const renderListingPreview = functions.onRequest(async (req, res) => {
     }));
   }
 });
+
+export const renderShopPreview = functions.onRequest(async (req, res) => {
+  const match = req.path.match(/\/shop\/([^/]+)/);
+  const shopId = match ? match[1] : null;
+
+  if (!shopId) {
+    res.status(404).send(renderPage({
+      title: "SwiftShop",
+      description: "Buy and sell in Maseru",
+      imageUrl: "",
+      pageUrl: SITE_ORIGIN,
+      deepLink: null,
+      listingId: null,
+      priceDisplay: null,
+      inStock: false
+    }));
+    return;
+  }
+
+  try {
+    const doc = await admin.firestore().collection("shops").doc(shopId).get();
+    if (!doc.exists) {
+      res.status(404).send(renderPage({
+        title: "Shop not found",
+        description: "This shop may have been removed.",
+        imageUrl: "",
+        pageUrl: `${SITE_ORIGIN}/shop/${shopId}`,
+        deepLink: null,
+        listingId: null,
+        priceDisplay: null,
+        inStock: false
+      }));
+      return;
+    }
+
+    const data = doc.data()!;
+    const name: string = data.name || "SwiftShop Shop";
+    const description: string = data.description || "Check out this shop on SwiftShop";
+    const imageUrl: string = data.coverUrl || data.logoUrl || "";
+
+    res.status(200).send(renderPage({
+      title: name,
+      description,
+      imageUrl,
+      pageUrl: `${SITE_ORIGIN}/shop/${shopId}`,
+      deepLink: `swiftshop://shop/${shopId}`,
+      listingId: null,
+      priceDisplay: null,
+      inStock: false
+    }));
+  } catch (err) {
+    res.status(500).send(renderPage({
+      title: "SwiftShop",
+      description: "Something went wrong loading this shop.",
+      imageUrl: "",
+      pageUrl: SITE_ORIGIN,
+      deepLink: null,
+      listingId: null,
+      priceDisplay: null,
+      inStock: false
+    }));
+  }
+});
