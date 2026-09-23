@@ -2,6 +2,7 @@ package com.swiftshop.domain.commerce
 
 import com.swiftshop.core.model.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 
 // ─── Entitlement Rules (driven by data, not hard-coded) ──────────────────────
 
@@ -290,4 +291,46 @@ class UpdateShopUseCase(private val repository: CommerceRepository) {
 
 class DeleteListingUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(listingId: String): Result<Unit> = repository.deleteListing(listingId)
+}
+
+class CreateListingUseCase(
+    private val repository: CommerceRepository,
+    private val mediaUploader: com.swiftshop.core.media.MediaUploader
+) {
+    suspend operator fun invoke(
+        title: String,
+        description: String,
+        category: String,
+        price: MoneyAmount,
+        stockQuantity: Int,
+        imageUris: List<android.net.Uri>,
+        sellerId: String,
+        shopId: String
+    ): Result<String> {
+        val imageUrls = mutableListOf<String>()
+        for (uri in imageUris) {
+            val progress = mediaUploader.uploadImage(sellerId, uri).kotlinx.coroutines.flow.firstOrNull { it is com.swiftshop.core.media.MediaUploadProgress.Complete }
+            if (progress is com.swiftshop.core.media.MediaUploadProgress.Complete) {
+                imageUrls.add(progress.asset.url)
+            }
+        }
+        val listing = Listing(
+            title = title,
+            description = description,
+            category = category,
+            price = price,
+            stockQuantity = stockQuantity,
+            imageUrls = imageUrls,
+            sellerId = sellerId,
+            shopId = shopId
+        )
+        return repository.createListing(listing)
+    }
+}
+
+class CheckListingEligibilityUseCase {
+    sealed interface Result {
+        object Included : Result
+        object AdditionalFeeRequired : Result
+    }
 }
