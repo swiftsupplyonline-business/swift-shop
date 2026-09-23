@@ -15,7 +15,6 @@ import {
   getFunctions, httpsCallable
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js";
 
-<<<<<<< HEAD
 // Firebase Hosting exposes the configuration for the project serving this page.
 // This keeps Dev, Staging, and Production aligned with their Hosting target.
 const firebaseConfig = await fetch("/__/firebase/init.json").then(async response => {
@@ -24,12 +23,6 @@ const firebaseConfig = await fetch("/__/firebase/init.json").then(async response
   }
   return response.json();
 });
-=======
-// Dynamic Firebase configuration discovery.
-// When deployed to Firebase Hosting, this reserved path returns the config
-// for the current project (dev, staging, or production).
-const firebaseConfig = await fetch('/__/firebase/init.json').then(res => res.json());
->>>>>>> 9b7ae0e (fix: repair UTF-8 encoding corruption and remove BOM in app.js)
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -141,6 +134,7 @@ async function fetchListing(listingId) {
   const data = await fetchMarketplace();
   return (data.listings || []).find(l => l.id === listingId) || null;
 }
+
 // ---------- Rendering helpers ----------
 
 function el(html) {
@@ -326,7 +320,7 @@ async function renderCheckout(root) {
         updateCartBadge();
         root.innerHTML = `
           <div class="success">
-            <h1>Order placed ðŸŽ‰</h1>
+            <h1>Order placed 🎉</h1>
             <p>Order ID: ${escapeHtml(result.orderId)}</p>
             <a href="/">Continue browsing</a>
           </div>`;
@@ -375,5 +369,3 @@ window.addEventListener("popstate", route);
 document.addEventListener("DOMContentLoaded", () => { updateCartBadge(); route(); });
 
 export { addToCart, cartCount };
-
-
