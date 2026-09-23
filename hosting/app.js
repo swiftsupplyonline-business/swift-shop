@@ -1,10 +1,10 @@
-// SwiftShop Web — real Firestore-backed marketplace client.
+// SwiftShop Web – real Firestore-backed marketplace client.
 // Loaded as a module by index.html (browse / shop / cart / checkout routes)
 // and, in "widget" mode, by the server-rendered /listing/{id} page for the
 // Add to Cart / Buy Now buttons.
 //
 // NOTE: this file only ever calls existing Cloud Functions (calculateOrderFees,
-// createOrder) — it does not implement any order/payment/inventory logic itself.
+// createOrder) – it does not implement any order/payment/inventory logic itself.
 // That authority stays server-side in functions/src/commerce.ts.
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
@@ -15,6 +15,7 @@ import {
   getFunctions, httpsCallable
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js";
 
+<<<<<<< HEAD
 // Firebase Hosting exposes the configuration for the project serving this page.
 // This keeps Dev, Staging, and Production aligned with their Hosting target.
 const firebaseConfig = await fetch("/__/firebase/init.json").then(async response => {
@@ -23,6 +24,12 @@ const firebaseConfig = await fetch("/__/firebase/init.json").then(async response
   }
   return response.json();
 });
+=======
+// Dynamic Firebase configuration discovery.
+// When deployed to Firebase Hosting, this reserved path returns the config
+// for the current project (dev, staging, or production).
+const firebaseConfig = await fetch('/__/firebase/init.json').then(res => res.json());
+>>>>>>> 9b7ae0e (fix: repair UTF-8 encoding corruption and remove BOM in app.js)
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -31,7 +38,7 @@ const functions = getFunctions(app);
 const CART_KEY = "swiftshop_cart_v1";
 const LSL = (minorUnits) => `M${(minorUnits / 100).toFixed(2)}`;
 
-// ---------- Cart (client-side convenience only — never authoritative) ----------
+// ---------- Cart (client-side convenience only – never authoritative) ----------
 
 function getCart() {
   try { return JSON.parse(localStorage.getItem(CART_KEY)) || []; }
@@ -70,7 +77,7 @@ function updateCartBadge() {
   });
 }
 
-// ---------- Auth (anonymous — enough to call authenticated callables) ----------
+// ---------- Auth (anonymous – enough to call authenticated callables) ----------
 
 function ensureSignedIn() {
   return new Promise((resolve, reject) => {
@@ -82,11 +89,7 @@ function ensureSignedIn() {
   });
 }
 
-// ---------- Data (server-backed public marketplace API) ----------
-// The browser deliberately does not read Firestore directly. The public
-// marketplace Cloud Function uses the Admin SDK against the same canonical
-// collections written by the Kotlin app. This keeps the web client independent
-// of Firestore security-rule state and prevents a second web catalogue.
+// ---------- Data (server-backed marketplace API) ----------
 
 let marketplacePromise = null;
 
@@ -103,6 +106,7 @@ async function fetchMarketplace() {
       return data;
     });
   }
+
   try {
     return await marketplacePromise;
   } catch (error) {
@@ -128,14 +132,15 @@ async function fetchShop(shopId) {
 
 async function fetchShopListings(shopId, { max = 48 } = {}) {
   const data = await fetchMarketplace();
-  return (data.listings || []).filter(l => l.shopId === shopId).slice(0, max);
+  return (data.listings || [])
+    .filter(l => l.shopId === shopId)
+    .slice(0, max);
 }
 
 async function fetchListing(listingId) {
   const data = await fetchMarketplace();
   return (data.listings || []).find(l => l.id === listingId) || null;
 }
-
 // ---------- Rendering helpers ----------
 
 function el(html) {
@@ -215,7 +220,7 @@ async function renderListing(root, listingId) {
   try {
     const l = await fetchListing(listingId);
     if (!l) {
-      root.innerHTML = `<div class="error">Listing not found — it may have been removed.</div>`;
+      root.innerHTML = `<div class="error">Listing not found – it may have been removed.</div>`;
       return;
     }
     const img = (l.imageUrls && l.imageUrls[0]) || "";
@@ -321,7 +326,7 @@ async function renderCheckout(root) {
         updateCartBadge();
         root.innerHTML = `
           <div class="success">
-            <h1>Order placed 🎉</h1>
+            <h1>Order placed ðŸŽ‰</h1>
             <p>Order ID: ${escapeHtml(result.orderId)}</p>
             <a href="/">Continue browsing</a>
           </div>`;
@@ -370,3 +375,5 @@ window.addEventListener("popstate", route);
 document.addEventListener("DOMContentLoaded", () => { updateCartBadge(); route(); });
 
 export { addToCart, cartCount };
+
+
