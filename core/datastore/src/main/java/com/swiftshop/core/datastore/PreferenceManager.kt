@@ -21,10 +21,12 @@ class PreferenceManager @Inject constructor(
     object Keys {
         val BIOMETRICS_ENABLED = booleanPreferencesKey("biometrics_enabled")
         val LAST_SYNCED_AT = longPreferencesKey("last_synced_at")
+        val DEVICE_ID = stringPreferencesKey("device_id")
     }
 
     val biometricsEnabled: Flow<Boolean> = dataStore.data.map { it[Keys.BIOMETRICS_ENABLED] ?: false }
     val lastSyncedAt: Flow<Long> = dataStore.data.map { it[Keys.LAST_SYNCED_AT] ?: 0L }
+    val deviceId: Flow<String?> = dataStore.data.map { it[Keys.DEVICE_ID] }
 
     suspend fun setBiometricsEnabled(enabled: Boolean) {
         dataStore.edit { it[Keys.BIOMETRICS_ENABLED] = enabled }
@@ -32,6 +34,10 @@ class PreferenceManager @Inject constructor(
 
     suspend fun setLastSyncedAt(timestamp: Long) {
         dataStore.edit { it[Keys.LAST_SYNCED_AT] = timestamp }
+    }
+
+    suspend fun setDeviceId(id: String) {
+        dataStore.edit { it[Keys.DEVICE_ID] = id }
     }
 
     suspend fun clearAll() {

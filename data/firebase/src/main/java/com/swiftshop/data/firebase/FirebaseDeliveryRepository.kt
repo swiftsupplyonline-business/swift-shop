@@ -27,20 +27,18 @@ class FirebaseDeliveryRepository @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
-    override suspend fun requestDelivery(orderId: String, pickup: GeoPoint, dropoff: GeoPoint): Result<String> = runCatching {
+    override suspend fun requestDelivery(orderId: String, dropoff: GeoPoint): Result<String> = runCatching {
         val data = mapOf(
             "orderId" to orderId,
-            "pickup" to mapOf("lat" to pickup.lat, "lng" to pickup.lng),
             "dropoff" to mapOf("lat" to dropoff.lat, "lng" to dropoff.lng)
         )
         val result = functions.getHttpsCallable("requestDelivery").call(data).await()
         result.data as String
     }
 
-    override suspend fun createDeliveryRequest(listingId: String, pickup: GeoPoint, dropoff: GeoPoint): Result<String> = runCatching {
+    override suspend fun createDeliveryRequest(listingId: String, dropoff: GeoPoint): Result<String> = runCatching {
         val data = mapOf(
             "listingId" to listingId,
-            "pickup" to mapOf("lat" to pickup.lat, "lng" to pickup.lng),
             "dropoff" to mapOf("lat" to dropoff.lat, "lng" to dropoff.lng)
         )
         val result = functions.getHttpsCallable("createDeliveryRequest").call(data).await()
@@ -73,6 +71,12 @@ class FirebaseDeliveryRepository @Inject constructor(
         // The callable is authoritative; this client never mutates status directly.
         val data = mapOf("requestId" to requestId, "accept" to accept)
         functions.getHttpsCallable("respondToDeliveryRequest").call(data).await()
+        Unit
+    }
+
+    override suspend fun cancelDeliveryRequest(requestId: String): Result<Unit> = runCatching {
+        val data = mapOf("requestId" to requestId)
+        functions.getHttpsCallable("cancelDeliveryRequest").call(data).await()
         Unit
     }
 

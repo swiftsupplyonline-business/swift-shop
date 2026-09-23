@@ -17,6 +17,7 @@ import javax.inject.Singleton
 @Singleton
 class FirebaseProfileRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
+    private val functions: com.google.firebase.functions.FirebaseFunctions,
     private val auth: FirebaseAuth
 ) : ProfileRepository {
 
@@ -114,6 +115,27 @@ class FirebaseProfileRepository @Inject constructor(
             .await()
     }
 
+    override suspend fun updateFcmToken(token: String, deviceId: String): Result<Unit> = runCatching {
+        val data = mapOf(
+            "token" to token,
+            "deviceId" to deviceId,
+            "platform" to "android"
+        )
+        functions.getHttpsCallable("updateFcmToken").call(data).await()
+        Unit
+    }
+
+    override suspend fun searchUsers(query: String): Result<List<UserProfile>> = runCatching {
+        val snapshot = firestore.collection("profiles")
+            .whereGreaterThanOrEqualTo("displayName_lowercase", query.lowercase())
+            .whereLessThanOrEqualTo("displayName_lowercase", query.lowercase() + "\uf8ff")
+            .get().await()
+
+        snapshot.documents.mapNotNull { doc ->
+            doc.toObject(FirestoreUserProfile::class.java)?.toDomain(doc.id)
+        }
+    }
+
     override fun getAchievements(uid: String): Flow<List<Achievement>> = callbackFlow {
         if (uid.isBlank()) { trySend(emptyList()); awaitClose {}; return@callbackFlow }
         // Achievements can be a subcollection or a list in profile. Assuming subcollection for scale.
@@ -180,6 +202,7 @@ fun UserProfile.toFirestore() = mapOf(
 
 fun UserProfile.toFirestoreUpdateMap() = mapOf(
     "displayName" to displayName,
+    "displayName_lowercase" to displayName.toLowerCase(),
     "bio" to bio,
     "location" to location,
     "avatarUrl" to avatarUrl,

@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.swiftshop.core.media.MediaConstraints
 import com.swiftshop.core.media.MediaUploadProgress
 import com.swiftshop.core.media.MediaUploader
 import com.swiftshop.core.model.Listing
@@ -129,7 +130,7 @@ class ManageShopViewModel @Inject constructor(
     fun onCoverSelected(uri: Uri) {
         viewModelScope.launch {
             val uid = observeCurrentUser().first()?.uid ?: return@launch
-            mediaUploader.uploadImage(uid, uri).collect { progress ->
+            mediaUploader.uploadImage(uid, uri, MediaConstraints.COVER_PHOTO).collect { progress ->
                 when (progress) {
                     is MediaUploadProgress.InProgress ->
                         _uploadProgress.value = progress.percent

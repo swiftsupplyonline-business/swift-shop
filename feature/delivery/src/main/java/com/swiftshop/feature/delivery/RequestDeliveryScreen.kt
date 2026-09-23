@@ -54,8 +54,7 @@ fun RequestDeliveryScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                if (state.step == RequestStep.PICKUP) "Step 1: Tap the pickup point"
-                                else "Step 2: Tap the dropoff point",
+                                "Step 1: Tap the dropoff point",
                                 style = MaterialTheme.typography.titleMedium
                             )
                         }
@@ -69,42 +68,24 @@ fun RequestDeliveryScreen(
                     }
 
                     Box(modifier = Modifier.weight(1f)) {
-                        if (state.step == RequestStep.PICKUP) {
-                            OsmPinDropMap(
-                                initialLocation = state.pickup,
-                                modifier = Modifier.fillMaxSize(),
-                                onLocationSelected = { viewModel.onPickupSelected(it) }
-                            )
-                        } else {
-                            OsmPinDropMap(
-                                initialLocation = state.dropoff,
-                                modifier = Modifier.fillMaxSize(),
-                                onLocationSelected = { viewModel.onDropoffSelected(it) }
-                            )
-                        }
+                        OsmPinDropMap(
+                            initialLocation = state.dropoff,
+                            modifier = Modifier.fillMaxSize(),
+                            onLocationSelected = { viewModel.onDropoffSelected(it) }
+                        )
                     }
 
                     Surface(tonalElevation = 4.dp) {
                         Row(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                            if (state.step == RequestStep.DROPOFF) {
-                                OutlinedButton(
-                                    onClick = { viewModel.goBackToPickupStep() },
-                                    modifier = Modifier.padding(end = 8.dp)
-                                ) { Text("Back") }
-                            }
                             Button(
-                                onClick = {
-                                    if (state.step == RequestStep.PICKUP) viewModel.goToDropoffStep()
-                                    else viewModel.submitRequest()
-                                },
-                                enabled = (state.step == RequestStep.PICKUP && state.pickup != null) ||
-                                    (state.step == RequestStep.DROPOFF && state.dropoff != null && !state.isSubmitting),
+                                onClick = { viewModel.submitRequest() },
+                                enabled = state.dropoff != null && !state.isSubmitting,
                                 modifier = Modifier.weight(1f)
                             ) {
                                 if (state.isSubmitting) {
                                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                 } else {
-                                    Text(if (state.step == RequestStep.PICKUP) "Next" else "Send Request")
+                                    Text("Send Request")
                                 }
                             }
                         }

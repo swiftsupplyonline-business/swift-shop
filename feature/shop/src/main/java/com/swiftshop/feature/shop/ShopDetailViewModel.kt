@@ -31,7 +31,8 @@ class ShopDetailViewModel @Inject constructor(
     private val observeCurrentUser: ObserveCurrentUserUseCase,
     private val followUser: FollowUserUseCase,
     private val unfollowUser: UnfollowUserUseCase,
-    private val isFollowingUseCase: IsFollowingUseCase
+    private val isFollowingUseCase: IsFollowingUseCase,
+    private val messagingRepository: com.swiftshop.domain.messaging.MessagingRepository
 ) : ViewModel() {
 
     private val shopId: String = checkNotNull(savedStateHandle["shopId"])
@@ -103,6 +104,17 @@ class ShopDetailViewModel @Inject constructor(
                 _isFollowing.value = true
             }
             _isFollowLoading.value = false
+        }
+    }
+
+    fun startConversationWithOwner(onReady: (String) -> Unit) {
+        viewModelScope.launch {
+            val shop = (uiState.value as? ShopDetailUiState.Success)?.shop ?: return@launch
+            val currentUser = observeCurrentUser().first()
+            val currentUserId = currentUser?.uid ?: ""
+            if (currentUserId.isBlank() || currentUserId == shop.ownerId) return@launch
+            messagingRepository.getOrCreateConversation(listOf(currentUserId, shop.ownerId))
+                .onSuccess(onReady)
         }
     }
 

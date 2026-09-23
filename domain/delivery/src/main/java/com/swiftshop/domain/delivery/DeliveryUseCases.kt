@@ -10,13 +10,13 @@ class ObserveDeliveryRouteUseCase(private val repository: DeliveryRepository) {
 }
 
 class RequestDeliveryUseCase(private val repository: DeliveryRepository) {
-    suspend operator fun invoke(orderId: String, pickup: GeoPoint, dropoff: GeoPoint): Result<String> =
-        repository.requestDelivery(orderId, pickup, dropoff)
+    suspend operator fun invoke(orderId: String, dropoff: GeoPoint): Result<String> =
+        repository.requestDelivery(orderId, dropoff)
 }
 
 class CreateDeliveryRequestUseCase(private val repository: DeliveryRepository) {
-    suspend operator fun invoke(listingId: String, pickup: GeoPoint, dropoff: GeoPoint): Result<String> =
-        repository.createDeliveryRequest(listingId, pickup, dropoff)
+    suspend operator fun invoke(listingId: String, dropoff: GeoPoint): Result<String> =
+        repository.createDeliveryRequest(listingId, dropoff)
 }
 
 class ObserveDeliveryRequestUseCase(private val repository: DeliveryRepository) {
@@ -31,4 +31,9 @@ class ObservePendingDeliveryRequestsForMerchantUseCase(private val repository: D
 class RespondToDeliveryRequestUseCase(private val repository: DeliveryRepository) {
     suspend operator fun invoke(requestId: String, accept: Boolean): Result<Unit> =
         repository.respondToDeliveryRequest(requestId, accept)
+}
+
+class CancelDeliveryRequestUseCase(private val repository: DeliveryRepository) {
+    suspend operator fun invoke(requestId: String): Result<Unit> =
+        repository.cancelDeliveryRequest(requestId)
 }

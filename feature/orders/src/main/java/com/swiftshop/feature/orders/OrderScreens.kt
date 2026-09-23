@@ -16,10 +16,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import androidx.fragment.app.FragmentActivity
+import androidx.compose.ui.platform.LocalContext
 import com.swiftshop.core.model.*
+import com.swiftshop.core.security.BiometricGuard
+import com.swiftshop.core.security.BiometricResult
 import com.swiftshop.core.ui.components.*
 import com.swiftshop.core.ui.theme.SwiftShopColors
 import com.swiftshop.core.ui.navigation.Screen
+import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 fun OrdersScreen(
@@ -148,13 +153,30 @@ private fun OrderStatusBadge(status: OrderStatus) {
 @Composable
 fun OrderDetailScreen(
     navController: NavController,
+    biometricGuard: BiometricGuard,
     viewModel: OrdersViewModel = hiltViewModel()
 ) {
     val detailState by viewModel.detailState.collectAsState()
     val isSellerMode by viewModel.isSellerMode.collectAsState()
     val fulfillmentState by viewModel.fulfillmentState.collectAsState()
 
+    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Security Gate Side-Effect
+    LaunchedEffect(Unit) {
+        viewModel.confirmDeliveryIntent.collectLatest { order ->
+            val activity = context as? FragmentActivity ?: return@collectLatest
+            val result = biometricGuard.authenticate(
+                activity = activity,
+                title = "Confirm Receipt",
+                subtitle = "Authorize escrow release for order #${order.id.take(8).uppercase()}"
+            )
+            if (result is BiometricResult.Success) {
+                viewModel.executeConfirmDelivery(order.id)
+            }
+        }
+    }
 
     LaunchedEffect(fulfillmentState) {
         if (fulfillmentState is FulfillmentState.Error) {

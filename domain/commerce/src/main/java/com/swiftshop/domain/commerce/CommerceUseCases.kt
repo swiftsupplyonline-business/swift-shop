@@ -94,7 +94,7 @@ interface CommerceRepository {
     suspend fun getShop(shopId: String): Result<Shop>
     suspend fun createShop(shop: Shop): Result<String>
     suspend fun updateShop(shop: Shop): Result<Unit>
-    suspend fun deleteShop(shopId: String): Result<Unit> = Result.success(Unit)
+    suspend fun deleteShop(shopId: String): Result<Unit> = Result.failure(NotImplementedError("Shop deletion is not yet implemented backend-side"))
 
     // Listings
     fun getShopListings(shopId: String, page: Int, pageSize: Int): Flow<List<Listing>>
@@ -103,6 +103,7 @@ interface CommerceRepository {
     suspend fun getUserListings(userId: String): Result<List<Listing>>
     fun observeUserListings(userId: String): Flow<List<Listing>> = kotlinx.coroutines.flow.emptyFlow()
     suspend fun searchListings(query: String): Result<List<Listing>>
+    suspend fun searchShops(query: String): Result<List<Shop>>
     suspend fun createListing(listing: Listing): Result<String>
     suspend fun updateListing(listing: Listing): Result<Unit>
     suspend fun deleteListing(listingId: String): Result<Unit>
@@ -188,6 +189,10 @@ class GetUserListingsUseCase(private val repository: CommerceRepository) {
 
 class SearchListingsUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(query: String): Result<List<Listing>> = repository.searchListings(query)
+}
+
+class SearchShopsUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(query: String): Result<List<Shop>> = repository.searchShops(query)
 }
 
 class LikeListingUseCase(private val repository: CommerceRepository) {

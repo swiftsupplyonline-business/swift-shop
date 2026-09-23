@@ -1,0 +1,56 @@
+name: Deploy Swift Hosting
+
+on:
+  # Production deployment is intentionally manual. A push to a development
+  # branch must never implicitly deploy to the production Firebase project.
+  workflow_dispatch:
+
+concurrency:
+  group: firebase-hosting-production
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy Firebase Hosting
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SWIFT_D1BAA }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install Firebase CLI
+        run: npm install --global firebase-tools
+
+      - name: Install function dependencies
+        working-directory: functions
+        run: npm ci
+
+      - name: Build Firebase Functions
+        working-directory: functions
+        run: npm run build
+
+      - name: Deploy Firebase Hosting and Marketplace API
+        run: firebase deploy --only hosting,functions:publicMarketplace --project swift-d1baa --non-interactive
+
+      - name: Deployment summary
+        run: |
+          echo "### Swift Firebase Hosting deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Project: `swift-d1baa`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Branch: `${GITHUB_REF_NAME}`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Hosting: https://swift-d1baa.web.app" >> "$GITHUB_STEP_SUMMARY"

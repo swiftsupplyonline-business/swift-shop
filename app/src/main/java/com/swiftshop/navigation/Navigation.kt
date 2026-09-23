@@ -132,7 +132,11 @@ fun SwiftShopNavHost(
 
         composable(
             route = Screen.ShopDetail.route,
-            arguments = listOf(navArgument("shopId") { type = NavType.StringType })
+            arguments = listOf(navArgument("shopId") { type = NavType.StringType }),
+            deepLinks = listOf(
+                navDeepLink { uriPattern = "swiftshop://shop/{shopId}" },
+                navDeepLink { uriPattern = "https://swift-dev-3d3ae.web.app/shop/{shopId}" }
+            )
         ) { ShopDetailScreen(navController = navController) }
 
         composable(
@@ -140,7 +144,11 @@ fun SwiftShopNavHost(
             deepLinks = listOf(navDeepLink { uriPattern = "swiftshop://checkout/verify?sessionId={sessionId}" })
         ) { backStackEntry ->
             val sessionId = backStackEntry.arguments?.getString("sessionId")
-            CheckoutScreen(navController = navController, sessionId = sessionId)
+            CheckoutScreen(
+                navController = navController,
+                biometricGuard = biometricGuard,
+                sessionId = sessionId
+            )
         }
 
         composable(Screen.Orders.route) {
@@ -151,7 +159,7 @@ fun SwiftShopNavHost(
             route = Screen.OrderDetail.route,
             arguments = listOf(navArgument("orderId") { type = NavType.StringType }),
             deepLinks = listOf(navDeepLink { uriPattern = "swiftshop://order/{orderId}" })
-        ) { OrderDetailScreen(navController = navController) }
+        ) { OrderDetailScreen(navController = navController, biometricGuard = biometricGuard) }
 
         composable(Screen.CreatePost.route) {
             CreatePostScreen(onBack = { navController.popBackStack() },

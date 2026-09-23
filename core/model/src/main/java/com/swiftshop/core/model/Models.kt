@@ -20,7 +20,25 @@ data class MoneyAmount(
     companion object {
         val ZERO = MoneyAmount("LSL", 0L)
         fun fromMajorUnits(major: Double, currency: String = "LSL"): MoneyAmount =
-            MoneyAmount(currency, (major * 100).toLong())
+            MoneyAmount(currency, kotlin.math.round(major * 100).toLong())
+
+        fun fromDecimalString(decimal: String, currency: String = "LSL"): Result<MoneyAmount> = runCatching {
+            if (decimal.isBlank()) return Result.failure(IllegalArgumentException("Empty input"))
+            val cleaned = decimal.replace(",", ".").trim()
+            val parts = cleaned.split(".")
+            if (parts.size > 2) throw IllegalArgumentException("Invalid format")
+
+            val major = parts[0].toLong()
+            val minor = if (parts.size == 2) {
+                val s = parts[1].padEnd(2, '0')
+                if (s.length > 2) throw IllegalArgumentException("Too many decimal places")
+                s.toLong()
+            } else 0L
+
+            if (major < 0) throw IllegalArgumentException("Negative amount")
+
+            MoneyAmount(currency, major * 100 + minor)
+        }
     }
     fun toDisplayString(): String = "${currency} ${minorUnits / 100}.${(minorUnits % 100).toString().padStart(2, '0')}"
     operator fun plus(other: MoneyAmount): MoneyAmount {
@@ -377,7 +395,7 @@ data class Conversation(
     val participantIds: List<String> = emptyList(),
     val lastMessage: String = "",
     val lastMessageAt: Long = 0L,
-    val unreadCount: Int = 0,
+    val unreadCounts: Map<String, Int> = emptyMap(),
     val deliveryRouteId: String = ""
 ) : Parcelable
 
@@ -448,7 +466,9 @@ data class DeliveryRequest(
 data class GeoPoint(
     val lat: Double = 0.0,
     val lng: Double = 0.0
-) : Parcelable
+) : Parcelable {
+    fun isValid(): Boolean = lat in -90.0..90.0 && lng in -180.0..180.0 && lat.isFinite() && lng.isFinite()
+}
 
 // ─── Advertising ─────────────────────────────────────────────────────────────
 

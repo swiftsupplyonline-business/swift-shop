@@ -151,7 +151,7 @@ fun ListingDetailScreen(
                                 }
                             }
                             IconButton(onClick = {
-                                val shareUrl = "https://swift-dev-3d3ae.web.app/listing/${listing.id}"
+                                val shareUrl = "https://swift-d1baa.web.app/listing/${listing.id}"
                                 val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(android.content.Intent.EXTRA_TEXT, "Check out ${listing.title} on SwiftShop: $shareUrl")
@@ -176,30 +176,64 @@ fun ListingDetailScreen(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Quantity selector
+                            // Compact quantity selector
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
                                     .clip(MaterialTheme.shapes.medium)
                                     .background(MaterialTheme.colorScheme.surfaceVariant)
                             ) {
-                                IconButton(onClick = { viewModel.updateQuantity(quantity - 1) }) {
-                                    Icon(Icons.Default.Remove, null)
+                                IconButton(
+                                    onClick = { viewModel.updateQuantity(quantity - 1) },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Default.Remove, null, modifier = Modifier.size(18.dp))
                                 }
-                                Text(quantity.toString(), style = MaterialTheme.typography.bodyLarge)
-                                IconButton(onClick = { viewModel.updateQuantity(quantity + 1) }) {
-                                    Icon(Icons.Default.Add, null)
+                                Text(
+                                    quantity.toString(),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.widthIn(min = 16.dp)
+                                )
+                                IconButton(
+                                    onClick = { viewModel.updateQuantity(quantity + 1) },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
                                 }
                             }
 
-                            OutlinedButton(
-                                onClick = { viewModel.addToCart() },
-                                modifier = Modifier.weight(1f),
-                                shape = MaterialTheme.shapes.medium,
-                                enabled = !isAdding
-                            ) {
-                                Text("Add to Cart")
+                            if (!isOwner) {
+                                IconButton(
+                                    onClick = {
+                                        viewModel.startConversationWithSeller {
+                                            navController.navigate(Screen.Conversation.createRoute(it))
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(MaterialTheme.shapes.medium)
+                                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                                ) {
+                                    Icon(Icons.Default.Message, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                                }
                             }
+
+                            // Icon-only Add to Cart - label doesn't fit alongside stepper + message + CTA
+                            IconButton(
+                                onClick = { viewModel.addToCart() },
+                                enabled = !isAdding,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(MaterialTheme.shapes.medium)
+                                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                            ) {
+                                Icon(
+                                    Icons.Default.AddShoppingCart,
+                                    contentDescription = "Add to Cart",
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+
                             SwiftPrimaryButton(
                                 text = cta.label,
                                 onClick = {
@@ -213,7 +247,7 @@ fun ListingDetailScreen(
                                     }
                                 },
                                 leadingIcon = { Icon(cta.icon, null, modifier = Modifier.size(18.dp)) },
-                                modifier = Modifier.weight(1.5f)
+                                modifier = Modifier.weight(1f)
                             )
                         }
                     }

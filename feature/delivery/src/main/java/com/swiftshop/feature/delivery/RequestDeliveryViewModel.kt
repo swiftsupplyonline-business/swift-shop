@@ -19,16 +19,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class RequestStep { PICKUP, DROPOFF }
+enum class RequestStep { DROPOFF }
 
 sealed interface RequestDeliveryUiState {
     data object Loading : RequestDeliveryUiState
     data class Error(val message: String) : RequestDeliveryUiState
     data class Picking(
-        val listing: Listing,
-        val shop: Shop?,
         val step: RequestStep,
-        val pickup: GeoPoint?,
         val dropoff: GeoPoint?,
         val isSubmitting: Boolean
     ) : RequestDeliveryUiState
@@ -67,8 +64,8 @@ class RequestDeliveryViewModel @Inject constructor(
                     val shop = getShopUseCase(listing.shopId).getOrNull()
                     shopCache = shop
                     _uiState.value = RequestDeliveryUiState.Picking(
-                        listing = listing, shop = shop, step = RequestStep.PICKUP,
-                        pickup = null, dropoff = null, isSubmitting = false
+                        listing = listing, shop = shop, step = RequestStep.DROPOFF,
+                        dropoff = null, isSubmitting = false
                     )
                 },
                 onFailure = { _uiState.value = RequestDeliveryUiState.Error(it.message ?: "Failed to load listing") }
@@ -76,35 +73,18 @@ class RequestDeliveryViewModel @Inject constructor(
         }
     }
 
-    fun onPickupSelected(point: GeoPoint) {
-        val state = _uiState.value as? RequestDeliveryUiState.Picking ?: return
-        _uiState.value = state.copy(pickup = point)
-    }
-
     fun onDropoffSelected(point: GeoPoint) {
         val state = _uiState.value as? RequestDeliveryUiState.Picking ?: return
         _uiState.value = state.copy(dropoff = point)
     }
 
-    fun goToDropoffStep() {
-        val state = _uiState.value as? RequestDeliveryUiState.Picking ?: return
-        if (state.pickup == null) return
-        _uiState.value = state.copy(step = RequestStep.DROPOFF)
-    }
-
-    fun goBackToPickupStep() {
-        val state = _uiState.value as? RequestDeliveryUiState.Picking ?: return
-        _uiState.value = state.copy(step = RequestStep.PICKUP)
-    }
-
     fun submitRequest() {
         val state = _uiState.value as? RequestDeliveryUiState.Picking ?: return
-        val pickup = state.pickup ?: return
         val dropoff = state.dropoff ?: return
 
         _uiState.value = state.copy(isSubmitting = true)
         viewModelScope.launch {
-            createDeliveryRequestUseCase(listingId, pickup, dropoff).fold(
+            createDeliveryRequestUseCase(listingId, dropoff).fold(
                 onSuccess = { requestId -> observeRequest(requestId) },
                 onFailure = {
                     _uiState.value = state.copy(isSubmitting = false)
@@ -126,8 +106,8 @@ class RequestDeliveryViewModel @Inject constructor(
         val listing = listingCache
         if (listing == null) { load(); return }
         _uiState.value = RequestDeliveryUiState.Picking(
-            listing = listing, shop = shopCache, step = RequestStep.PICKUP,
-            pickup = null, dropoff = null, isSubmitting = false
+            listing = listing, shop = shopCache, step = RequestStep.DROPOFF,
+            dropoff = null, isSubmitting = false
         )
     }
 }

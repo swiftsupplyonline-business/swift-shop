@@ -1,5 +1,6 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
+import { onDocumentUpdated } from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
 
 const DELIVERY_REQUEST_WINDOW_MS = 120_000; // 120 seconds, server-authoritative
@@ -7,21 +8,22 @@ const DELIVERY_REQUEST_WINDOW_MS = 120_000; // 120 seconds, server-authoritative
 /**
  * Creates a delivery route for a paid order.
  *
+ * Server-authoritative: resolves pickup from order's shop.
+ *
  * Contract (matches FirebaseDeliveryRepository.requestDelivery on Android):
- * - Request: { orderId: string, pickup: {lat, lng}, dropoff: {lat, lng} }
+ * - Request: { orderId: string, dropoff: {lat, lng} }
  * - Response: routeId (string)
  */
 export const requestDelivery = onCall(async (request) => {
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { orderId, pickup, dropoff } = request.data;
+    const { orderId, dropoff } = request.data;
     if (
-        !orderId || !pickup || !dropoff ||
-        typeof pickup.lat !== "number" || typeof pickup.lng !== "number" ||
+        !orderId || !dropoff ||
         typeof dropoff.lat !== "number" || typeof dropoff.lng !== "number"
     ) {
-        throw new HttpsError("invalid-argument", "orderId, pickup, and dropoff ({lat, lng}) are required");
+        throw new HttpsError("invalid-argument", "orderId and dropoff ({lat, lng}) are required");
     }
 
     const db = admin.firestore();
@@ -48,12 +50,28 @@ export const requestDelivery = onCall(async (request) => {
                 return order.deliveryRouteId as string;
             }
 
+            // Resolve pickup from the shop associated with the order.
+            const shopRef = db.collection("shops").doc(order.shopId);
+            const shopDoc = await transaction.get(shopRef);
+            if (!shopDoc.exists) throw new Error("Order's shop not found");
+            const shopData = shopDoc.data()!;
+
+            const pickup = {
+                lat: shopData.locationLat,
+                lng: shopData.locationLng
+            };
+
+            if (typeof pickup.lat !== "number" || typeof pickup.lng !== "number" || (pickup.lat === 0 && pickup.lng === 0)) {
+                throw new Error("Shop location not configured correctly for pickup");
+            }
+
             const routeId = db.collection("deliveryRoutes").doc().id;
             const newRoute = {
                 id: routeId,
                 orderId,
                 buyerId: order.buyerId,
                 sellerId: order.sellerId,
+                providerId: shopData.ownerId, // SWIFT-019: Canonical provider is Merchant UID
                 driverId: "",
                 pickupLat: pickup.lat,
                 pickupLng: pickup.lng,
@@ -103,7 +121,7 @@ export const updateDeliveryStatus = onCall(async (request) => {
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { routeId, status, driverId } = request.data;
+    const { routeId, status } = request.data;
     if (!routeId || !status || !VALID_DELIVERY_STATUSES.includes(status)) {
         throw new HttpsError("invalid-argument", "routeId and a valid status are required");
     }
@@ -126,14 +144,36 @@ export const updateDeliveryStatus = onCall(async (request) => {
                 throw new Error(`Cannot transition delivery from ${route.status} to ${status}`);
             }
 
-            if (status === "ASSIGNED") {
-                // A driver claims an unassigned request. Requires the 'DRIVER' role claim.
+            // SWIFT-019: Implement Authoritative Driver Claiming
+            if (status === "ASSIGNED" && route.status === "REQUESTED") {
                 if (route.driverId) throw new Error("Route already has an assigned driver");
-                if (auth.token.role !== "DRIVER" && !isAdmin) throw new Error("Only a driver can accept a delivery");
 
+                const isAdmin = auth.token.admin === true;
+                if (auth.token.role !== "DRIVER" && !isAdmin) {
+                    throw new Error("Only a driver can claim a delivery");
+                }
+
+                // Membership check: Is driver authorized by this provider?
+                const isProviderSelf = route.providerId === auth.uid;
+                let isAuthorizedMember = false;
+
+                if (!isProviderSelf && !isAdmin) {
+                    const authRef = db.collection("deliveryProviders")
+                        .doc(route.providerId)
+                        .collection("drivers")
+                        .doc(auth.uid);
+                    const authDoc = await transaction.get(authRef);
+                    isAuthorizedMember = authDoc.exists && authDoc.data()?.authorized === true;
+                }
+
+                if (!isProviderSelf && !isAuthorizedMember && !isAdmin) {
+                   throw new Error("You are not an authorized driver for this provider.");
+                }
+
+                // SWIFT-019: Derive driverId from authenticated UID, never trust client parameter
                 transaction.update(routeRef, {
-                    driverId: driverId || auth.uid,
-                    status,
+                    driverId: auth.uid,
+                    status: "ASSIGNED",
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 });
                 return;
@@ -174,25 +214,23 @@ export const updateDeliveryStatus = onCall(async (request) => {
 /**
  * Creates a delivery job request against a DELIVER-type listing.
  *
- * Contract (matches FirebaseDeliveryRepository.createDeliveryRequest on Android):
- * - Request: { listingId: string, pickup: {lat, lng}, dropoff: {lat, lng} }
- * - Response: requestId (string)
+ * Server-authoritative: ignores client-supplied pickup coordinates.
+ * Fetches the shop's stored location from Firestore.
  *
- * The merchant has DELIVERY_REQUEST_WINDOW_MS to respond (see
- * respondToDeliveryRequest below, B6/B7). expiresAt is set here,
- * server-side, and is the sole source of truth for the countdown.
+ * Contract (matches FirebaseDeliveryRepository.createDeliveryRequest on Android):
+ * - Request: { listingId: string, dropoff: {lat, lng} }
+ * - Response: requestId (string)
  */
 export const createDeliveryRequest = onCall(async (request) => {
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { listingId, pickup, dropoff } = request.data;
+    const { listingId, dropoff } = request.data;
     if (
-        !listingId || !pickup || !dropoff ||
-        typeof pickup.lat !== "number" || typeof pickup.lng !== "number" ||
+        !listingId || !dropoff ||
         typeof dropoff.lat !== "number" || typeof dropoff.lng !== "number"
     ) {
-        throw new HttpsError("invalid-argument", "listingId, pickup, and dropoff ({lat, lng}) are required");
+        throw new HttpsError("invalid-argument", "listingId and dropoff ({lat, lng}) are required");
     }
 
     const db = admin.firestore();
@@ -208,6 +246,22 @@ export const createDeliveryRequest = onCall(async (request) => {
         throw new HttpsError("failed-precondition", "This delivery listing is not currently available");
     }
 
+    // Resolve authoritative pickup from the merchant's shop
+    const shopRef = db.collection("shops").doc(listing.shopId);
+    const shopDoc = await shopRef.get();
+    if (!shopDoc.exists) {
+        throw new HttpsError("failed-precondition", "Merchant shop not found");
+    }
+    const shopData = shopDoc.data()!;
+    const pickup = {
+        lat: shopData.locationLat,
+        lng: shopData.locationLng
+    };
+
+    if (typeof pickup.lat !== "number" || typeof pickup.lng !== "number" || (pickup.lat === 0 && pickup.lng === 0)) {
+        throw new HttpsError("failed-precondition", "Merchant shop has no valid location configured");
+    }
+
     const now = Date.now();
     const requestRef = db.collection("deliveryRequests").doc();
     const newRequest = {
@@ -217,7 +271,7 @@ export const createDeliveryRequest = onCall(async (request) => {
         requesterId: auth.uid,
         pickup,
         dropoff,
-        pickupLabel: "",
+        pickupLabel: shopData.name || "Merchant Shop",
         dropoffLabel: "",
         deliveryFeeMinorUnits: listing.priceMinorUnits ?? 0,
         deliveryFeeCurrency: listing.priceCurrency ?? "LSL",
@@ -292,6 +346,53 @@ export const respondToDeliveryRequest = onCall(async (request) => {
 });
 
 /**
+ * Cancels a pending delivery request initiated by the requester.
+ * Only the requester (customer) may cancel a PENDING request.
+ * Requests in any terminal state (ACCEPTED, DECLINED, EXPIRED, CANCELLED)
+ * cannot be cancelled — the client must handle those states in the UI.
+ *
+ * Contract:
+ * - Request: { requestId: string }
+ * - Response: { success: true }
+ */
+export const cancelDeliveryRequest = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { requestId } = request.data;
+    if (!requestId) throw new HttpsError("invalid-argument", "requestId is required");
+
+    const db = admin.firestore();
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const requestRef = db.collection("deliveryRequests").doc(requestId);
+            const requestDoc = await transaction.get(requestRef);
+            if (!requestDoc.exists) throw new Error("Delivery request not found");
+            const deliveryRequest = requestDoc.data()!;
+
+            if (deliveryRequest.requesterId !== auth.uid) {
+                throw new Error("Only the requester can cancel this delivery request");
+            }
+
+            // Only PENDING requests can be cancelled by the customer.
+            // ACCEPTED requests need a different flow (post-acceptance cancellation).
+            if (deliveryRequest.status !== "PENDING") {
+                throw new Error(`Cannot cancel a request that is already ${deliveryRequest.status}`);
+            }
+
+            transaction.update(requestRef, {
+                status: "CANCELLED",
+                updatedAt: Date.now()
+            });
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
  * Scheduled sweep: flips any PENDING request whose window has elapsed to
  * EXPIRED. Runs every minute. This is what makes "merchant never responded"
  * actually resolve for the requester even if the merchant's device never
@@ -312,4 +413,87 @@ export const expireDeliveryRequests = onSchedule("every 1 minutes", async () => 
         batch.update(doc.ref, { status: "EXPIRED", updatedAt: now });
     });
     await batch.commit();
+});
+
+/**
+ * Trigger: Order confirmed.
+ * Automatically creates a delivery route if delivery was requested and accepted.
+ */
+export const onOrderConfirmed = onDocumentUpdated("orders/{orderId}", async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after) return;
+
+    if (before.status !== "CONFIRMED" && after.status === "CONFIRMED" && after.requiresDelivery && after.deliveryRequestId) {
+        const db = admin.firestore();
+
+        // Fetch the accepted delivery request
+        const drDoc = await db.collection("deliveryRequests").doc(after.deliveryRequestId).get();
+        if (!drDoc.exists) return;
+        const dr = drDoc.data()!;
+
+        if (dr.status !== "ACCEPTED") return;
+
+        // Check if route already exists (idempotency)
+        const routeQuery = await db.collection("deliveryRoutes").where("orderId", "==", event.params.orderId).get();
+        if (!routeQuery.empty) return;
+
+        const routeId = db.collection("deliveryRoutes").doc().id;
+        const newRoute = {
+            id: routeId,
+            orderId: event.params.orderId,
+            buyerId: after.buyerId,
+            sellerId: after.sellerId,
+            providerId: dr.merchantId, // Designated provider from the request
+            driverId: "", // SWIFT-019: Unassigned initially
+            pickupLat: dr.pickup.lat,
+            pickupLng: dr.pickup.lng,
+            dropoffLat: dr.dropoff.lat,
+            dropoffLng: dr.dropoff.lng,
+            status: "REQUESTED", // SWIFT-019: Waiting for a driver to claim
+            distanceMeters: 0,
+            estimatedMinutes: 0,
+            conversationId: "",
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        await db.collection("deliveryRoutes").doc(routeId).set(newRoute);
+        await db.collection("orders").doc(event.params.orderId).update({
+            deliveryRouteId: routeId,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log(`Auto-created delivery route ${routeId} for order ${event.params.orderId}`);
+    }
+});
+
+/**
+ * Merchant authorizes a driver to operate their routes.
+ * Request: { driverUid: string, authorized: boolean }
+ */
+export const authorizeDriver = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { driverUid, authorized } = request.data;
+    if (!driverUid || typeof authorized !== "boolean") {
+        throw new HttpsError("invalid-argument", "driverUid and authorized (boolean) required");
+    }
+
+    const db = admin.firestore();
+    const providerId = auth.uid;
+
+    // Optional: verify provider actually has a shop or provider listing
+    // Scoped to simple relationship record for now.
+
+    await db.collection("deliveryProviders")
+        .doc(providerId)
+        .collection("drivers")
+        .doc(driverUid)
+        .set({
+            authorized,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+    return { success: true };
 });
