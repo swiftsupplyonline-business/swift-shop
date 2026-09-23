@@ -51,8 +51,9 @@ describe('Notifications Accounting (SWIFT-022)', () => {
     }, 'messages/msg_123');
 
     await wrapped({
-      data: () => ({ ...snap.data() }),
-      id: eventId
+      data: snap,
+      id: eventId,
+      params: { messageId: 'msg_123' }
     } as any);
 
     const eventDoc = await db.collection('notificationEvents').doc(`${eventId}_${userId}`).get();
@@ -91,8 +92,9 @@ describe('Notifications Accounting (SWIFT-022)', () => {
     }, 'messages/group_msg_1');
 
     await wrapped({
-      data: () => ({ ...snap.data() }),
-      id: eventId
+      data: snap,
+      id: eventId,
+      params: { messageId: 'group_msg_1' }
     } as any);
 
     const event1 = await db.collection('notificationEvents').doc(`${eventId}_user_1`).get();

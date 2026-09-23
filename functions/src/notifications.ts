@@ -30,6 +30,7 @@ export const updateFcmToken = onCall(async (request) => {
  * Implements a durable state machine with per-device accounting.
  */
 async function sendNotification(userId: string, payload: { notification: { title: string, body: string }, data: Record<string, string> }, eventId: string) {
+    if (!userId || typeof userId !== "string" || !eventId) return;
     const db = admin.firestore();
     const eventRef = db.collection("notificationEvents").doc(`${eventId}_${userId}`);
     const leaseTime = 30 * 1000; // 30 second lease
