@@ -1,6 +1,8 @@
 name: Build Android APK
 
 on:
+  push:
+    branches: [ go-live-android-apk-build ]
   workflow_dispatch:
     inputs:
       variant:
