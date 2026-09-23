@@ -4,6 +4,8 @@ import com.google.firebase.messaging.FirebaseMessaging
 import com.swiftshop.core.datastore.PreferenceManager
 import com.swiftshop.domain.auth.ObserveCurrentUserUseCase
 import com.swiftshop.domain.profile.UpdateFcmTokenUseCase
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch

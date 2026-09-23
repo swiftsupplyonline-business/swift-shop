@@ -75,7 +75,7 @@ fun CheckoutScreen(
     var step by remember { mutableStateOf(CheckoutStep.CART) }
     var showClearCartConfirm by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
-    val context = androidx.compose.platform.LocalContext.current
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     // Security Gate Side-Effect
     LaunchedEffect(Unit) {

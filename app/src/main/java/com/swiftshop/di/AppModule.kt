@@ -1,4 +1,4 @@
-﻿package com.swiftshop.di
+package com.swiftshop.di
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -99,6 +99,9 @@ object ProfileModule {
 
     @Provides
     fun provideUpdateFcmTokenUseCase(repo: ProfileRepository) = UpdateFcmTokenUseCase(repo)
+
+    @Provides
+    fun provideSearchUsersUseCase(repo: ProfileRepository) = SearchUsersUseCase(repo)
 }
 
 @Module
@@ -220,6 +223,9 @@ object CommerceModule {
 
     @Provides
     fun provideDeleteListingUseCase(repo: CommerceRepository) = DeleteListingUseCase(repo)
+
+    @Provides
+    fun provideSearchShopsUseCase(repo: CommerceRepository) = SearchShopsUseCase(repo)
 }
 
 @Module
@@ -268,6 +274,9 @@ object SocialModule {
 
     @Provides
     fun provideDeleteListingCommentUseCase(repo: FeedRepository) = DeleteListingCommentUseCase(repo)
+
+    @Provides
+    fun provideSearchPostsUseCase(repo: FeedRepository) = SearchPostsUseCase(repo)
 }
 
 @Module
@@ -330,4 +339,6 @@ object MessagingModule {
     @Provides
     fun provideSendMessageUseCase(repo: MessagingRepository) = SendMessageUseCase(repo)
 }
+
+
 

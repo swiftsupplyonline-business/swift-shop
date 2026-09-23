@@ -1,48 +1,48 @@
 {
-  "functions": {
-    "source": "functions",
-    "codebase": "default",
-    "ignore": [
-      "node_modules",
-      ".git",
-      "firebase-debug.log",
-      "firebase-debug.*.log"
-    ]
-  },
-  "firestore": {
-    "rules": "docs/firestore.rules",
-    "indexes": "docs/firestore.indexes.json"
-  },
-  "storage": {
-    "rules": "docs/storage.rules"
-  },
-  "hosting": {
-    "public": "hosting",
-    "ignore": [
-      "**/.*",
-      "**/node_modules/**"
-    ],
-    "rewrites": [
-      {
-        "source": "/api/marketplace",
-        "function": "publicMarketplace"
-      },
-      {
-        "source": "/listing/**",
-        "function": "renderListingPreview"
-      },
-      {
-        "source": "/shop/**",
-        "function": "renderShopPreview"
-      },
-      {
-        "source": "/cart",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/checkout",
-        "destination": "/index.html"
-      }
-    ]
-  }
+    "functions":  {
+                      "source":  "functions",
+                      "codebase":  "default",
+                      "ignore":  [
+                                     "node_modules",
+                                     ".git",
+                                     "firebase-debug.log",
+                                     "firebase-debug.*.log"
+                                 ]
+                  },
+    "firestore":  {
+                      "rules":  "docs/firestore.rules",
+                      "indexes":  "docs/firestore.indexes.json"
+                  },
+    "storage":  {
+                    "rules":  "docs/storage.rules"
+                },
+    "hosting":  {
+                    "public":  "hosting",
+                    "ignore":  [
+                                   "**/.*",
+                                   "**/node_modules/**"
+                               ],
+                    "rewrites":  [
+                                     {
+                                         "source":  "/api/marketplace",
+                                         "function":  "publicMarketplace"
+                                     },
+                                     {
+                                         "source":  "/listing/**",
+                                         "function":  "renderListingPreview"
+                                     },
+                                     {
+                                         "source":  "/shop/**",
+                                         "function":  "renderShopPreview"
+                                     },
+                                     {
+                                         "source":  "/cart",
+                                         "destination":  "/index.html"
+                                     },
+                                     {
+                                         "source":  "/checkout",
+                                         "destination":  "/index.html"
+                                     }
+                                 ]
+                }
 }

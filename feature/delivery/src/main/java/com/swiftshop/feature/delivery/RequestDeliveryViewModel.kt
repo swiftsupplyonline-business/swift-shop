@@ -26,6 +26,8 @@ sealed interface RequestDeliveryUiState {
     data class Error(val message: String) : RequestDeliveryUiState
     data class Picking(
         val step: RequestStep,
+        val listing: Listing,
+        val shop: Shop?,
         val dropoff: GeoPoint?,
         val isSubmitting: Boolean
     ) : RequestDeliveryUiState

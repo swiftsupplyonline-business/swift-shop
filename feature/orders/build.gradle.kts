@@ -20,6 +20,7 @@ android {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:ui"))
+    implementation(project(":core:security"))
     implementation(project(":domain:auth"))
     implementation(project(":domain:commerce"))
     implementation(project(":domain:wallet"))

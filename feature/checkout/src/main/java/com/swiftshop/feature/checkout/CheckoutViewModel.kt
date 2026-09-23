@@ -67,6 +67,7 @@ class CheckoutViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<CheckoutUiState>(CheckoutUiState.Loading)
     val uiState: StateFlow<CheckoutUiState> = _uiState.asStateFlow()
 
+    private var currentUserId: String = ""
     private var currentCartItems: List<CartItem> = emptyList()
     private val _hasCartItems = MutableStateFlow(false)
     val hasCartItems: StateFlow<Boolean> = _hasCartItems.asStateFlow()
@@ -99,6 +100,7 @@ class CheckoutViewModel @Inject constructor(
 
     private var currentDeliveryRequest: DeliveryRequest? = null
     private var deliveryObservationJob: Job? = null
+    private var feeCalculationJob: Job? = null
 
     private val _paymentIntent = MutableSharedFlow<OrderSummary>()
     val paymentIntent = _paymentIntent.asSharedFlow()
