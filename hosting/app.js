@@ -66,7 +66,7 @@ function updateCartBadge() {
   document.querySelectorAll("[data-cart-badge]").forEach(el => {
     const n = cartCount();
     el.textContent = n > 0 ? String(n) : "";
-    el.style.display = n > 0 ? "inline-block" : "none";
+    el.style.display = n > 0 ? "inline-flex" : "none";
   });
 }
 
@@ -108,12 +108,12 @@ async function fetchMarketplace() {
   }
 }
 
-async function fetchListings({ max = 24 } = {}) {
+async function fetchListings({ max = 60 } = {}) {
   const data = await fetchMarketplace();
   return (data.listings || []).slice(0, max);
 }
 
-async function fetchShops({ max = 12 } = {}) {
+async function fetchShops({ max = 30 } = {}) {
   const data = await fetchMarketplace();
   return (data.shops || []).slice(0, max);
 }
@@ -134,22 +134,36 @@ async function fetchListing(listingId) {
   const data = await fetchMarketplace();
   return (data.listings || []).find(l => l.id === listingId) || null;
 }
+
 // ---------- Rendering helpers ----------
 
-function el(html) {
-  const t = document.createElement("template");
-  t.innerHTML = html.trim();
-  return t.content.firstElementChild;
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+function toast(t) {
+  const e = document.getElementById("toast");
+  if (!e) return;
+  e.textContent = t;
+  e.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => e.classList.remove("show"), 2200);
 }
 
 function listingCard(l) {
   const img = (l.imageUrls && l.imageUrls[0]) || "";
   return `
-    <a class="card" href="/listing/${l.id}">
-      <div class="card-img" style="background-image:url('${img}')"></div>
-      <div class="card-body">
-        <div class="card-title">${escapeHtml(l.title || "Untitled")}</div>
-        <div class="card-price">${LSL(l.priceMinorUnits || 0)}</div>
+    <a class="product" href="/listing/${l.id}">
+      <div class="photo" style="background-image:url('${img}')">
+        <span class="tag">${escapeHtml(l.category || "General")}</span>
+        <button type="button" class="heart" data-fav>♡</button>
+      </div>
+      <div class="info">
+        <div class="p-shop">${escapeHtml(l.shopName || "")}</div>
+        <div class="p-name">${escapeHtml(l.title || "Untitled")}</div>
+        <div class="p-price">${LSL(l.priceMinorUnits || 0)}</div>
       </div>
     </a>`;
 }
@@ -157,32 +171,84 @@ function listingCard(l) {
 function shopCard(s) {
   return `
     <a class="shop-card" href="/shop/${s.id}">
-      <div class="shop-logo" style="background-image:url('${s.logoUrl || ""}')"></div>
-      <div class="shop-name">${escapeHtml(s.name || "Shop")}</div>
+      <div class="shop-avatar" style="background-image:url('${s.logoUrl || ""}')"></div>
+      <h3>${escapeHtml(s.name || "Shop")}</h3>
+      <p>${escapeHtml(s.category || "")}</p>
     </a>`;
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  }[c]));
 }
 
 // ---------- Views ----------
 
+// Cache of the currently-loaded browse data, so the header search box and
+// category chips can filter in place without refetching /api/marketplace.
+let browseCache = { listings: [], shops: [] };
+
+const CATEGORIES = ["Beauty", "Fashion", "Gadgets", "Home", "Baby", "Food"];
+
+function renderGridInto(container, listings) {
+  if (!container) return;
+  container.innerHTML = listings.length
+    ? listings.map(listingCard).join("")
+    : `<p class="empty" style="grid-column:1/-1">No listings match yet — check back soon.</p>`;
+}
+
+function filterBrowse(query) {
+  const grid = document.getElementById("grid");
+  if (!grid) return; // not on the browse route
+  const q = (query || "").toLowerCase();
+  const filtered = q
+    ? browseCache.listings.filter(l =>
+        `${l.title} ${l.category} ${l.shopName || ""}`.toLowerCase().includes(q))
+    : browseCache.listings;
+  renderGridInto(grid, filtered);
+
+  document.querySelectorAll(".categories .cat").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.cat.toLowerCase() === q);
+  });
+}
+
 async function renderBrowse(root) {
-  root.innerHTML = `<div class="loading">Loading marketplace…</div>`;
+  const shopsById = {}; // populated once shops load, used to label cards with shop names
+
+  root.innerHTML = `
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow">Swift marketplace · Lesotho</div>
+        <h1>Local finds.<br>Delivered fast.</h1>
+        <p>Discover products from local shops, share a listing with one smart link, and buy directly from your phone.</p>
+        <a class="cta" href="#products-section">Explore products ↗</a>
+      </div>
+    </section>
+    <section class="section">
+      <div class="section-head"><div><h2>Shop by category</h2><div class="sub">Everything you need, from shops near you.</div></div></div>
+      <div class="categories">
+        <button type="button" class="cat" data-cat="">All</button>
+        ${CATEGORIES.map(c => `<button type="button" class="cat" data-cat="${c}">${c}</button>`).join("")}
+      </div>
+    </section>
+    <section class="section" id="products-section">
+      <div class="section-head"><div><h2>Trending on Swift</h2><div class="sub">Live listings from real shops.</div></div></div>
+      <div class="grid" id="grid"><p class="loading" style="grid-column:1/-1">Loading listings…</p></div>
+    </section>
+    <section class="section">
+      <div class="section-head"><div><h2>Local shops</h2><div class="sub">Meet the people behind the products.</div></div></div>
+      <div class="shops" id="shopsGrid"><p class="loading">Loading shops…</p></div>
+    </section>`;
+
   try {
     const [listings, shops] = await Promise.all([fetchListings(), fetchShops()]);
-    root.innerHTML = `
-      <section>
-        <h2>Shops</h2>
-        <div class="shop-row">${shops.length ? shops.map(shopCard).join("") : "<p class='empty'>No shops yet.</p>"}</div>
-      </section>
-      <section>
-        <h2>Latest listings</h2>
-        <div class="grid">${listings.length ? listings.map(listingCard).join("") : "<p class='empty'>No listings yet.</p>"}</div>
-      </section>`;
+    shops.forEach(s => { shopsById[s.id] = s; });
+    listings.forEach(l => { l.shopName = shopsById[l.shopId]?.name || ""; });
+    browseCache = { listings, shops };
+
+    renderGridInto(document.getElementById("grid"), listings);
+
+    const shopsGrid = document.getElementById("shopsGrid");
+    shopsGrid.innerHTML = shops.length
+      ? shops.slice(0, 3).map(shopCard).join("")
+      : `<p class="empty">No shops live yet.</p>`;
+
+    filterBrowse(document.getElementById("search")?.value || "");
   } catch (err) {
     root.innerHTML = `<div class="error">Couldn't load the marketplace. ${escapeHtml(err.message)}</div>`;
   }
@@ -197,12 +263,14 @@ async function renderShop(root, shopId) {
       return;
     }
     root.innerHTML = `
-      <div class="shop-header">
-        <div class="shop-cover" style="background-image:url('${shop.coverUrl || ""}')"></div>
-        <h1>${escapeHtml(shop.name || "Shop")}</h1>
-        <p>${escapeHtml(shop.description || "")}</p>
-      </div>
-      <div class="grid">${listings.length ? listings.map(listingCard).join("") : "<p class='empty'>No listings yet.</p>"}</div>`;
+      <section class="section" style="margin-top:20px">
+        <div class="shop-card" style="min-height:120px;margin-bottom:24px">
+          <div class="shop-avatar" style="background-image:url('${shop.logoUrl || ""}')"></div>
+          <h3>${escapeHtml(shop.name || "Shop")}</h3>
+          <p>${escapeHtml(shop.description || "")}</p>
+        </div>
+        <div class="grid">${listings.length ? listings.map(listingCard).join("") : "<p class='empty' style='grid-column:1/-1'>No listings yet.</p>"}</div>
+      </section>`;
   } catch (err) {
     root.innerHTML = `<div class="error">Couldn't load this shop. ${escapeHtml(err.message)}</div>`;
   }
@@ -218,25 +286,34 @@ async function renderListing(root, listingId) {
     }
     const img = (l.imageUrls && l.imageUrls[0]) || "";
     root.innerHTML = `
-      <div class="listing-detail">
-        <div class="listing-img" style="background-image:url('${img}')"></div>
-        <h1>${escapeHtml(l.title || "Untitled")}</h1>
-        <div class="price">${LSL(l.priceMinorUnits || 0)}</div>
-        <p>${escapeHtml(l.description || "")}</p>
-        <p class="stock">${(l.stockQuantity || 0) > 0 ? `In stock: ${l.stockQuantity}` : "Out of stock"}</p>
-        <a class="shop-link" href="/shop/${l.shopId}">Visit shop</a>
-        <div class="actions">
-          <button class="btn secondary" id="addCartBtn" ${(l.stockQuantity || 0) <= 0 ? "disabled" : ""}>Add to Cart</button>
-          <button class="btn primary" id="buyNowBtn" ${(l.stockQuantity || 0) <= 0 ? "disabled" : ""}>Buy Now</button>
+      <div class="detail">
+        <div class="detail-photo" style="background-image:url('${img}')"></div>
+        <div>
+          <div class="eyebrow">${escapeHtml(l.category || "General")}</div>
+          <h1>${escapeHtml(l.title || "Untitled")}</h1>
+          <div class="price">${LSL(l.priceMinorUnits || 0)}</div>
+          <p>${escapeHtml(l.description || "")}</p>
+          <p class="stock">${(l.stockQuantity || 0) > 0 ? `In stock: ${l.stockQuantity}` : "Out of stock"}</p>
+          <a class="shop-link" href="/shop/${l.shopId}">Visit shop</a>
+          <div class="actions">
+            <button class="btn secondary" id="addCartBtn" ${(l.stockQuantity || 0) <= 0 ? "disabled" : ""}>Add to Cart</button>
+            <button class="btn primary" id="buyNowBtn" ${(l.stockQuantity || 0) <= 0 ? "disabled" : ""}>Buy Now</button>
+          </div>
+          <button type="button" class="pill" style="margin-top:14px" id="shareBtn">↗ Share smart link</button>
         </div>
       </div>`;
     root.querySelector("#addCartBtn")?.addEventListener("click", () => {
       addToCart(l.id, l.title, 1);
       root.querySelector("#addCartBtn").textContent = "Added ✓";
+      toast(`${l.title} added to your bag`);
     });
     root.querySelector("#buyNowBtn")?.addEventListener("click", () => {
       addToCart(l.id, l.title, 1);
       navigate("/checkout");
+    });
+    root.querySelector("#shareBtn")?.addEventListener("click", () => {
+      const url = `${location.origin}/listing/${l.id}`;
+      navigator.clipboard?.writeText(url).then(() => toast("Smart link copied")).catch(() => toast(url));
     });
   } catch (err) {
     root.innerHTML = `<div class="error">Couldn't load this listing. ${escapeHtml(err.message)}</div>`;
@@ -246,11 +323,11 @@ async function renderListing(root, listingId) {
 function renderCart(root) {
   const items = getCart();
   if (!items.length) {
-    root.innerHTML = `<div class="empty">Your cart is empty. <a href="/">Browse listings</a></div>`;
+    root.innerHTML = `<div class="empty">Your cart is empty. <a class="cta" href="/">Browse listings</a></div>`;
     return;
   }
   root.innerHTML = `
-    <h1>Your Cart</h1>
+    <h1>Your Bag</h1>
     <div class="cart-list">
       ${items.map(i => `
         <div class="cart-row" data-id="${i.listingId}">
@@ -259,7 +336,7 @@ function renderCart(root) {
           <button class="remove-btn" data-id="${i.listingId}">Remove</button>
         </div>`).join("")}
     </div>
-    <button class="btn primary" id="checkoutBtn">Go to Checkout</button>`;
+    <button class="btn primary" id="checkoutBtn">Continue to checkout</button>`;
   root.querySelectorAll(".qty-input").forEach(input => {
     input.addEventListener("change", () => setQty(input.dataset.id, parseInt(input.value, 10) || 0) || renderCart(root));
   });
@@ -272,7 +349,7 @@ function renderCart(root) {
 async function renderCheckout(root) {
   const items = getCart();
   if (!items.length) {
-    root.innerHTML = `<div class="empty">Your cart is empty. <a href="/">Browse listings</a></div>`;
+    root.innerHTML = `<div class="empty">Your cart is empty. <a class="cta" href="/">Browse listings</a></div>`;
     return;
   }
   root.innerHTML = `<div class="loading">Calculating totals…</div>`;
@@ -288,9 +365,9 @@ async function renderCheckout(root) {
     root.innerHTML = `
       <h1>Checkout</h1>
       <div class="summary">
-        <div>Subtotal: ${LSL(fees.subtotalMinorUnits || 0)}</div>
-        <div>Platform fee: ${LSL(fees.platformFeeMinorUnits || 0)}</div>
-        <div class="total">Total: ${LSL(fees.totalMinorUnits || 0)}</div>
+        <div class="row"><span>Subtotal</span><span>${LSL(fees.subtotalMinorUnits || 0)}</span></div>
+        <div class="row"><span>Platform fee</span><span>${LSL(fees.platformFeeMinorUnits || 0)}</span></div>
+        <div class="row total"><span>Total</span><span>${LSL(fees.totalMinorUnits || 0)}</span></div>
       </div>
       <div class="payment-methods">
         <label><input type="radio" name="pm" value="SWIFT_WALLET" checked> Swift Wallet</label>
@@ -319,9 +396,9 @@ async function renderCheckout(root) {
         updateCartBadge();
         root.innerHTML = `
           <div class="success">
-            <h1>Order placed ðŸŽ‰</h1>
+            <h1>Order placed 🎉</h1>
             <p>Order ID: ${escapeHtml(result.orderId)}</p>
-            <a href="/">Continue browsing</a>
+            <a class="cta" href="/">Continue browsing</a>
           </div>`;
       } catch (err) {
         msg.textContent = `Order failed: ${err.message}`;
@@ -359,14 +436,27 @@ function route() {
 }
 
 document.addEventListener("click", (e) => {
+  const favBtn = e.target.closest("[data-fav]");
+  if (favBtn) { e.preventDefault(); e.stopPropagation(); toast("Saved to favourites"); return; }
+
+  const catBtn = e.target.closest(".categories .cat");
+  if (catBtn) { filterBrowse(catBtn.dataset.cat); return; }
+
   const a = e.target.closest("a[href^='/']");
   if (!a) return;
   e.preventDefault();
   navigate(a.getAttribute("href"));
 });
+
 window.addEventListener("popstate", route);
-document.addEventListener("DOMContentLoaded", () => { updateCartBadge(); route(); });
+
+document.addEventListener("DOMContentLoaded", () => {
+  updateCartBadge();
+  route();
+  document.getElementById("search")?.addEventListener("input", (e) => {
+    if (location.pathname !== "/") navigate("/");
+    filterBrowse(e.target.value);
+  });
+});
 
 export { addToCart, cartCount };
-
-
