@@ -23,7 +23,10 @@ sealed interface SearchState {
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(
-    private val searchListings: com.swiftshop.domain.commerce.SearchListingsUseCase
+    private val searchListings: com.swiftshop.domain.commerce.SearchListingsUseCase,
+    private val searchShops: com.swiftshop.domain.commerce.SearchShopsUseCase,
+    private val searchUsers: com.swiftshop.domain.profile.SearchUsersUseCase,
+    private val searchPosts: com.swiftshop.domain.feed.SearchPostsUseCase
 ) : ViewModel() {
 
     private val _query = MutableStateFlow("")
@@ -66,22 +69,52 @@ class SearchViewModel @Inject constructor(
         _recentSearches.value = emptyList()
     }
 
+    /**
+     * Performs a prefix-based search across listings, shops, and users.
+     *
+     * IMPORTANT: Current implementation uses Firestore prefix range queries on
+     * lowercase shadow fields. This is NOT a full-text search engine.
+     * Typo tolerance and ranking are not yet implemented.
+     */
     private fun performSearch(query: String) {
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             _results.value = SearchState.Loading
-            searchListings(query).fold(
-                onSuccess = { listings ->
-                    if (listings.isEmpty()) {
-                        _results.value = SearchState.Empty
-                    } else {
-                        _results.value = SearchState.Results(listings = listings)
-                    }
-                },
-                onFailure = { 
-                    _results.value = SearchState.Error(it.message ?: "Search failed")
-                }
-            )
+            // SWIFT-013: Canonical case normalization for prefix search
+            val normalizedQuery = query.trim().lowercase()
+            if (normalizedQuery.isEmpty()) {
+                _results.value = SearchState.Idle
+                return@launch
+            }
+
+            val listingsDeferred = async { searchListings(normalizedQuery) }
+            val shopsDeferred = async { searchShops(normalizedQuery) }
+            val usersDeferred = async { searchUsers(normalizedQuery) }
+            val postsDeferred = async { searchPosts(normalizedQuery) }
+
+            val listings = listingsDeferred.await().getOrDefault(emptyList())
+            val shops = shopsDeferred.await().getOrDefault(emptyList())
+            val users = usersDeferred.await().getOrDefault(emptyList())
+            val posts = postsDeferred.await().getOrDefault(emptyList())
+
+            if (listings.isEmpty() && shops.isEmpty() && users.isEmpty() && posts.isEmpty()) {
+                _results.value = SearchState.Empty
+            } else {
+                _results.value = SearchState.Results(
+                    listings = listings,
+                    shops = shops,
+                    users = users.map {
+                        // UserProfile to User mapping
+                        User(
+                            uid = it.uid,
+                            displayName = it.displayName,
+                            photoUrl = it.avatarUrl,
+                            tier = it.tier
+                        )
+                    },
+                    posts = posts
+                )
+            }
             
             // Add to recent searches
             _recentSearches.value = (_recentSearches.value + query)

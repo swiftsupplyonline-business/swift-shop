@@ -12,9 +12,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
 import com.swiftshop.core.model.*
 import com.swiftshop.core.ui.components.*
 import com.swiftshop.core.ui.navigation.Screen
@@ -50,11 +52,12 @@ fun MessagingListScreen(
                     modifier = Modifier.fillMaxSize().padding(padding),
                     contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
-                    items(state.conversations, key = { it.id }) { conversation ->
+                    items(state.conversations, key = { it.conversation.id }) { display ->
                         ConversationItem(
-                            conversation = conversation,
+                            display = display,
+                            currentUserId = viewModel.currentUserId,
                             onClick = {
-                                navController.navigate(Screen.Conversation.createRoute(conversation.id))
+                                navController.navigate(Screen.Conversation.createRoute(display.conversation.id))
                             }
                         )
                         Divider(modifier = Modifier.padding(start = 76.dp))
@@ -66,40 +69,50 @@ fun MessagingListScreen(
 }
 
 @Composable
-private fun ConversationItem(conversation: Conversation, onClick: () -> Unit) {
+private fun ConversationItem(display: ConversationDisplay, currentUserId: String, onClick: () -> Unit) {
+    val conversation = display.conversation
+    val name = display.otherParticipant?.displayName?.takeIf { it.isNotBlank() } ?: "Unknown user"
+    val avatarUrl = display.otherParticipant?.avatarUrl.orEmpty()
+    val unread = conversation.unreadCounts[currentUserId] ?: 0
+    val timeLabel = android.text.format.DateUtils.getRelativeTimeSpanString(
+        conversation.lastMessageAt, System.currentTimeMillis(),
+        android.text.format.DateUtils.MINUTE_IN_MILLIS
+    ).toString()
+
     ListItem(
-        headlineContent = {
-            Text("Conversation ${conversation.id.take(6)}", style = MaterialTheme.typography.titleSmall)
-        },
+        headlineContent = { Text(name, style = MaterialTheme.typography.titleSmall) },
         supportingContent = {
             Text(conversation.lastMessage, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         },
         leadingContent = {
-            Box(modifier = Modifier.size(48.dp).clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Person, null, tint = MaterialTheme.colorScheme.primary)
+            if (avatarUrl.isNotBlank()) {
+                coil.compose.AsyncImage(
+                    model = avatarUrl, contentDescription = null,
+                    modifier = Modifier.size(48.dp).clip(CircleShape),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                )
+            } else {
+                Box(modifier = Modifier.size(48.dp).clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Person, null, tint = MaterialTheme.colorScheme.primary)
+                }
             }
         },
         trailingContent = {
             Column(horizontalAlignment = Alignment.End) {
-                Text("now", style = MaterialTheme.typography.labelSmall,
+                Text(timeLabel, style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (conversation.unreadCount > 0) {
+                if (unread > 0) {
                     Spacer(Modifier.height(4.dp))
                     Box(
-                        modifier = Modifier
-                            .size(20.dp)
-                            .clip(CircleShape)
+                        modifier = Modifier.size(20.dp).clip(CircleShape)
                             .background(MaterialTheme.colorScheme.primary),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            conversation.unreadCount.coerceAtMost(99).toString(),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White
-                        )
+                        Text(unread.coerceAtMost(99).toString(),
+                            style = MaterialTheme.typography.labelSmall, color = Color.White)
                     }
                 }
             }
@@ -224,9 +237,15 @@ private fun MessageBubble(message: Message, isMine: Boolean) {
                     modifier = Modifier.align(Alignment.End),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("now", style = MaterialTheme.typography.labelSmall,
+                    Text(
+                        android.text.format.DateUtils.getRelativeTimeSpanString(
+                            message.createdAt, System.currentTimeMillis(),
+                            android.text.format.DateUtils.MINUTE_IN_MILLIS
+                        ).toString(),
+                        style = MaterialTheme.typography.labelSmall,
                         color = if (isMine) Color.White.copy(alpha = 0.7f)
-                        else MaterialTheme.colorScheme.onSurfaceVariant)
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     if (isMine) {
                         Spacer(Modifier.width(4.dp))
                         Icon(

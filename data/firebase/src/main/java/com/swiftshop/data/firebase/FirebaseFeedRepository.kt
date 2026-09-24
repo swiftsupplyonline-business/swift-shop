@@ -276,6 +276,13 @@ class FirebaseFeedRepository @Inject constructor(
         functions.getHttpsCallable("deletePostComment").call(data).await()
         Unit
     }
+
+    override suspend fun searchPosts(query: String): Result<List<FeedPost>> = runCatching {
+        firestore.collection("posts")
+            .whereArrayContains("hashtags", query.removePrefix("#").lowercase())
+            .get().await()
+            .toObjects(FirestoreFeedPost::class.java).map { it.toDomain() }
+    }
 }
 
 fun FeedPost.toFirestore() = mapOf(

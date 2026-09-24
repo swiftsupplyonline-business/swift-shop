@@ -57,7 +57,8 @@ class ListingDetailViewModel @Inject constructor(
     private val getShopUseCase: com.swiftshop.domain.commerce.GetShopUseCase,
     private val getShopListingsUseCase: com.swiftshop.domain.commerce.GetShopListingsUseCase,
     private val getSimilarListingsUseCase: com.swiftshop.domain.commerce.GetSimilarListingsUseCase,
-    private val commerceRepository: CommerceRepository
+    private val commerceRepository: CommerceRepository,
+    private val messagingRepository: com.swiftshop.domain.messaging.MessagingRepository
 ) : ViewModel() {
 
     private val listingId: String = checkNotNull(savedStateHandle["listingId"])
@@ -196,6 +197,17 @@ class ListingDetailViewModel @Inject constructor(
             viewModelScope.launch {
                 _navigationEvents.emit(ListingDetailNavigation.GoToCheckout)
             }
+        }
+    }
+
+    fun startConversationWithSeller(onReady: (String) -> Unit) {
+        viewModelScope.launch {
+            val listing = (uiState.value as? ListingDetailState.Loaded)?.listing ?: return@launch
+            val currentUser = observeCurrentUser().first()
+            val currentUserId = currentUser?.uid ?: ""
+            if (currentUserId.isBlank() || currentUserId == listing.sellerId) return@launch
+            messagingRepository.getOrCreateConversation(listOf(currentUserId, listing.sellerId))
+                .onSuccess(onReady)
         }
     }
     private val _isOwner = MutableStateFlow(false)

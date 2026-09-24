@@ -45,9 +45,7 @@ class CreateListingUseCaseTest {
             stockQuantity = 5,
             imageUris = listOf(mockUri),
             sellerId = sellerId,
-            shopId = shopId,
-            durationMinutes = 60,
-            fulfillmentOptions = listOf(FulfillmentType.PICKUP)
+            shopId = shopId
         )
 
         assertTrue(result.isSuccess)
@@ -60,8 +58,6 @@ class CreateListingUseCaseTest {
             val listing = firstValue
             assertEquals("Test Item", listing.title)
             assertEquals(listOf("https://example.com/image.jpg"), listing.imageUrls)
-            assertEquals(60, listing.durationMinutes)
-            assertEquals(listOf(FulfillmentType.PICKUP), listing.fulfillmentOptions)
         }
     }
 }

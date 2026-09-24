@@ -5,17 +5,24 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.swiftshop.core.model.Conversation
 import com.swiftshop.core.model.Message
+import com.swiftshop.core.model.UserProfile
 import com.swiftshop.domain.auth.ObserveCurrentUserUseCase
 import com.swiftshop.domain.messaging.MessagingRepository
+import com.swiftshop.domain.profile.ObserveProfileUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+data class ConversationDisplay(
+    val conversation: Conversation,
+    val otherParticipant: UserProfile?
+)
+
 sealed interface ConversationsState {
     data object Loading : ConversationsState
     data object Empty : ConversationsState
-    data class Loaded(val conversations: List<Conversation>) : ConversationsState
+    data class Loaded(val conversations: List<ConversationDisplay>) : ConversationsState
     data class Error(val message: String) : ConversationsState
 }
 
@@ -30,7 +37,8 @@ sealed interface MessagesState {
 class MessagingViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val observeCurrentUser: ObserveCurrentUserUseCase,
-    private val messagingRepository: MessagingRepository
+    private val messagingRepository: MessagingRepository,
+    private val observeProfile: ObserveProfileUseCase
 ) : ViewModel() {
 
     private val conversationId: String? = savedStateHandle["conversationId"]
@@ -59,6 +67,19 @@ class MessagingViewModel @Inject constructor(
     fun loadConversations() {
         viewModelScope.launch {
             messagingRepository.observeConversations(currentUserId)
+                .flatMapLatest { conversations ->
+                    if (conversations.isEmpty()) {
+                        flowOf(emptyList())
+                    } else {
+                        combine(
+                            conversations.map { conv ->
+                                val otherId = conv.participantIds.firstOrNull { it != currentUserId }
+                                if (otherId == null) flowOf(ConversationDisplay(conv, null))
+                                else observeProfile(otherId).map { ConversationDisplay(conv, it) }
+                            }
+                        ) { it.toList() }
+                    }
+                }
                 .catch { _conversationsState.value = ConversationsState.Error(it.message ?: "Error") }
                 .collect { list ->
                     _conversationsState.value = if (list.isEmpty()) ConversationsState.Empty
@@ -74,8 +95,10 @@ class MessagingViewModel @Inject constructor(
                 .collect { msgs ->
                     _messagesState.value = if (msgs.isEmpty()) MessagesState.Empty
                     else MessagesState.Loaded(msgs)
-                    // Mark as read
                     messagingRepository.markConversationRead(convId, currentUserId)
+                    if (msgs.any { it.senderId != currentUserId && !it.isRead }) {
+                        messagingRepository.markMessagesRead(convId, currentUserId)
+                    }
                 }
         }
     }

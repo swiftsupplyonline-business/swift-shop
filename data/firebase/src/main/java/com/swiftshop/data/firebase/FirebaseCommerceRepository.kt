@@ -52,7 +52,11 @@ class FirebaseCommerceRepository @Inject constructor(
     }
 
     override suspend fun updateShop(shop: Shop): Result<Unit> = runCatching {
-        firestore.collection("shops").document(shop.id).update(shop.toUpdateMap()).await()
+        val data = mapOf(
+            "shopId" to shop.id,
+            "updates" to shop.toUpdateMap()
+        )
+        functions.getHttpsCallable("updateShop").call(data).await()
         Unit
     }
 
@@ -90,17 +94,19 @@ class FirebaseCommerceRepository @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
+    // shopId parameter is kept for API compatibility but is no longer used as a filter.
+    // Delivery providers may belong to any shop — cross-shop delivery is valid.
+    // The Firestore index required: listingType ASC, isAvailable ASC, createdAt DESC.
     override fun getDeliveryListings(shopId: String): Flow<List<Listing>> = callbackFlow {
         val subscription = firestore.collection("listings")
             .whereEqualTo("listingType", "DELIVER")
-            .whereEqualTo("shopId", shopId)
             .whereEqualTo("isAvailable", true)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    android.util.Log.e("SwiftShopDelivery", "getDeliveryListings failed for shopId=$shopId", error)
+                    android.util.Log.e("SwiftShopDelivery", "getDeliveryListings failed", error)
                 }
                 val list = snapshot?.toObjects(FirestoreListing::class.java)?.map { it.toDomain() } ?: emptyList()
-                android.util.Log.d("SwiftShopDelivery", "getDeliveryListings shopId=$shopId returned ${list.size} results")
+                android.util.Log.d("SwiftShopDelivery", "getDeliveryListings returned ${list.size} results")
                 trySend(list)
             }
         awaitClose { subscription.remove() }
@@ -154,12 +160,24 @@ class FirebaseCommerceRepository @Inject constructor(
     }
 
     override suspend fun searchListings(query: String): Result<List<Listing>> = runCatching {
-        // Basic title prefix search (limited by Firestore capabilities without external index)
+        val normalized = query.trim().lowercase()
+        // Basic title prefix search using lowercase shadow field.
         firestore.collection("listings")
-            .whereGreaterThanOrEqualTo("title", query)
-            .whereLessThanOrEqualTo("title", query + "\uf8ff")
+            .whereEqualTo("isAvailable", true)
+            .whereGreaterThanOrEqualTo("title_lowercase", normalized)
+            .whereLessThanOrEqualTo("title_lowercase", normalized + "\uf8ff")
             .get().await()
             .toObjects(FirestoreListing::class.java).map { it.toDomain() }
+    }
+
+    override suspend fun searchShops(query: String): Result<List<Shop>> = runCatching {
+        val normalized = query.trim().lowercase()
+        firestore.collection("shops")
+            .whereEqualTo("isActive", true)
+            .whereGreaterThanOrEqualTo("name_lowercase", normalized)
+            .whereLessThanOrEqualTo("name_lowercase", normalized + "\uf8ff")
+            .get().await()
+            .toObjects(FirestoreShop::class.java).map { it.toDomain() }
     }
 
     override suspend fun createListing(listing: Listing): Result<String> = runCatching {

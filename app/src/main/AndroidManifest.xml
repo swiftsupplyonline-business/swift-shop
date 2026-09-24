@@ -72,6 +72,17 @@
                     android:host="swift-dev-3d3ae.web.app"
                     android:pathPrefix="/listing/" />
             </intent-filter>
+
+            <!-- HTTPS App Links for shop share -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="swift-dev-3d3ae.web.app"
+                    android:pathPrefix="/shop/" />
+            </intent-filter>
         </activity>
 
         <!-- Firebase Messaging -->

@@ -66,7 +66,11 @@ fun ProfileScreen(
                 isOwnProfile = state.isOwnProfile,
                 onBack = { navController.popBackStack() },
                 onFollow = { viewModel.toggleFollow() },
-                onMessage = { navController.navigate(Screen.MessagingList.route) },
+                onMessage = {
+                    viewModel.startConversationWithProfile { conversationId ->
+                        navController.navigate(Screen.Conversation.createRoute(conversationId))
+                    }
+                },
                 onWalletClick = { navController.navigate(Screen.Wallet.route) },
                 onShopClick = { navController.navigate(Screen.ShopDetail.createRoute(it)) },
                 onListingClick = { navController.navigate(Screen.ListingDetail.createRoute(it)) },

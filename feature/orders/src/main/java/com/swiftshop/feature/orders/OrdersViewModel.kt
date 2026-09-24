@@ -54,6 +54,10 @@ class OrdersViewModel @Inject constructor(
 
     private val _isSellerMode = MutableStateFlow(false)
     val isSellerMode = _isSellerMode.asStateFlow()
+
+    private val _confirmDeliveryIntent = MutableSharedFlow<Order>()
+    val confirmDeliveryIntent = _confirmDeliveryIntent.asSharedFlow()
+
     private var currentJob: kotlinx.coroutines.Job? = null
 
     init {
@@ -127,8 +131,16 @@ class OrdersViewModel @Inject constructor(
         if (_fulfillmentState.value is FulfillmentState.Processing) return
 
         viewModelScope.launch {
+            _confirmDeliveryIntent.emit(currentOrder)
+        }
+    }
+
+    fun executeConfirmDelivery(orderId: String) {
+        if (_fulfillmentState.value is FulfillmentState.Processing) return
+
+        viewModelScope.launch {
             _fulfillmentState.value = FulfillmentState.Processing
-            confirmDeliveryUseCase(currentOrder.id).fold(
+            confirmDeliveryUseCase(orderId).fold(
                 onSuccess = {
                     _fulfillmentState.value = FulfillmentState.Success
                     loadDetail()

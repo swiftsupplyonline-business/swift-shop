@@ -9,6 +9,7 @@ interface MessagingRepository {
     fun observeMessages(conversationId: String): Flow<List<Message>>
     suspend fun sendMessage(conversationId: String, senderId: String, text: String): Result<String>
     suspend fun markConversationRead(conversationId: String, userId: String): Result<Unit>
+    suspend fun markMessagesRead(conversationId: String, readerId: String): Result<Unit>
     suspend fun getOrCreateConversation(participantIds: List<String>): Result<String>
     suspend fun deleteMessage(messageId: String): Result<Unit>
 }

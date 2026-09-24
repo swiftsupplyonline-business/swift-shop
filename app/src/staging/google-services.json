@@ -7,6 +7,44 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:651419297699:android:b4e0819b80294c31b35c16",
+        "android_client_info": {
+          "package_name": "com.swift.admin.staging"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBArbPIMrZW8WxpfERKnQ_mLAvYJLD3Y5Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:651419297699:android:bc471b0c7c476070b35c16",
+        "android_client_info": {
+          "package_name": "com.swiftshop.client.staging"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBArbPIMrZW8WxpfERKnQ_mLAvYJLD3Y5Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:651419297699:android:d61b18e3cb9186e4b35c16",
         "android_client_info": {
           "package_name": "com.swiftshop.client.staging.debug"

@@ -203,6 +203,19 @@ to the human operator, and do not build on top of it until reviewed.**
   own batch
 - Accepted-delivery-request → order/payment/escrow bridge — explicitly
   deferred pending a read-only architecture recon (never started)
+- **MoPay web redirect** (RED, `functions/src/commerce.ts`, `createOrder`) —
+  `mopayRequest.redirectUrl` is hardcoded to `"swiftshop://checkout/verify"`
+  (a mobile deep link). A browser paying via MoPay on Swift Web has nowhere
+  valid to be redirected back to after payment. Proposed fix shape: make
+  `redirectUrl` conditional on a new `request.data.platform` field (or
+  similar) sent by the caller — `"swiftshop://checkout/verify"` for the
+  Kotlin app (unchanged), `https://swift-d1baa.web.app/checkout/verify?orderId=<id>`
+  for web callers — with the web SPA's `/checkout/verify` route then calling
+  the existing `verifyMopayPayment` callable client-side. No change to
+  authority, escrow, or verification logic — purely which URL the gateway
+  redirects to. Not yet implemented pending explicit authorization; Swift
+  Web checkout currently only supports `SWIFT_WALLET` as a result (see
+  Batch 5).
 
 ## AUTHORIZED / IN PROGRESS
 
@@ -211,6 +224,48 @@ to the human operator, and do not build on top of it until reviewed.**
 ---
 
 ## 6. BATCH LOG (append a new entry every time a batch closes — never delete history)
+
+### Batch 5 — Real Swift Web marketplace: browse/shop/listing/cart/checkout (2026-09-22)
+- **Classification:** GREEN (`hosting/index.html`, `hosting/app.js`, new
+  `firebase.json` hosting rewrites) + one non-RED backend file
+  (`functions/src/sharePreview.ts` — not on the locked list).
+- **Context:** `hosting/` previously contained a single static page with an
+  8-item hardcoded product array — no Firestore reads, no `/shop/{id}` or
+  working `/listing/{id}` purchase flow existed despite
+  `SWIFT_MASTER_PROJECT_BLUEPRINT.md` describing these as already live.
+- **What changed:**
+  - `hosting/index.html` + new `hosting/app.js`: real client (Firebase Web
+    SDK v10, modular/ESM via CDN) reading live `shops`/`listings` from
+    Firestore (public reads already allowed by `docs/firestore.rules`, not
+    modified). Client-side router for `/`, `/shop/{id}`, `/listing/{id}`,
+    `/cart`, `/checkout`. Cart is `localStorage`-only, never authoritative.
+  - `firebase.json`: added hosting rewrites for `/shop/**`, `/cart`,
+    `/checkout` → `/index.html` (SPA fallback). `/listing/**` → function
+    rewrite unchanged.
+  - `functions/src/sharePreview.ts` (`renderListingPreview`): fixed
+    `SITE_ORIGIN` — was hardcoded to the dev project
+    (`swift-dev-3d3ae.web.app`), now `swift-d1baa.web.app`. Also extended
+    the server-rendered page with real Add to Cart / Buy Now buttons wired
+    to real listing price/stock (OG/Twitter meta tags for bots/crawlers
+    unchanged).
+  - Checkout calls the existing `calculateOrderFees` and `createOrder`
+    callables as-is — no changes to order/fee/inventory logic. Only
+    `paymentMethod: "SWIFT_WALLET"` is wired on web; MoPay is shown
+    disabled ("coming soon on web") pending the redirect-URL fix proposed
+    in Section 5.
+- **Verification:** `tsc --noEmit` PASS, `npm run build` PASS (full
+  `functions/` project, with the new `sharePreview.ts` in place — no other
+  files touched). `firebase.json` validated as well-formed JSON.
+  `hosting/app.js` syntax-checked as an ES module (`node --check`). No
+  Android/Gradle build involved (this batch is web-only). Live
+  `firebase deploy` / runtime verification on `swift-d1baa` NOT yet
+  performed as of this writing.
+- **Explicitly not done:** MoPay web payment (blocked on the RED proposal
+  above), delivery-inclusive checkout on web (`requiresDelivery` hardcoded
+  `false` from the web client), search/filtering, SEO structured data,
+  pagination, auth beyond anonymous sign-in.
+- **Status:** implemented, build-verified. NOT committed, NOT deployed —
+  awaiting explicit deploy step (see accompanying chat instructions).
 
 ### Batch 4 — CartStep/Error state cosmetic fix (2026-09-16)
 - **Classification:** GREEN (presentation-only, no logic change)

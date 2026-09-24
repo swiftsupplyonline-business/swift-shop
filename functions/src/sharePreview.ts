@@ -11,7 +11,9 @@ function escapeHtml(input: string): string {
 }
 
 const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.swiftshop.client";
-const SITE_ORIGIN = "https://swift-dev-3d3ae.web.app";
+// Firebase Functions provides GCLOUD_PROJECT for the project where this
+// function is deployed, so generated links stay inside that environment.
+const SITE_ORIGIN = `https://${process.env.GCLOUD_PROJECT}.web.app`;
 
 function renderPage(opts: {
   title: string;
@@ -19,12 +21,43 @@ function renderPage(opts: {
   imageUrl: string;
   pageUrl: string;
   deepLink: string | null;
+  listingId: string | null;
+  priceDisplay: string | null;
+  inStock: boolean;
 }): string {
-  const { title, description, imageUrl, pageUrl, deepLink } = opts;
+  const { title, description, imageUrl, pageUrl, deepLink, listingId, priceDisplay, inStock } = opts;
   const safeTitle = escapeHtml(title);
   const safeDescription = escapeHtml(description);
   const safeImage = escapeHtml(imageUrl);
   const safeUrl = escapeHtml(pageUrl);
+
+  // Real Add to Cart / Buy Now buttons only render when we have a real listing
+  // (i.e. not on the 404/error fallback pages). They call into the same
+  // app.js the rest of the site uses, so cart state and checkout are shared
+  // with the browse/shop pages — this page is not a separate mini-app.
+  const commerceButtons = listingId ? `
+  <div class="price">${priceDisplay ? escapeHtml(priceDisplay) : ""}</div>
+  <div class="actions">
+    <button class="btn secondary" id="addCartBtn" ${inStock ? "" : "disabled"}>Add to Cart</button>
+    <button class="btn primary" id="buyNowBtn" ${inStock ? "" : "disabled"}>Buy Now</button>
+  </div>
+  ${!inStock ? '<p class="oos">Out of stock</p>' : ""}
+  ` : "";
+
+  const commerceScript = listingId ? `
+  <script type="module">
+    import { addToCart } from "/app.js";
+    const id = ${JSON.stringify(listingId)};
+    const title = ${JSON.stringify(title)};
+    document.getElementById("addCartBtn")?.addEventListener("click", (e) => {
+      addToCart(id, title, 1);
+      e.target.textContent = "Added \u2713";
+    });
+    document.getElementById("buyNowBtn")?.addEventListener("click", () => {
+      addToCart(id, title, 1);
+      window.location.href = "/checkout";
+    });
+  </script>` : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -46,17 +79,26 @@ function renderPage(opts: {
     img { width: 100%; max-width: 320px; border-radius: 12px; margin-bottom: 20px; }
     h1 { font-size: 20px; margin: 0 0 8px; }
     p { color: #555; margin: 0 0 24px; }
-    a.btn { display: block; padding: 14px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-bottom: 12px; }
-    a.primary { background: #1b6ef3; color: white; }
-    a.secondary { background: #eee; color: #1a1a1a; }
+    .price { font-size: 18px; font-weight: 700; color: #1b6ef3; margin-bottom: 16px; }
+    .actions { display: flex; gap: 10px; margin-bottom: 20px; }
+    .btn { flex: 1; padding: 14px; border-radius: 10px; border: none; font-weight: 600; font-size: 15px; cursor: pointer; }
+    .btn.primary { background: #1b6ef3; color: white; }
+    .btn.secondary { background: #eee; color: #1a1a1a; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    a.btn { display: block; text-decoration: none; margin-bottom: 12px; }
+    a.btn.primary { background: #1b6ef3; color: white; }
+    a.btn.secondary { background: #eee; color: #1a1a1a; }
+    .oos { color: #c00; font-size: 13px; margin-top: -10px; }
   </style>
 </head>
 <body>
   ${safeImage ? `<img src="${safeImage}" alt="${safeTitle}">` : ""}
   <h1>${safeTitle}</h1>
   <p>${safeDescription}</p>
-  ${deepLink ? `<a class="btn primary" href="${escapeHtml(deepLink)}">Open in SwiftShop</a>` : ""}
+  ${commerceButtons}
+  ${deepLink ? `<a class="btn secondary" href="${escapeHtml(deepLink)}">Open in SwiftShop app</a>` : ""}
   <a class="btn secondary" href="${PLAY_STORE_URL}">Get the SwiftShop app</a>
+  ${commerceScript}
 </body>
 </html>`;
 }
@@ -71,7 +113,10 @@ export const renderListingPreview = functions.onRequest(async (req, res) => {
       description: "Buy and sell in Maseru",
       imageUrl: "",
       pageUrl: SITE_ORIGIN,
-      deepLink: null
+      deepLink: null,
+      listingId: null,
+      priceDisplay: null,
+      inStock: false
     }));
     return;
   }
@@ -84,7 +129,10 @@ export const renderListingPreview = functions.onRequest(async (req, res) => {
         description: "This listing may have been removed.",
         imageUrl: "",
         pageUrl: `${SITE_ORIGIN}/listing/${listingId}`,
-        deepLink: null
+        deepLink: null,
+        listingId: null,
+        priceDisplay: null,
+        inStock: false
       }));
       return;
     }
@@ -96,13 +144,17 @@ export const renderListingPreview = functions.onRequest(async (req, res) => {
     const priceMinorUnits: number = data.priceMinorUnits || 0;
     const priceCurrency: string = data.priceCurrency || "LSL";
     const priceDisplay = `${priceCurrency} ${(priceMinorUnits / 100).toFixed(2)}`;
+    const inStock = (data.isAvailable === true) && ((data.stockQuantity || 0) > 0);
 
     res.status(200).send(renderPage({
       title: `${title} — ${priceDisplay}`,
       description,
       imageUrl,
       pageUrl: `${SITE_ORIGIN}/listing/${listingId}`,
-      deepLink: `swiftshop://listing/${listingId}`
+      deepLink: `swiftshop://listing/${listingId}`,
+      listingId,
+      priceDisplay,
+      inStock
     }));
   } catch (err) {
     res.status(500).send(renderPage({
@@ -110,7 +162,73 @@ export const renderListingPreview = functions.onRequest(async (req, res) => {
       description: "Something went wrong loading this listing.",
       imageUrl: "",
       pageUrl: SITE_ORIGIN,
-      deepLink: null
+      deepLink: null,
+      listingId: null,
+      priceDisplay: null,
+      inStock: false
+    }));
+  }
+});
+
+export const renderShopPreview = functions.onRequest(async (req, res) => {
+  const match = req.path.match(/\/shop\/([^/]+)/);
+  const shopId = match ? match[1] : null;
+
+  if (!shopId) {
+    res.status(404).send(renderPage({
+      title: "SwiftShop",
+      description: "Buy and sell in Maseru",
+      imageUrl: "",
+      pageUrl: SITE_ORIGIN,
+      deepLink: null,
+      listingId: null,
+      priceDisplay: null,
+      inStock: false
+    }));
+    return;
+  }
+
+  try {
+    const doc = await admin.firestore().collection("shops").doc(shopId).get();
+    if (!doc.exists) {
+      res.status(404).send(renderPage({
+        title: "Shop not found",
+        description: "This shop may have been removed.",
+        imageUrl: "",
+        pageUrl: `${SITE_ORIGIN}/shop/${shopId}`,
+        deepLink: null,
+        listingId: null,
+        priceDisplay: null,
+        inStock: false
+      }));
+      return;
+    }
+
+    const data = doc.data()!;
+    const name: string = data.name || "SwiftShop Shop";
+    const description: string = data.description || "Check out this shop on SwiftShop";
+    const imageUrl: string = data.coverUrl || data.logoUrl || "";
+
+    res.status(200).send(renderPage({
+      title: name,
+      description,
+      imageUrl,
+      pageUrl: `${SITE_ORIGIN}/shop/${shopId}`,
+      deepLink: `swiftshop://shop/${shopId}`,
+      listingId: null,
+      priceDisplay: null,
+      inStock: false
+    }));
+  } catch (err) {
+    res.status(500).send(renderPage({
+      title: "SwiftShop",
+      description: "Something went wrong loading this shop.",
+      imageUrl: "",
+      pageUrl: SITE_ORIGIN,
+      deepLink: null,
+      listingId: null,
+      priceDisplay: null,
+      inStock: false
     }));
   }
 });

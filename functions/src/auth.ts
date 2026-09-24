@@ -39,6 +39,7 @@ export const provisionNewUser = onDocumentCreated({
                 transaction.set(profileRef, {
                     uid,
                     displayName: userData?.displayName || "",
+                    displayName_lowercase: (userData?.displayName || "").toLowerCase(),
                     avatarUrl: userData?.photoUrl || "",
                     tier: "BASIC",
                     followerCount: 0,

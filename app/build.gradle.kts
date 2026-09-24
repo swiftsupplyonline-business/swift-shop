@@ -84,7 +84,6 @@ dependencies {
     // Core modules
     implementation(project(":core:common"))
     implementation(project(":core:model"))
-    implementation(project(":core:network"))
     implementation(project(":core:database"))
     implementation(project(":core:datastore"))
     implementation(project(":core:ui"))
@@ -95,7 +94,6 @@ dependencies {
     implementation(project(":data:repositories"))
     implementation(project(":data:firebase"))
     implementation(project(":data:local"))
-    implementation(project(":data:remote"))
 
     // Domain modules
     implementation(project(":domain:auth"))
@@ -149,7 +147,11 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.bundles.firebase)
 
-    // Coroutines
+    // Coil (GIF support)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.gif)
+
+// Coroutines
     implementation(libs.bundles.coroutines)
 
     // Timber

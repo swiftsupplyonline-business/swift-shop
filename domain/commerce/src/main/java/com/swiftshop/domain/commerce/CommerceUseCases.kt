@@ -2,6 +2,7 @@ package com.swiftshop.domain.commerce
 
 import com.swiftshop.core.model.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 
 // ─── Entitlement Rules (driven by data, not hard-coded) ──────────────────────
 
@@ -94,7 +95,7 @@ interface CommerceRepository {
     suspend fun getShop(shopId: String): Result<Shop>
     suspend fun createShop(shop: Shop): Result<String>
     suspend fun updateShop(shop: Shop): Result<Unit>
-    suspend fun deleteShop(shopId: String): Result<Unit> = Result.success(Unit)
+    suspend fun deleteShop(shopId: String): Result<Unit> = Result.failure(NotImplementedError("Shop deletion is not yet implemented backend-side"))
 
     // Listings
     fun getShopListings(shopId: String, page: Int, pageSize: Int): Flow<List<Listing>>
@@ -103,6 +104,7 @@ interface CommerceRepository {
     suspend fun getUserListings(userId: String): Result<List<Listing>>
     fun observeUserListings(userId: String): Flow<List<Listing>> = kotlinx.coroutines.flow.emptyFlow()
     suspend fun searchListings(query: String): Result<List<Listing>>
+    suspend fun searchShops(query: String): Result<List<Shop>>
     suspend fun createListing(listing: Listing): Result<String>
     suspend fun updateListing(listing: Listing): Result<Unit>
     suspend fun deleteListing(listingId: String): Result<Unit>
@@ -188,6 +190,10 @@ class GetUserListingsUseCase(private val repository: CommerceRepository) {
 
 class SearchListingsUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(query: String): Result<List<Listing>> = repository.searchListings(query)
+}
+
+class SearchShopsUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(query: String): Result<List<Shop>> = repository.searchShops(query)
 }
 
 class LikeListingUseCase(private val repository: CommerceRepository) {
@@ -285,4 +291,46 @@ class UpdateShopUseCase(private val repository: CommerceRepository) {
 
 class DeleteListingUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(listingId: String): Result<Unit> = repository.deleteListing(listingId)
+}
+
+class CreateListingUseCase(
+    private val repository: CommerceRepository,
+    private val mediaUploader: com.swiftshop.core.media.MediaUploader
+) {
+    suspend operator fun invoke(
+        title: String,
+        description: String,
+        category: String,
+        price: MoneyAmount,
+        stockQuantity: Int,
+        imageUris: List<android.net.Uri>,
+        sellerId: String,
+        shopId: String
+    ): Result<String> {
+        val imageUrls = mutableListOf<String>()
+        for (uri in imageUris) {
+            val progress = mediaUploader.uploadImage(sellerId, uri).kotlinx.coroutines.flow.firstOrNull { it is com.swiftshop.core.media.MediaUploadProgress.Complete }
+            if (progress is com.swiftshop.core.media.MediaUploadProgress.Complete) {
+                imageUrls.add(progress.asset.url)
+            }
+        }
+        val listing = Listing(
+            title = title,
+            description = description,
+            category = category,
+            price = price,
+            stockQuantity = stockQuantity,
+            imageUrls = imageUrls,
+            sellerId = sellerId,
+            shopId = shopId
+        )
+        return repository.createListing(listing)
+    }
+}
+
+class CheckListingEligibilityUseCase {
+    sealed interface Result {
+        object Included : Result
+        object AdditionalFeeRequired : Result
+    }
 }
