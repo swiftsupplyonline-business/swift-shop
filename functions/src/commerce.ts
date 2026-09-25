@@ -826,6 +826,19 @@ export const confirmMopayPayment = onCall(async (request) => {
             if (!orderDoc.exists) throw new Error("Order not found");
             const order = orderDoc.data()!;
 
+            // IDEMPOTENCY: a retried confirmation (e.g. an admin re-submitting after a
+            // lost response, or a duplicate call) for the same payment must succeed
+            // silently rather than error, or callers with their own retry logic will
+            // treat an already-successful confirmation as a failure. Only short-circuit
+            // when the *same* paymentId is being confirmed again; a different paymentId
+            // against an already-CONFIRMED order is a real conflict, not a retry.
+            if (order.status === "CONFIRMED") {
+                if (order.paymentId === paymentId) {
+                    return; // already processed with this exact payment — no-op success
+                }
+                throw new Error(`Order ${orderId} is already CONFIRMED with a different paymentId (${order.paymentId}); refusing to overwrite with ${paymentId}.`);
+            }
+
             if (order.status !== "PENDING") throw new Error("Order not in PENDING state");
 
             // Create Ledger Entry for external payment
