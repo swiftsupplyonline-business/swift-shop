@@ -36,11 +36,7 @@
                                          "function":  "renderShopPreview"
                                      },
                                      {
-                                         "source":  "/cart",
-                                         "destination":  "/index.html"
-                                     },
-                                     {
-                                         "source":  "/checkout",
+                                         "source":  "**",
                                          "destination":  "/index.html"
                                      }
                                  ]

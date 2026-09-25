@@ -1,6 +1,6 @@
 // SwiftShop Web – real Firestore-backed marketplace client.
-// Loaded as a module by index.html (browse / shop / cart / checkout routes)
-// and, in "widget" mode, by the server-rendered /listing/{id} page for the
+// Loaded as a module by index.html (browse / shop / cart / checkout / login / orders
+// routes) and, in "widget" mode, by the server-rendered /listing/{id} page for the
 // Add to Cart / Buy Now buttons.
 //
 // NOTE: this file only ever calls existing Cloud Functions (calculateOrderFees,
@@ -9,11 +9,15 @@
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
-  getAuth, onAuthStateChanged, signInAnonymously
+  getAuth, onAuthStateChanged, signOut,
+  signInWithEmailAndPassword, createUserWithEmailAndPassword
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
   getFunctions, httpsCallable
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js";
+import {
+  getFirestore, doc, setDoc, collection, query, where, getDocs
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 // Firebase Hosting exposes the configuration for the project serving this page.
 // This keeps Dev, Staging, and Production aligned with their Hosting target.
@@ -27,6 +31,7 @@ const firebaseConfig = await fetch("/__/firebase/init.json").then(async response
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const functions = getFunctions(app);
+const db = getFirestore(app);
 
 const CART_KEY = "swiftshop_cart_v1";
 const LSL = (minorUnits) => `M${(minorUnits / 100).toFixed(2)}`;
@@ -70,16 +75,85 @@ function updateCartBadge() {
   });
 }
 
-// ---------- Auth (anonymous – enough to call authenticated callables) ----------
+// ---------- Auth (real accounts – email/password, matching the Kotlin app) ----------
+//
+// Anonymous sign-in was removed. An anonymous user never gets a /users/{uid} doc,
+// so provisionNewUser (functions/src/auth.ts) never fires for them, so they never
+// get a /wallets/{uid} doc — meaning createOrder's SWIFT_WALLET path would always
+// fail with "Wallet not found" for an anonymous checkout. Real sign-in is required
+// before checkout, not just a nicety.
 
-function ensureSignedIn() {
-  return new Promise((resolve, reject) => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      unsub();
-      if (user) return resolve(user);
-      signInAnonymously(auth).then(cred => resolve(cred.user)).catch(reject);
-    });
+let currentUser = null;
+
+// AUTH_ERROR_MESSAGES maps the Firebase Auth error codes actually reachable from
+// the sign-in/sign-up form to plain text. Unmapped codes fall back to err.message.
+const AUTH_ERROR_MESSAGES = {
+  "auth/invalid-email": "That doesn't look like a valid email address.",
+  "auth/user-not-found": "No account found for that email.",
+  "auth/wrong-password": "Incorrect password.",
+  "auth/invalid-credential": "Incorrect email or password.",
+  "auth/email-already-in-use": "An account already exists for that email — try signing in instead.",
+  "auth/weak-password": "Password should be at least 6 characters.",
+  "auth/missing-password": "Enter a password.",
+  "auth/too-many-requests": "Too many attempts — please wait a moment and try again."
+};
+function authErrorMessage(err) {
+  return AUTH_ERROR_MESSAGES[err?.code] || err?.message || "Something went wrong.";
+}
+
+// Mirrors User.toFirestore() in FirebaseAuthRepository.kt exactly — same field set,
+// same numeric (not serverTimestamp) createdAt/updatedAt — so a web sign-up produces
+// a /users/{uid} doc identical in shape to one created by the Android app, and the
+// existing security rule's `hasOnly([...])` allow-list on create is satisfied.
+async function provisionUserDoc(uid, email, displayName) {
+  const now = Date.now();
+  await setDoc(doc(db, "users", uid), {
+    uid,
+    email,
+    phoneNumber: "",
+    displayName,
+    photoUrl: "",
+    tier: "BASIC",
+    isVerified: false,
+    accountStatus: "ACTIVE",
+    createdAt: now,
+    updatedAt: now
   });
+}
+
+async function signIn(email, password) {
+  const cred = await signInWithEmailAndPassword(auth, email, password);
+  return cred.user;
+}
+async function signUp(email, password, displayName) {
+  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  await provisionUserDoc(cred.user.uid, email, displayName);
+  return cred.user;
+}
+async function doSignOut() {
+  await signOut(auth);
+  navigate("/");
+}
+
+// Route guard for pages that require a real signed-in account (checkout, orders).
+// Returns the current user, or redirects to /login?next=<path> and returns null.
+function requireAccount(returnPath) {
+  if (currentUser) return currentUser;
+  navigate(`/login?next=${encodeURIComponent(returnPath)}`);
+  return null;
+}
+
+function updateAccountUI() {
+  const el = document.getElementById("accountLink");
+  if (!el) return;
+  if (currentUser) {
+    el.textContent = currentUser.displayName || currentUser.email || "Account";
+    el.setAttribute("href", "/orders");
+  } else {
+    el.textContent = "Sign in";
+    el.setAttribute("href", "/login");
+  }
+  document.getElementById("signOutBtn")?.style && (document.getElementById("signOutBtn").style.display = currentUser ? "inline-flex" : "none");
 }
 
 // ---------- Data (server-backed marketplace API) ----------
@@ -135,6 +209,17 @@ async function fetchListing(listingId) {
   return (data.listings || []).find(l => l.id === listingId) || null;
 }
 
+// Direct Firestore read (not through /api/marketplace, which is public/unauthenticated
+// listing+shop data only): /orders/{orderId} rules allow a signed-in user to read any
+// order where they're the buyer or seller, so this is a normal client-side query, not
+// a new Cloud Function.
+async function fetchMyOrders(uid) {
+  const snap = await getDocs(query(collection(db, "orders"), where("buyerId", "==", uid)));
+  const orders = snap.docs.map(d => d.data());
+  orders.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+  return orders;
+}
+
 // ---------- Rendering helpers ----------
 
 function escapeHtml(s) {
@@ -175,6 +260,30 @@ function shopCard(s) {
       <h3>${escapeHtml(s.name || "Shop")}</h3>
       <p>${escapeHtml(s.category || "")}</p>
     </a>`;
+}
+
+const ORDER_STATUS_LABEL = {
+  RESERVED: "Reserved",
+  PENDING: "Payment pending",
+  CONFIRMED: "Confirmed",
+  CANCELLED: "Cancelled",
+  REFUNDED: "Refunded"
+};
+
+function orderRow(o) {
+  const itemsSummary = (o.items || []).map(i => `${i.quantity}× ${escapeHtml(i.title)}`).join(", ");
+  const dateStr = o.createdAt?.toMillis
+    ? new Date(o.createdAt.toMillis()).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })
+    : "";
+  return `
+    <div class="order-row">
+      <div class="order-row-top">
+        <span class="order-status status-${escapeHtml((o.status || "").toLowerCase())}">${escapeHtml(ORDER_STATUS_LABEL[o.status] || o.status || "Unknown")}</span>
+        <span class="order-date">${escapeHtml(dateStr)}</span>
+      </div>
+      <div class="order-items">${itemsSummary}</div>
+      <div class="order-total">${LSL(o.totalMinorUnits || 0)}</div>
+    </div>`;
 }
 
 // ---------- Views ----------
@@ -352,10 +461,13 @@ async function renderCheckout(root) {
     root.innerHTML = `<div class="empty">Your cart is empty. <a class="cta" href="/">Browse listings</a></div>`;
     return;
   }
+
+  const user = requireAccount("/checkout");
+  if (!user) return; // requireAccount already redirected to /login?next=/checkout
+
   root.innerHTML = `<div class="loading">Calculating totals…</div>`;
 
   try {
-    await ensureSignedIn();
     const calculateOrderFees = httpsCallable(functions, "calculateOrderFees");
     const { data: fees } = await calculateOrderFees({
       items: items.map(i => ({ listingId: i.listingId, quantity: i.quantity, title: i.title })),
@@ -398,7 +510,7 @@ async function renderCheckout(root) {
           <div class="success">
             <h1>Order placed 🎉</h1>
             <p>Order ID: ${escapeHtml(result.orderId)}</p>
-            <a class="cta" href="/">Continue browsing</a>
+            <a class="cta" href="/orders">View your orders</a>
           </div>`;
       } catch (err) {
         msg.textContent = `Order failed: ${err.message}`;
@@ -406,6 +518,73 @@ async function renderCheckout(root) {
     });
   } catch (err) {
     root.innerHTML = `<div class="error">Couldn't prepare checkout. ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderLogin(root, params) {
+  const next = params.get("next") || "/";
+  let mode = "signin"; // or "signup"
+
+  function paint() {
+    root.innerHTML = `
+      <div class="auth-form">
+        <h1>${mode === "signin" ? "Sign in" : "Create your account"}</h1>
+        <p class="sub">${mode === "signin" ? "New to SwiftShop?" : "Already have an account?"}
+          <button type="button" class="linklike" id="modeToggle">${mode === "signin" ? "Create an account" : "Sign in instead"}</button>
+        </p>
+        <form id="authForm">
+          ${mode === "signup" ? `<label>Name<input type="text" id="displayName" required autocomplete="name"></label>` : ""}
+          <label>Email<input type="email" id="email" required autocomplete="email"></label>
+          <label>Password<input type="password" id="password" required minlength="6" autocomplete="${mode === "signin" ? "current-password" : "new-password"}"></label>
+          <button class="btn primary full" type="submit">${mode === "signin" ? "Sign in" : "Create account"}</button>
+          <div id="authMsg" class="error" style="display:none;padding:12px 0 0"></div>
+        </form>
+      </div>`;
+
+    root.querySelector("#modeToggle").addEventListener("click", () => {
+      mode = mode === "signin" ? "signup" : "signin";
+      paint();
+    });
+
+    root.querySelector("#authForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = root.querySelector("#authMsg");
+      msg.style.display = "none";
+      const email = root.querySelector("#email").value.trim();
+      const password = root.querySelector("#password").value;
+      const submitBtn = root.querySelector("button[type=submit]");
+      submitBtn.disabled = true;
+      try {
+        if (mode === "signin") {
+          await signIn(email, password);
+        } else {
+          const displayName = root.querySelector("#displayName").value.trim();
+          await signUp(email, password, displayName);
+        }
+        navigate(next);
+      } catch (err) {
+        msg.textContent = authErrorMessage(err);
+        msg.style.display = "block";
+        submitBtn.disabled = false;
+      }
+    });
+  }
+
+  paint();
+}
+
+async function renderOrders(root) {
+  const user = requireAccount("/orders");
+  if (!user) return;
+
+  root.innerHTML = `<div class="loading">Loading your orders…</div>`;
+  try {
+    const orders = await fetchMyOrders(user.uid);
+    root.innerHTML = `
+      <h1>Your Orders</h1>
+      ${orders.length ? `<div class="order-list">${orders.map(orderRow).join("")}</div>` : `<div class="empty">No orders yet. <a class="cta" href="/">Start browsing</a></div>`}`;
+  } catch (err) {
+    root.innerHTML = `<div class="error">Couldn't load your orders. ${escapeHtml(err.message)}</div>`;
   }
 }
 
@@ -420,11 +599,15 @@ function route() {
   const root = document.getElementById("app");
   if (!root) return;
   const path = location.pathname;
+  const params = new URLSearchParams(location.search);
   updateCartBadge();
+  updateAccountUI();
 
   if (path === "/" || path === "") return renderBrowse(root);
   if (path === "/cart") return renderCart(root);
   if (path === "/checkout") return renderCheckout(root);
+  if (path === "/login") return renderLogin(root, params);
+  if (path === "/orders") return renderOrders(root);
 
   let m = path.match(/^\/shop\/([^/]+)\/?$/);
   if (m) return renderShop(root, m[1]);
@@ -442,6 +625,9 @@ document.addEventListener("click", (e) => {
   const catBtn = e.target.closest(".categories .cat");
   if (catBtn) { filterBrowse(catBtn.dataset.cat); return; }
 
+  const signOutBtn = e.target.closest("#signOutBtn");
+  if (signOutBtn) { e.preventDefault(); doSignOut(); return; }
+
   const a = e.target.closest("a[href^='/']");
   if (!a) return;
   e.preventDefault();
@@ -451,6 +637,13 @@ document.addEventListener("click", (e) => {
 window.addEventListener("popstate", route);
 
 document.addEventListener("DOMContentLoaded", () => {
+  // Runs once at boot and on every future auth change (sign in/out from any tab
+  // action) — not the one-shot ensureSignedIn() the anonymous-auth version used.
+  onAuthStateChanged(auth, (user) => {
+    currentUser = user;
+    updateAccountUI();
+  });
+
   updateCartBadge();
   route();
   document.getElementById("search")?.addEventListener("input", (e) => {

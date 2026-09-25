@@ -62,6 +62,24 @@ main{max-width:1180px;margin:auto;padding:26px 22px 100px}
 
 .toast{position:fixed;bottom:24px;left:50%;transform:translate(-50%,20px);background:#111;color:#fff;padding:12px 17px;border-radius:999px;opacity:0;pointer-events:none;z-index:100;transition:.3s}.toast.show{opacity:1;transform:translate(-50%,0)}
 
+.full{width:100%}
+.linklike{background:none;border:0;padding:0;color:#111;font-weight:800;text-decoration:underline;cursor:pointer}
+.auth-form{max-width:420px;margin:20px auto;background:#fff;border:1px solid var(--line);border-radius:26px;padding:32px}
+.auth-form h1{font-size:28px;letter-spacing:-.05em;margin:0 0 6px}
+.auth-form label{display:block;margin-top:16px;font-size:13px;font-weight:700;color:#555}
+.auth-form input{width:100%;margin-top:6px;border:1px solid var(--line);border-radius:12px;padding:12px 14px;outline:none;font-size:15px}
+.auth-form button[type=submit]{margin-top:22px}
+.order-list{margin-top:20px;display:flex;flex-direction:column;gap:12px}
+.order-row{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px}
+.order-row-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.order-status{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:5px 10px;border-radius:99px;background:#eee}
+.order-status.status-confirmed{background:#111;color:#fff}
+.order-status.status-cancelled,.order-status.status-refunded{background:#fbe1e1;color:#a30000}
+.order-status.status-reserved,.order-status.status-pending{background:#fff3d6;color:#805700}
+.order-date{color:var(--muted);font-size:12px}
+.order-items{color:#444;font-size:14px}
+.order-total{font-weight:900;margin-top:8px}
+
 @keyframes float{0%,100%{transform:rotate(-14deg) translateY(0)}50%{transform:rotate(-10deg) translateY(-14px)}}
 @media(max-width:850px){.nav{gap:10px}.search{order:3;flex-basis:100%;max-width:none}.nav{height:auto;min-height:72px;flex-wrap:wrap;padding-bottom:10px}.hero{grid-template-columns:1fr;min-height:480px;padding:32px}.hero:before{right:-60px;bottom:-90px;top:auto}.hero:after{font-size:70px;right:18px}.grid{grid-template-columns:repeat(2,1fr)}.shops{grid-template-columns:1fr}.photo{height:180px}.detail{grid-template-columns:1fr;padding:20px}.detail-photo{min-height:280px}}
 @media(max-width:500px){main{padding:16px 14px 90px}.hero{border-radius:25px;padding:25px}.hero h1{font-size:44px}.grid{gap:10px}.product{border-radius:18px}.photo{height:155px}.info{padding:12px}.nav-actions .pill.fav{display:none}}
@@ -71,7 +89,7 @@ main{max-width:1180px;margin:auto;padding:26px 22px 100px}
 <header class="top"><nav class="nav">
 <a class="brand" href="/"><img src="https://raw.githubusercontent.com/swiftsupplyonline-business/swift-shop/master/app/src/main/res/drawable/swift_icon_flat.png">Swift</a>
 <div class="search"><span>⌕</span><input id="search" placeholder="Search products, shops..."></div>
-<div class="nav-actions"><button class="pill fav">♡</button><a class="pill" href="/cart">Bag <i data-cart-badge></i></a></div>
+<div class="nav-actions"><button class="pill fav">♡</button><a class="pill" id="accountLink" href="/login">Sign in</a><button type="button" class="pill" id="signOutBtn" style="display:none">Sign out</button><a class="pill" href="/cart">Bag <i data-cart-badge></i></a></div>
 </nav></header>
 <main id="app"><div class="loading">Loading…</div></main>
 <div class="toast" id="toast"></div>
