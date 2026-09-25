@@ -11,128 +11,121 @@ function escapeHtml(input: string): string {
 }
 
 const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.swiftshop.client";
+void PLAY_STORE_URL;
 // Firebase Functions provides GCLOUD_PROJECT for the project where this
 // function is deployed, so generated links stay inside that environment.
 const SITE_ORIGIN = `https://${process.env.GCLOUD_PROJECT}.web.app`;
 
-function renderPage(opts: {
+// The Hosting shell (hosting/index.html) — header, styles, <main id="app">,
+// and the <script src="/app.js"> that boots the real app — is the single
+// source of truth for what SwiftShop looks like. Smart links must open the
+// *actual* web app already on the right route, not a separate hand-built
+// mini-page, so a shared listing or shop looks and behaves identically to
+// browsing there directly. This fetches that shell once per warm function
+// instance and injects per-listing/per-shop <head> tags into it: crawlers
+// (which don't run JS) still see correct title/OG/Twitter tags in the raw
+// HTML, and real visitors get app.js's router picking up location.pathname
+// on load and rendering the live detail view, same as any in-app navigation.
+//
+// Trade-off: a warm instance can serve a shell cached from before the most
+// recent Hosting deploy until it next cold-starts. Acceptable for now given
+// how rarely the shell's own markup changes; revisit with a short TTL if
+// that becomes a problem.
+let shellHtmlPromise: Promise<string> | null = null;
+async function getShellHtml(): Promise<string> {
+  if (!shellHtmlPromise) {
+    shellHtmlPromise = fetch(`${SITE_ORIGIN}/index.html`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`shell fetch returned HTTP ${r.status}`);
+        return r.text();
+      })
+      .catch((err) => {
+        shellHtmlPromise = null; // let the next request retry instead of caching a failure
+        throw err;
+      });
+  }
+  return shellHtmlPromise;
+}
+
+function injectHead(shell: string, opts: {
   title: string;
   description: string;
   imageUrl: string;
   pageUrl: string;
   deepLink: string | null;
-  listingId: string | null;
-  priceDisplay: string | null;
-  inStock: boolean;
 }): string {
-  const { title, description, imageUrl, pageUrl, deepLink, listingId, priceDisplay, inStock } = opts;
+  const { title, description, imageUrl, pageUrl, deepLink } = opts;
   const safeTitle = escapeHtml(title);
   const safeDescription = escapeHtml(description);
   const safeImage = escapeHtml(imageUrl);
   const safeUrl = escapeHtml(pageUrl);
 
-  // Real Add to Cart / Buy Now buttons only render when we have a real listing
-  // (i.e. not on the 404/error fallback pages). They call into the same
-  // app.js the rest of the site uses, so cart state and checkout are shared
-  // with the browse/shop pages — this page is not a separate mini-app.
-  const commerceButtons = listingId ? `
-  <div class="price">${priceDisplay ? escapeHtml(priceDisplay) : ""}</div>
-  <div class="actions">
-    <button class="btn secondary" id="addCartBtn" ${inStock ? "" : "disabled"}>Add to Cart</button>
-    <button class="btn primary" id="buyNowBtn" ${inStock ? "" : "disabled"}>Buy Now</button>
-  </div>
-  ${!inStock ? '<p class="oos">Out of stock</p>' : ""}
-  ` : "";
+  let out = shell.replace(/<title>.*?<\/title>/s, `<title>${safeTitle}</title>`);
+  out = out.replace(
+    /<meta name="description" content=".*?">/s,
+    `<meta name="description" content="${safeDescription}">`
+  );
 
-  const commerceScript = listingId ? `
-  <script type="module">
-    import { addToCart } from "/app.js";
-    const id = ${JSON.stringify(listingId)};
-    const title = ${JSON.stringify(title)};
-    document.getElementById("addCartBtn")?.addEventListener("click", (e) => {
-      addToCart(id, title, 1);
-      e.target.textContent = "Added \u2713";
-    });
-    document.getElementById("buyNowBtn")?.addEventListener("click", () => {
-      addToCart(id, title, 1);
-      window.location.href = "/checkout";
-    });
-  </script>` : "";
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${safeTitle} — SwiftShop</title>
+  const metaTags = `
   <meta property="og:title" content="${safeTitle}">
   <meta property="og:description" content="${safeDescription}">
-  <meta property="og:image" content="${safeImage}">
+  ${safeImage ? `<meta property="og:image" content="${safeImage}">` : ""}
   <meta property="og:url" content="${safeUrl}">
   <meta property="og:type" content="product">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${safeTitle}">
   <meta name="twitter:description" content="${safeDescription}">
-  <meta name="twitter:image" content="${safeImage}">
-  <style>
-    body { font-family: -apple-system, Roboto, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 20px; text-align: center; color: #1a1a1a; }
-    img { width: 100%; max-width: 320px; border-radius: 12px; margin-bottom: 20px; }
-    h1 { font-size: 20px; margin: 0 0 8px; }
-    p { color: #555; margin: 0 0 24px; }
-    .price { font-size: 18px; font-weight: 700; color: #1b6ef3; margin-bottom: 16px; }
-    .actions { display: flex; gap: 10px; margin-bottom: 20px; }
-    .btn { flex: 1; padding: 14px; border-radius: 10px; border: none; font-weight: 600; font-size: 15px; cursor: pointer; }
-    .btn.primary { background: #1b6ef3; color: white; }
-    .btn.secondary { background: #eee; color: #1a1a1a; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    a.btn { display: block; text-decoration: none; margin-bottom: 12px; }
-    a.btn.primary { background: #1b6ef3; color: white; }
-    a.btn.secondary { background: #eee; color: #1a1a1a; }
-    .oos { color: #c00; font-size: 13px; margin-top: -10px; }
-  </style>
-</head>
-<body>
-  ${safeImage ? `<img src="${safeImage}" alt="${safeTitle}">` : ""}
-  <h1>${safeTitle}</h1>
-  <p>${safeDescription}</p>
-  ${commerceButtons}
-  ${deepLink ? `<a class="btn secondary" href="${escapeHtml(deepLink)}">Open in SwiftShop app</a>` : ""}
-  <a class="btn secondary" href="${PLAY_STORE_URL}">Get the SwiftShop app</a>
-  ${commerceScript}
-</body>
-</html>`;
+  ${safeImage ? `<meta name="twitter:image" content="${safeImage}">` : ""}
+</head>`;
+  out = out.replace("</head>", metaTags);
+
+  // Slim "open in app" banner for anyone arriving on a phone that has the
+  // native app — deep-links straight to this listing/shop, falls through to
+  // the live web page below it for everyone else.
+  if (deepLink) {
+    const banner = `<a href="${escapeHtml(deepLink)}" style="display:block;background:#111;color:#fff;text-align:center;padding:10px 14px;font:600 13px Inter,ui-sans-serif,sans-serif;text-decoration:none">Open in the SwiftShop app ↗</a>`;
+    out = out.replace("<body>", `<body>\n${banner}`);
+  }
+
+  return out;
+}
+
+function notFoundOrigin(): { title: string; description: string; imageUrl: string; pageUrl: string; deepLink: null } {
+  return {
+    title: "SwiftShop",
+    description: "Buy and sell in Maseru",
+    imageUrl: "",
+    pageUrl: SITE_ORIGIN,
+    deepLink: null
+  };
 }
 
 export const renderListingPreview = functions.onRequest(async (req, res) => {
   const match = req.path.match(/\/listing\/([^/]+)/);
   const listingId = match ? match[1] : null;
 
+  let shell: string;
+  try {
+    shell = await getShellHtml();
+  } catch (err) {
+    res.status(502).send("SwiftShop is temporarily unavailable. Please try the link again shortly.");
+    return;
+  }
+
   if (!listingId) {
-    res.status(404).send(renderPage({
-      title: "SwiftShop",
-      description: "Buy and sell in Maseru",
-      imageUrl: "",
-      pageUrl: SITE_ORIGIN,
-      deepLink: null,
-      listingId: null,
-      priceDisplay: null,
-      inStock: false
-    }));
+    res.status(404).send(injectHead(shell, notFoundOrigin()));
     return;
   }
 
   try {
     const doc = await admin.firestore().collection("listings").doc(listingId).get();
     if (!doc.exists) {
-      res.status(404).send(renderPage({
+      res.status(404).send(injectHead(shell, {
         title: "Listing not found",
         description: "This listing may have been removed.",
         imageUrl: "",
         pageUrl: `${SITE_ORIGIN}/listing/${listingId}`,
-        deepLink: null,
-        listingId: null,
-        priceDisplay: null,
-        inStock: false
+        deepLink: null
       }));
       return;
     }
@@ -144,28 +137,21 @@ export const renderListingPreview = functions.onRequest(async (req, res) => {
     const priceMinorUnits: number = data.priceMinorUnits || 0;
     const priceCurrency: string = data.priceCurrency || "LSL";
     const priceDisplay = `${priceCurrency} ${(priceMinorUnits / 100).toFixed(2)}`;
-    const inStock = (data.isAvailable === true) && ((data.stockQuantity || 0) > 0);
 
-    res.status(200).send(renderPage({
+    res.status(200).send(injectHead(shell, {
       title: `${title} — ${priceDisplay}`,
       description,
       imageUrl,
       pageUrl: `${SITE_ORIGIN}/listing/${listingId}`,
-      deepLink: `swiftshop://listing/${listingId}`,
-      listingId,
-      priceDisplay,
-      inStock
+      deepLink: `swiftshop://listing/${listingId}`
     }));
   } catch (err) {
-    res.status(500).send(renderPage({
+    res.status(500).send(injectHead(shell, {
       title: "SwiftShop",
       description: "Something went wrong loading this listing.",
       imageUrl: "",
       pageUrl: SITE_ORIGIN,
-      deepLink: null,
-      listingId: null,
-      priceDisplay: null,
-      inStock: false
+      deepLink: null
     }));
   }
 });
@@ -174,32 +160,28 @@ export const renderShopPreview = functions.onRequest(async (req, res) => {
   const match = req.path.match(/\/shop\/([^/]+)/);
   const shopId = match ? match[1] : null;
 
+  let shell: string;
+  try {
+    shell = await getShellHtml();
+  } catch (err) {
+    res.status(502).send("SwiftShop is temporarily unavailable. Please try the link again shortly.");
+    return;
+  }
+
   if (!shopId) {
-    res.status(404).send(renderPage({
-      title: "SwiftShop",
-      description: "Buy and sell in Maseru",
-      imageUrl: "",
-      pageUrl: SITE_ORIGIN,
-      deepLink: null,
-      listingId: null,
-      priceDisplay: null,
-      inStock: false
-    }));
+    res.status(404).send(injectHead(shell, notFoundOrigin()));
     return;
   }
 
   try {
     const doc = await admin.firestore().collection("shops").doc(shopId).get();
     if (!doc.exists) {
-      res.status(404).send(renderPage({
+      res.status(404).send(injectHead(shell, {
         title: "Shop not found",
         description: "This shop may have been removed.",
         imageUrl: "",
         pageUrl: `${SITE_ORIGIN}/shop/${shopId}`,
-        deepLink: null,
-        listingId: null,
-        priceDisplay: null,
-        inStock: false
+        deepLink: null
       }));
       return;
     }
@@ -209,26 +191,20 @@ export const renderShopPreview = functions.onRequest(async (req, res) => {
     const description: string = data.description || "Check out this shop on SwiftShop";
     const imageUrl: string = data.coverUrl || data.logoUrl || "";
 
-    res.status(200).send(renderPage({
+    res.status(200).send(injectHead(shell, {
       title: name,
       description,
       imageUrl,
       pageUrl: `${SITE_ORIGIN}/shop/${shopId}`,
-      deepLink: `swiftshop://shop/${shopId}`,
-      listingId: null,
-      priceDisplay: null,
-      inStock: false
+      deepLink: `swiftshop://shop/${shopId}`
     }));
   } catch (err) {
-    res.status(500).send(renderPage({
+    res.status(500).send(injectHead(shell, {
       title: "SwiftShop",
       description: "Something went wrong loading this shop.",
       imageUrl: "",
       pageUrl: SITE_ORIGIN,
-      deepLink: null,
-      listingId: null,
-      priceDisplay: null,
-      inStock: false
+      deepLink: null
     }));
   }
 });
