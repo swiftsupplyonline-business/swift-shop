@@ -25,9 +25,11 @@ function shareUrl(shopSlug: string, productSlug: string): string {
     return `${SITE_ORIGIN}/s/${encodeURIComponent(shopSlug)}/${encodeURIComponent(productSlug)}`;
 }
 
-function whatsappShareUrl(product: string, shop: string): string {
+function whatsappShareUrl(product: string, shop: string, whatsappNumber?: string): string {
     const message = `Hi, I want ${product} from ${shop}`;
-    return `https://wa.me/?text=${encodeURIComponent(message)}`;
+    const encodedMessage = encodeURIComponent(message);
+    const digits = String(whatsappNumber || "").replace(/\D/g, "");
+    return digits ? `https://wa.me/${digits}?text=${encodedMessage}` : `https://wa.me/?text=${encodedMessage}`;
 }
 
 function renderPage(opts: {
@@ -190,7 +192,7 @@ function listingResponse(
         priceCurrency,
         inStock,
         shopName,
-        whatsappUrl: whatsappShareUrl(title, shopName)
+        whatsappUrl: whatsappShareUrl(title, shopName, String(shop.whatsappNumber || ""))
     }));
 }
 

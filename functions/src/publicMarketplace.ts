@@ -60,6 +60,7 @@ const mapShop = (data: FirebaseFirestore.DocumentData, id: string) => ({
     id,
     shareSlug: String(data.shareSlug || normalizeShareSlug(data.name)),
     ownerId: String(data.ownerId || ""),
+    whatsappNumber: String(data.whatsappNumber || ""),
     name: String(data.name || ""),
     description: String(data.description || ""),
     logoUrl: String(data.logoUrl || ""),

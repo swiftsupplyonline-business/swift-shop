@@ -4,6 +4,13 @@ import { MopayClient, MOPAY_API_KEY } from "./mopay";
 import { resolveEntitlement } from "./entitlements";
 import { normalizeShareSlug } from "./shareSlug";
 
+function normalizeWhatsAppNumber(value: unknown): string {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "";
+    if (!/^\+?[1-9]\d{7,14}$/.test(raw)) return "";
+    return raw.replace(/^\+/, "");
+}
+
 /**
  * Calculates authoritative order fees server-side.
  *
@@ -1076,8 +1083,14 @@ export const createShop = onCall(async (request) => {
             // ----------------------------------------
 
             const shopId = db.collection("shops").doc().id;
+            const whatsappNumber = normalizeWhatsAppNumber(shop.whatsappNumber);
+            if (shop.whatsappNumber !== undefined && !whatsappNumber) {
+                throw new Error("whatsappNumber must be a valid international WhatsApp number");
+            }
+
             const newShop = {
                 ...shop,
+                whatsappNumber: whatsappNumber || "",
                 id: shopId,
                 ownerId: uid,
                 name_lowercase: shop.name?.toLowerCase() || "",
@@ -1124,7 +1137,7 @@ export const updateShop = onCall(async (request) => {
 
             const allowedUpdateKeys = [
                 "name", "description", "category", "logoUrl", "coverUrl",
-                "locationLat", "locationLng", "locationAddress", "isActive"
+                "locationLat", "locationLng", "locationAddress", "isActive", "whatsappNumber"
             ];
             const filteredUpdates: Record<string, any> = {};
             for (const key of allowedUpdateKeys) {
@@ -1136,6 +1149,12 @@ export const updateShop = onCall(async (request) => {
             if (filteredUpdates.name) {
                 filteredUpdates.name_lowercase = filteredUpdates.name.toLowerCase();
                 filteredUpdates.shareSlug = normalizeShareSlug(filteredUpdates.name);
+            }
+
+            if (filteredUpdates.whatsappNumber !== undefined) {
+                const whatsappNumber = normalizeWhatsAppNumber(filteredUpdates.whatsappNumber);
+                if (!whatsappNumber) throw new Error("whatsappNumber must be a valid international WhatsApp number");
+                filteredUpdates.whatsappNumber = whatsappNumber;
             }
 
             transaction.update(shopRef, {
