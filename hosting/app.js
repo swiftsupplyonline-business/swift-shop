@@ -143,10 +143,24 @@ function el(html) {
   return t.content.firstElementChild;
 }
 
-function listingCard(l) {
+function normalizeShareSlug(value) {
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+}
+
+function listingCard(l, shopById = new Map()) {
   const img = (l.imageUrls && l.imageUrls[0]) || "";
+  const shop = shopById.get(l.shopId);
+  const shopSlug = shop?.shareSlug || normalizeShareSlug(shop?.name || "shop");
+  const productSlug = l.shareSlug || normalizeShareSlug(l.title || l.id);
+  const sharePath = "/s/" + encodeURIComponent(shopSlug) + "/" + encodeURIComponent(productSlug);
   return `
-    <a class="card" href="/listing/${l.id}">
+    <a class="card" href="${sharePath}">
       <div class="card-img" style="background-image:url('${img}')"></div>
       <div class="card-body">
         <div class="card-title">${escapeHtml(l.title || "Untitled")}</div>
@@ -175,6 +189,7 @@ async function renderBrowse(root) {
   root.innerHTML = `<div class="loading">Loading marketplace…</div>`;
   try {
     const [listings, shops] = await Promise.all([fetchListings(), fetchShops()]);
+    const shopById = new Map(shops.map(shop => [shop.id, shop]));
     root.innerHTML = `
       <section>
         <h2>Shops</h2>
@@ -182,7 +197,7 @@ async function renderBrowse(root) {
       </section>
       <section>
         <h2>Latest listings</h2>
-        <div class="grid">${listings.length ? listings.map(listingCard).join("") : "<p class='empty'>No listings yet.</p>"}</div>
+        <div class="grid">${listings.length ? listings.map(l => listingCard(l, shopById)).join("") : "<p class='empty'>No listings yet.</p>"}</div>
       </section>`;
   } catch (err) {
     root.innerHTML = `<div class="error">Couldn't load the marketplace. ${escapeHtml(err.message)}</div>`;
@@ -366,6 +381,10 @@ document.addEventListener("click", (e) => {
   navigate(a.getAttribute("href"));
 });
 window.addEventListener("popstate", route);
-document.addEventListener("DOMContentLoaded", () => { updateCartBadge(); route(); });
+document.addEventListener("DOMContentLoaded", () => {
+  updateCartBadge();
+  if (location.pathname.startsWith("/s/") && document.body.dataset.sharePage === "true") return;
+  route();
+});
 
 export { addToCart, cartCount };
