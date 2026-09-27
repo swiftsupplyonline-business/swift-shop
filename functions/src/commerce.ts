@@ -2,6 +2,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { MopayClient, MOPAY_API_KEY } from "./mopay";
 import { resolveEntitlement } from "./entitlements";
+import { normalizeShareSlug } from "./shareSlug";
 
 /**
  * Calculates authoritative order fees server-side.
@@ -962,6 +963,7 @@ export const createListing = onCall(async (request) => {
                 commentCount: 0,
                 rankingScore: 0,
                 title_lowercase: clientOwnedFields.title?.toLowerCase() || "",
+                shareSlug: normalizeShareSlug(clientOwnedFields.title),
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             };
@@ -1079,6 +1081,7 @@ export const createShop = onCall(async (request) => {
                 id: shopId,
                 ownerId: uid,
                 name_lowercase: shop.name?.toLowerCase() || "",
+                shareSlug: normalizeShareSlug(shop.name),
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             };
@@ -1132,6 +1135,7 @@ export const updateShop = onCall(async (request) => {
 
             if (filteredUpdates.name) {
                 filteredUpdates.name_lowercase = filteredUpdates.name.toLowerCase();
+                filteredUpdates.shareSlug = normalizeShareSlug(filteredUpdates.name);
             }
 
             transaction.update(shopRef, {
@@ -1191,6 +1195,7 @@ export const updateListing = onCall(async (request) => {
 
             if (filteredUpdates.title) {
                 filteredUpdates.title_lowercase = filteredUpdates.title.toLowerCase();
+                filteredUpdates.shareSlug = normalizeShareSlug(filteredUpdates.title);
             }
 
             transaction.update(listingRef, {
