@@ -28,6 +28,10 @@
                                          "function":  "publicMarketplace"
                                      },
                                      {
+                                         "source":  "/pay/**",
+                                         "function":  "payPreview"
+                                     },
+                                     {
                                          "source":  "/s/**",
                                          "function":  "renderSharedListing"
                                      },

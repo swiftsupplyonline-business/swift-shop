@@ -1,5 +1,6 @@
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
+import { normalizeShareSlug } from "./shareSlug";
 
 /**
  * Triggered when a new user document is created in Firestore.
@@ -16,6 +17,8 @@ export const provisionNewUser = onDocumentCreated({
     const walletRef = db.collection("wallets").doc(uid);
     const profileRef = db.collection("profiles").doc(uid);
     const userData = event.data?.data();
+    const displayName = String(userData?.displayName || "").trim();
+    const whatsappNumber = String(userData?.whatsappNumber || "").trim();
 
     try {
         await db.runTransaction(async (transaction) => {
@@ -33,13 +36,24 @@ export const provisionNewUser = onDocumentCreated({
                 });
             }
 
+
+            const userRef = db.collection("users").doc(uid);
+            const userDoc = await transaction.get(userRef);
+            if (userDoc.exists) {
+                transaction.update(userRef, {
+                    shareSlug: normalizeShareSlug(displayName),
+                    whatsappNumber,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+            }
+
             const profileDoc = await transaction.get(profileRef);
             if (!profileDoc.exists) {
                 console.log(`Provisioning initial profile for user ${uid}.`);
                 transaction.set(profileRef, {
                     uid,
-                    displayName: userData?.displayName || "",
-                    displayName_lowercase: (userData?.displayName || "").toLowerCase(),
+                    displayName,
+                    displayName_lowercase: displayName.toLowerCase(),
                     avatarUrl: userData?.photoUrl || "",
                     tier: "BASIC",
                     followerCount: 0,
