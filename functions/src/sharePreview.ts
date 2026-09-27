@@ -110,7 +110,7 @@ function renderPage(opts: {
     .oos { color: #c00; font-size: 13px; }
   </style>
 </head>
-<body>
+<body data-share-page="true">
   ${safeImage ? `<img src="${safeImage}" alt="${safeTitle}" loading="eager">` : ""}
   <h1>${safeTitle}</h1>
   <p>${safeDescription}</p>
