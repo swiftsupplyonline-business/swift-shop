@@ -58,6 +58,7 @@ fun ListingDetailScreen(
     val isAdding by viewModel.isAddingToCart.collectAsState()
     val isOwner by viewModel.isOwner.collectAsState()
     val isDeleting by viewModel.isDeleting.collectAsState()
+    val sharedShop by viewModel.shop.collectAsState()
     val actionState by viewModel.actionState.collectAsState()
     val colors = MaterialTheme.swiftColors
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -151,7 +152,9 @@ fun ListingDetailScreen(
                                 }
                             }
                             IconButton(onClick = {
-                                val shareUrl = "https://swift-d1baa.web.app/listing/${listing.id}"
+                                val shopSlug = sharedShop?.name?.let(::normalizeShareSlug) ?: "shop"
+                                val productSlug = normalizeShareSlug(listing.title.ifBlank { listing.id })
+                                val shareUrl = "https://swift-dev-3d3ae.web.app/s/${Uri.encode(shopSlug)}/${Uri.encode(productSlug)}"
                                 val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(android.content.Intent.EXTRA_TEXT, "Check out ${listing.title} on SwiftShop: $shareUrl")
@@ -816,3 +819,12 @@ private fun CustomFieldRenderer(field: CustomField) {
 
 
 
+
+
+private fun normalizeShareSlug(value: String): String = value
+    .normalize(java.text.Normalizer.Form.NFKD)
+    .replace(Regex("\\p{M}+"), "")
+    .lowercase()
+    .replace(Regex("[^a-z0-9]+"), "-")
+    .trim('-')
+    .replace(Regex("-{2,}"), "-")

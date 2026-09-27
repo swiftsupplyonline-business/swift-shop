@@ -122,6 +122,17 @@ fun SwiftShopNavHost(
         ) { ListingDetailScreen(navController = navController) }
 
         composable(
+            route = Screen.SharedListing.route,
+            arguments = listOf(
+                navArgument("shopSlug") { type = NavType.StringType },
+                navArgument("productSlug") { type = NavType.StringType }
+            ),
+            deepLinks = listOf(
+                navDeepLink { uriPattern = "https://swift-dev-3d3ae.web.app/s/{shopSlug}/{productSlug}" }
+            )
+        ) { ListingDetailScreen(navController = navController) }
+
+        composable(
             route = Screen.RequestDelivery.route,
             arguments = listOf(navArgument("listingId") { type = NavType.StringType })
         ) { com.swiftshop.feature.delivery.RequestDeliveryScreen(navController = navController) }

@@ -61,7 +61,9 @@ class ListingDetailViewModel @Inject constructor(
     private val messagingRepository: com.swiftshop.domain.messaging.MessagingRepository
 ) : ViewModel() {
 
-    private val listingId: String = checkNotNull(savedStateHandle["listingId"])
+    private val listingId: String? = savedStateHandle["listingId"]
+    private val shopSlug: String? = savedStateHandle["shopSlug"]
+    private val productSlug: String? = savedStateHandle["productSlug"]
 
     private val _uiState = MutableStateFlow<ListingDetailState>(ListingDetailState.Loading)
     val uiState: StateFlow<ListingDetailState> = _uiState.asStateFlow()
@@ -122,7 +124,12 @@ class ListingDetailViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _uiState.value = ListingDetailState.Loading
-            getListing(listingId).fold(
+            val result = when {
+                !listingId.isNullOrBlank() -> getListing(listingId)
+                !shopSlug.isNullOrBlank() && !productSlug.isNullOrBlank() -> commerceRepository.getListingByShareSlugs(shopSlug, productSlug)
+                else -> Result.failure(IllegalArgumentException("Missing listing share-link parameters"))
+            }
+            result.fold(
                 onSuccess = { listing ->
                     _uiState.value = ListingDetailState.Loaded(listing)
                     loadShop(listing.shopId)

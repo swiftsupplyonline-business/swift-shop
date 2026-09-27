@@ -11,6 +11,9 @@ sealed class Screen(val route: String) {
     data object ListingDetail : Screen("listing/{listingId}") {
         fun createRoute(id: String) = "listing/$id"
     }
+    data object SharedListing : Screen("shared_listing/{shopSlug}/{productSlug}") {
+        fun createRoute(shopSlug: String, productSlug: String) = "shared_listing/$shopSlug/$productSlug"
+    }
     data object ShopDetail : Screen("shop/{shopId}") {
         fun createRoute(id: String) = "shop/$id"
     }

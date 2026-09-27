@@ -64,6 +64,8 @@ class OfflineFirstCommerceRepository @Inject constructor(
 
     override fun getDeliveryListings(shopId: String): Flow<List<Listing>> = remote.getDeliveryListings(shopId)
 
+    override suspend fun getListingByShareSlugs(shopSlug: String, productSlug: String) = remote.getListingByShareSlugs(shopSlug, productSlug)
+
     override suspend fun getListing(listingId: String) = runCatching {
         remote.getListing(listingId).getOrThrow()
     }.recoverCatching {

@@ -14,6 +14,15 @@ import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private fun normalizeShareSlug(value: String): String = value
+    .normalize(java.text.Normalizer.Form.NFKD)
+    .replace(Regex("\\p{M}+"), "")
+    .lowercase()
+    .replace(Regex("[^a-z0-9]+"), "-")
+    .trim('-')
+    .replace(Regex("-{2,}"), "-")
+
+
 
 @Singleton
 class FirebaseCommerceRepository @Inject constructor(
@@ -110,6 +119,28 @@ class FirebaseCommerceRepository @Inject constructor(
                 trySend(list)
             }
         awaitClose { subscription.remove() }
+    }
+
+    override suspend fun getListingByShareSlugs(shopSlug: String, productSlug: String): Result<Listing> = runCatching {
+        val normalizedShop = normalizeShareSlug(shopSlug)
+        val normalizedProduct = normalizeShareSlug(productSlug)
+        val candidates = firestore.collection("listings")
+            .whereEqualTo("shareSlug", normalizedProduct)
+            .limit(20)
+            .get().await()
+            .documents.toMutableList()
+        if (candidates.isEmpty()) {
+            candidates += firestore.collection("listings").limit(200).get().await().documents
+        }
+        for (doc in candidates) {
+            val item = doc.toObject(FirestoreListing::class.java) ?: continue
+            if (normalizeShareSlug(item.shareSlug.ifBlank { item.title }) != normalizedProduct || item.shopId.isBlank()) continue
+            val shop = firestore.collection("shops").document(item.shopId).get().await()
+            if (normalizeShareSlug(shop.getString("shareSlug") ?: shop.getString("name") ?: "") == normalizedShop) {
+                return@runCatching item.toDomain()
+            }
+        }
+        throw NoSuchElementException("Listing not found")
     }
 
     override suspend fun getListing(listingId: String): Result<Listing> = runCatching {
@@ -443,6 +474,7 @@ fun Shop.toUpdateMap() = mapOf(
 
 data class FirestoreListing(
     val id: String = "",
+    val shareSlug: String = "",
     val shopId: String = "",
     val sellerId: String = "",
     val title: String = "",
@@ -469,7 +501,7 @@ data class FirestoreListing(
 }
 
 fun Listing.toFirestore() = mapOf(
-    "id" to id, "shopId" to shopId, "sellerId" to sellerId, "title" to title, "description" to description,
+    "id" to id, "shareSlug" to normalizeShareSlug(title), "shopId" to shopId, "sellerId" to sellerId, "title" to title, "description" to description,
     "priceMinorUnits" to price.minorUnits, "priceCurrency" to price.currency,
     "imageUrls" to imageUrls, "videoUrl" to videoUrl, "category" to category, "tags" to tags,
     "listingType" to listingType.name, "isAvailable" to isAvailable, "isSponsored" to isSponsored,
