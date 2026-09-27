@@ -28,6 +28,10 @@
                                          "function":  "publicMarketplace"
                                      },
                                      {
+                                         "source":  "/s/**",
+                                         "function":  "renderSharedListing"
+                                     },
+                                     {
                                          "source":  "/listing/**",
                                          "function":  "renderListingPreview"
                                      },
