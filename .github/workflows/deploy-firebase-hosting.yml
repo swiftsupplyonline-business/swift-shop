@@ -1,4 +1,4 @@
-name: Deploy Swift Hosting
+name: Deploy Swift Dev Web
 
 on:
   push:
