@@ -122,9 +122,6 @@ function renderPage(opts: {
 </html>`;
 }
 
-function notFound(res: functions.Request, _reason: string): void {
-    // Kept as a helper target for future logging without exposing Firestore details.
-}
 
 async function findShopBySlug(db: FirebaseFirestore.Firestore, shopSlug: string): Promise<FirebaseFirestore.QueryDocumentSnapshot | null> {
     const direct = await db.collection("shops").where("shareSlug", "==", shopSlug).limit(2).get();
