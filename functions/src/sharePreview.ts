@@ -17,7 +17,7 @@ const SHARE_DESCRIPTION = "Order now - Delivery in Maseru";
 
 function absoluteUrl(value: string): string {
     if (!value) return "";
-    if (/^https?:\\/\\//i.test(value)) return value;
+    if (/^https?:\/\//i.test(value)) return value;
     return new URL(value.startsWith("/") ? value : `/${value}`, SITE_ORIGIN).toString();
 }
 
@@ -154,7 +154,7 @@ async function findListingBySlug(
 }
 
 function listingResponse(
-    res: functions.Response,
+    res: any,
     listingDoc: FirebaseFirestore.QueryDocumentSnapshot,
     shopDoc: FirebaseFirestore.QueryDocumentSnapshot
 ): void {
