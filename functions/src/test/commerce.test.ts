@@ -1,6 +1,6 @@
 import firebaseTest from 'firebase-functions-test';
 import * as admin from 'firebase-admin';
-import { createOrder } from '../commerce';
+import { createOrder, cancelOrder, confirmDelivery } from '../commerce';
 import { MopayClient } from '../mopay';
 
 const testEnv = firebaseTest({
