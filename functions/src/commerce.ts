@@ -30,15 +30,36 @@ export const calculateOrderFees = onCall(async (request) => {
     let subtotal = 0;
     let shopId = "";
     const db = admin.firestore();
+    const validItems: any[] = [];
+    const removedItems: Array<{ listingId: string; title: string; reason: string }> = [];
 
     for (const item of items) {
         const listingDoc = await db.collection("listings").doc(item.listingId).get();
         if (!listingDoc.exists) {
-            const itemTitle = item.title || "Unknown Item";
-            throw new HttpsError("not-found", `Item "${itemTitle}" is no longer available. Please remove it from your cart.`);
+            removedItems.push({
+                listingId: item.listingId,
+                title: item.title || "Unknown Item",
+                reason: "Listing is no longer available."
+            });
+            continue;
         }
+
         const listing = listingDoc.data()!;
-        subtotal += (listing.priceMinorUnits || 0) * (item.quantity || 1);
+        if (listing.isAvailable !== true) {
+            removedItems.push({
+                listingId: item.listingId,
+                title: listing.title || item.title || "Unknown Item",
+                reason: "Listing is no longer available."
+            });
+            continue;
+        }
+
+        const quantity = item.quantity || 1;
+        subtotal += (listing.priceMinorUnits || 0) * quantity;
+        validItems.push({
+            ...item,
+            title: listing.title || item.title || "Unknown Item"
+        });
 
         if (!shopId) {
             shopId = listing.shopId;
@@ -55,28 +76,20 @@ export const calculateOrderFees = onCall(async (request) => {
             const deliveryListing = deliveryListingDoc.data()!;
             if (deliveryListing.listingType !== "DELIVER") throw new HttpsError("failed-precondition", "Invalid delivery listing type");
             if (!deliveryListing.isAvailable) throw new HttpsError("failed-precondition", "Delivery service is currently unavailable");
-            // Delivery provider may belong to a different shop than the merchant ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â cross-shop is valid.
+            // Delivery provider may belong to a different shop than the merchant — cross-shop delivery is valid.
             deliveryFee = deliveryListing.priceMinorUnits || 0;
         } else {
-            // No listing selected Ã¢â‚¬â€ fee is 0; authoritative fee comes from the accepted request.
+            // No listing selected — fee is 0; authoritative fee comes from the accepted request.
             deliveryFee = 0;
         }
     }
-
-
-
-
-
-
-
-
-
-
 
     const platformFee = Math.floor((subtotal * 15) / 1000);
     const total = subtotal + deliveryFee + platformFee;
 
     return {
+        items: validItems,
+        removedItems,
         subtotalMinorUnits: subtotal,
         deliveryFeeMinorUnits: deliveryFee,
         platformFeeMinorUnits: platformFee,
