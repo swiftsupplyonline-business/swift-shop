@@ -4,7 +4,15 @@
  * Barrel export. Import from "./listing" in all Cloud Function files.
  *
  * Usage:
- *   import { assertPurchasable, reserveInventory, validateCreateInput } from "./listing";
+ *   import {
+ *     assertPurchasable,
+ *     reserveInventory,
+ *     commitInventory,
+ *     restockInventory,
+ *     validateCreateInput,
+ *     recordActivity,
+ *     ListingActivityType,
+ *   } from "./listing";
  */
 
 export * from "./types";
@@ -13,3 +21,4 @@ export * from "./slug";
 export * from "./lifecycle";
 export * from "./inventory";
 export * from "./ownership";
+export * from "./activity";

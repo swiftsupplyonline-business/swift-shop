@@ -13,13 +13,20 @@
  *  reserve(qty)  → available -= qty; reservedQuantity += qty
  *  release(qty)  → reservedQuantity -= qty (order cancelled / payment failed)
  *  commit(qty)   → stockQuantity -= qty; reservedQuantity -= qty (order confirmed)
+ *  restock(qty)  → stockQuantity += qty; status re-derived
  *
  * UNLIMITED-mode listings skip stock checks entirely.
- * NOT_APPLICABLE listings reject all inventory operations.
+ * NOT_APPLICABLE listings reject reserve/commit/release operations.
+ *
+ * commerce.ts integration points:
+ *  createOrder         → reserveInventory()
+ *  verifyMopayPayment  → commitInventory() + incrementCommitment()
+ *  cancelOrder         → releaseInventory()
+ *  cleanupExpiredReservations → releaseInventory()
  */
 
 import * as admin from "firebase-admin";
-import { InventoryMode, ListingStatus } from "./types";
+import { InventoryMode, ListingStatus, ListingType, LISTING_TYPE_WORKFLOWS } from "./types";
 import { deriveStatusFromStock } from "./lifecycle";
 import { isAvailableFromStatus } from "./types";
 
@@ -65,7 +72,7 @@ export function reserveInventory(
         );
     }
 
-    const newReserved = currentReserved + quantity;
+    const newReserved  = currentReserved + quantity;
     const newAvailable = totalStock - newReserved;
     const currentStatus = listing.status as ListingStatus;
     const newStatus = deriveStatusFromStock(currentStatus, newAvailable);
@@ -89,6 +96,8 @@ export function reserveInventory(
  * Release `quantity` reserved units back to available pool.
  * Called when an order is cancelled or payment fails.
  * Never modifies stockQuantity — only reservedQuantity.
+ *
+ * Safe to call from both cancelOrder and cleanupExpiredReservations.
  */
 export function releaseInventory(
     transaction:  FirebaseFirestore.Transaction,
@@ -126,9 +135,10 @@ export function releaseInventory(
 
 /**
  * Commit `quantity` units: decrement both stockQuantity and reservedQuantity.
- * Called when payment is confirmed (verifyMopayPayment / wallet pay).
+ * Called when payment is confirmed (verifyMopayPayment / wallet pay path).
  *
- * This is the only place stockQuantity is decremented.
+ * This is the ONLY place stockQuantity is decremented.
+ * Also increments commitmentCount — a successful commit is a commitment.
  */
 export function commitInventory(
     transaction:  FirebaseFirestore.Transaction,
@@ -138,21 +148,95 @@ export function commitInventory(
     now:          FirebaseFirestore.FieldValue,
 ): void {
     const mode = listing.inventoryMode as InventoryMode;
+    const type = listing.listingType as ListingType;
+    const tracksCommitment = LISTING_TYPE_WORKFLOWS[type]?.tracksCommitment ?? false;
 
-    if (mode !== InventoryMode.STOCKED) return; // nothing to commit
+    const update: Record<string, unknown> = { updatedAt: now };
+
+    if (mode === InventoryMode.STOCKED) {
+        const currentStock    = listing.stockQuantity    || 0;
+        const currentReserved = listing.reservedQuantity || 0;
+
+        const newStock    = Math.max(0, currentStock    - quantity);
+        const newReserved = Math.max(0, currentReserved - quantity);
+
+        const currentStatus = listing.status as ListingStatus;
+        const newStatus = deriveStatusFromStock(currentStatus, newStock - newReserved);
+
+        update.stockQuantity    = newStock;
+        update.reservedQuantity = newReserved;
+
+        if (newStatus !== currentStatus) {
+            update.status      = newStatus;
+            update.isAvailable = isAvailableFromStatus(newStatus);
+        }
+    }
+    // UNLIMITED / PREORDER / SCHEDULED: no stock mutation, but commitment still tracked.
+    // NOT_APPLICABLE: should not reach here, but we still track commitment if configured.
+
+    if (tracksCommitment) {
+        update.commitmentCount = admin.firestore.FieldValue.increment(quantity);
+    }
+
+    transaction.update(listingRef, update);
+}
+
+// ─── Restock ──────────────────────────────────────────────────────────────────
+
+/**
+ * Add `quantity` units to a listing's stock.
+ * The only authorised path for a seller to recover from OUT_OF_STOCK.
+ *
+ * Rules:
+ *  - Only valid for STOCKED-mode listings.
+ *  - Listing must be in a seller-modifiable status (not SUSPENDED/DELETED).
+ *  - Derives new status via deriveStatusFromStock:
+ *      OUT_OF_STOCK + newAvailable > 0  → ACTIVE
+ *      PAUSED remains PAUSED (seller must explicitly resume).
+ *      ACTIVE remains ACTIVE.
+ *
+ * Call this inside a transaction that has already read the listing doc.
+ * Throws on invalid mode or insufficient quantity.
+ */
+export function restockInventory(
+    transaction:  FirebaseFirestore.Transaction,
+    listingRef:   FirebaseFirestore.DocumentReference,
+    listing:      FirebaseFirestore.DocumentData,
+    quantity:     number,
+    now:          FirebaseFirestore.FieldValue,
+): void {
+    if (quantity <= 0 || !Number.isInteger(quantity)) {
+        throw new Error("Restock quantity must be a positive integer");
+    }
+
+    const mode = listing.inventoryMode as InventoryMode;
+    if (mode !== InventoryMode.STOCKED) {
+        throw new Error(
+            `Restock is only valid for STOCKED listings. ` +
+            `This listing uses inventoryMode: ${mode}`
+        );
+    }
+
+    const currentStatus = listing.status as ListingStatus;
+    if (
+        currentStatus === ListingStatus.SUSPENDED ||
+        currentStatus === ListingStatus.DELETED
+    ) {
+        throw new Error(
+            `Cannot restock a listing in ${currentStatus} status`
+        );
+    }
 
     const currentStock    = listing.stockQuantity    || 0;
     const currentReserved = listing.reservedQuantity || 0;
+    const newStock        = currentStock + quantity;
+    const newAvailable    = newStock - currentReserved;
 
-    const newStock    = Math.max(0, currentStock    - quantity);
-    const newReserved = Math.max(0, currentReserved - quantity);
-
-    const currentStatus = listing.status as ListingStatus;
-    const newStatus = deriveStatusFromStock(currentStatus, newStock - newReserved);
+    // Only auto-promote OUT_OF_STOCK → ACTIVE. PAUSED stays PAUSED.
+    const newStatus = deriveStatusFromStock(currentStatus, newAvailable);
 
     const update: Record<string, unknown> = {
-        stockQuantity:    newStock,
-        reservedQuantity: newReserved,
+        stockQuantity: newStock,
         updatedAt: now,
     };
 
