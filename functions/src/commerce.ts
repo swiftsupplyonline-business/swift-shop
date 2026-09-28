@@ -235,7 +235,6 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 } else if (listing.shopId !== shopId) {
                     throw new Error("Multi-shop orders are not supported in this version.");
                 }
-
                 const itemTotal = listing.priceMinorUnits * requestedQty;
                 subtotal += itemTotal;
 
@@ -251,6 +250,26 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
             const platformFee = Math.floor((subtotal * 15) / 1000);
             const total = subtotal + deliveryFee + platformFee;
             finalTotal = total;
+
+            // Snapshot the merchandise shop's pickup location at order-creation
+            // time. History must not silently change if a seller edits their
+            // shop's location later — dispatch already re-resolves live shop
+            // data at route-creation time, but this snapshot gives the order
+            // its own immutable record independent of that.
+            let pickupSnapshot: { lat: number; lng: number; shopName: string } | null = null;
+            if (shopId) {
+                const shopDoc = await transaction.get(db.collection("shops").doc(shopId));
+                if (shopDoc.exists) {
+                    const shopData = shopDoc.data()!;
+                    if (typeof shopData.locationLat === "number" && typeof shopData.locationLng === "number") {
+                        pickupSnapshot = {
+                            lat: shopData.locationLat,
+                            lng: shopData.locationLng,
+                            shopName: shopData.name || ""
+                        };
+                    }
+                }
+            }
 
             let orderStatus = "RESERVED";
 
@@ -302,6 +321,7 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 deliveryRequestId: deliveryRequestId || null,
                 deliveryProviderSellerId: deliveryProviderSellerId || null,
                 selectedDeliveryListingId: finalDeliveryListingId || null,
+                pickupSnapshot: pickupSnapshot,
                 deliveryAddress: deliveryAddress || {},
                 paymentMethod: paymentMethod || "MOPAY",
                 provider: provider || null,
@@ -703,10 +723,15 @@ export const updateOrderStatus = onCall(async (request) => {
             const isSeller = order.sellerId === auth.uid;
             const isBuyer = order.buyerId === auth.uid;
 
+            // RED-3: cancellation is NOT handled through this generic
+            // status-update path anymore -- it has no reservation-release
+            // logic, so a caller reaching this branch would leave
+            // reservedQuantity stuck until the 15-minute expiry job cleaned
+            // it up. The dedicated cancelOrder callable is the single
+            // authoritative cancellation path (auth boundary, hard payment
+            // boundary, and reservation release all live there together).
             if (isBuyer && status === "CANCELLED") {
-                // Buyer can only cancel PENDING or RESERVED orders.
-                // New orders created under the reservation model use status RESERVED.
-                if (!['PENDING', 'RESERVED'].includes(order.status)) throw new Error('Buyer can only cancel pending or reserved orders');
+                throw new Error("Use cancelOrder to cancel an order, not updateOrderStatus.");
             } else if (isSeller) {
                 // Seller transition matrix enforcement
                 const allowedNext = SELLER_TRANSITIONS[order.status] || [];
@@ -747,7 +772,9 @@ export const cancelOrder = onCall(async (request) => {
             if (!orderDoc.exists) throw new Error("Order not found");
             const order = orderDoc.data()!;
 
-            if (order.buyerId !== auth.uid && order.sellerId !== auth.uid && !auth.token.admin) {
+            const isBuyer = order.buyerId === auth.uid;
+            const isAdmin = auth.token.admin === true;
+            if (!isBuyer && !isAdmin) {
                 throw new Error("Unauthorized");
             }
 
@@ -756,53 +783,43 @@ export const cancelOrder = onCall(async (request) => {
                 return; // Already processed
             }
 
-            // Refund logic for SWIFT_WALLET payment
-            if (order.paymentMethod === "SWIFT_WALLET" && order.status === "CONFIRMED") {
-                const walletRef = db.collection("wallets").doc(order.buyerId);
-                const walletDoc = await transaction.get(walletRef);
-                if (walletDoc.exists) {
-                    const currentBalance = walletDoc.data()?.availableBalanceMinorUnits || 0;
-                    transaction.update(walletRef, {
-                        availableBalanceMinorUnits: currentBalance + order.totalMinorUnits,
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                    });
-
-                    // Ledger Entry
-                    const ledgerId = db.collection("ledgerEntries").doc().id;
-                    transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
-                        id: ledgerId,
-                        debitAccount: "system_order_escrow",
-                        creditAccount: `user_${order.buyerId}`,
-                        amountMinorUnits: order.totalMinorUnits,
-                        currency: "LSL",
-                        reference: `ORDER_REFUND_${orderId}`,
-                        timestamp: admin.firestore.FieldValue.serverTimestamp()
-                    });
-                }
+            // HARD PAYMENT BOUNDARY (RED-3): once payment has succeeded,
+            // ordinary cancellation is permanently invalid for every caller,
+            // including admin -- no refund-on-cancel branch exists in this
+            // function anymore. A Swift Wallet order is created already
+            // CONFIRMED (debited atomically in createOrder), so it can never
+            // legitimately reach this function in a cancellable state; a
+            // MoPay order sits at RESERVED until payment succeeds, which is
+            // the only real-world case this now handles. Post-payment
+            // problems go through the complaint mechanism (COM-1) --
+            // reviewed and ledgered on its own, never as a side effect of
+            // this callable.
+            if (!['PENDING', 'RESERVED'].includes(order.status)) {
+                throw new Error(`Order is already paid (status: ${order.status}) -- cancellation is no longer available; use the complaint mechanism instead.`);
             }
 
-            // P0 #3: Release reservations for RESERVED orders only.
-            // createOrder increments reservedQuantity ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â it does NOT decrement stockQuantity.
-            // Therefore cancellation must mirror the payment-failure release path:
-            // decrement reservedQuantity, mark reservation RELEASED, never touch stockQuantity.
-            if (order.status === 'RESERVED') {
-                const cancelResQuery = db.collection('reservations').where('orderId', '==', orderId);
-                const cancelResSnap = await transaction.get(cancelResQuery);
-                const cancelNow = admin.firestore.FieldValue.serverTimestamp();
-                for (const resDoc of cancelResSnap.docs) {
-                    const reservation = resDoc.data();
-                    if (reservation.status !== 'ACTIVE') continue; // idempotency: skip already-released
-                    const listingRef = db.collection('listings').doc(reservation.listingId);
-                    const listingSnap = await transaction.get(listingRef);
-                    if (listingSnap.exists) {
-                        const listing = listingSnap.data()!;
-                        transaction.update(listingRef, {
-                            reservedQuantity: Math.max(0, (listing.reservedQuantity || 0) - reservation.quantity),
-                            updatedAt: cancelNow
-                        });
-                    }
-                    transaction.update(resDoc.ref, { status: 'RELEASED', updatedAt: cancelNow });
+            // Release reservations. createOrder increments reservedQuantity
+            // -- it never decrements stockQuantity -- so cancellation
+            // mirrors the payment-failure/expiry release path: decrement
+            // reservedQuantity, mark the reservation RELEASED, never touch
+            // stockQuantity (nothing was ever committed against it, since we
+            // just confirmed above that payment never succeeded).
+            const cancelResQuery = db.collection('reservations').where('orderId', '==', orderId);
+            const cancelResSnap = await transaction.get(cancelResQuery);
+            const cancelNow = admin.firestore.FieldValue.serverTimestamp();
+            for (const resDoc of cancelResSnap.docs) {
+                const reservation = resDoc.data();
+                if (reservation.status !== 'ACTIVE') continue; // idempotency: skip already-released
+                const listingRef = db.collection('listings').doc(reservation.listingId);
+                const listingSnap = await transaction.get(listingRef);
+                if (listingSnap.exists) {
+                    const listing = listingSnap.data()!;
+                    transaction.update(listingRef, {
+                        reservedQuantity: Math.max(0, (listing.reservedQuantity || 0) - reservation.quantity),
+                        updatedAt: cancelNow
+                    });
                 }
+                transaction.update(resDoc.ref, { status: 'RELEASED', updatedAt: cancelNow });
             }
 
             transaction.update(orderRef, {

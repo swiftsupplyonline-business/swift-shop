@@ -86,7 +86,15 @@ class RequestDeliveryViewModel @Inject constructor(
 
         _uiState.value = state.copy(isSubmitting = true)
         viewModelScope.launch {
-            createDeliveryRequestUseCase(listingId, dropoff).fold(
+            // NOTE: this screen has no cart/order context (entered directly via
+            // listingId), so it cannot supply a real merchandise shop. Falling
+            // back to the delivery listing's own shop preserves this screen's
+            // prior (already-imperfect) behavior unchanged; it is NOT the fixed
+            // checkout path — see CheckoutViewModel.requestDelivery() for that.
+            // Flagged for product/architecture review: does this screen still
+            // have a purpose now that checkout has its own delivery-request flow?
+            val fallbackShopId = listingCache?.shopId ?: return@launch
+            createDeliveryRequestUseCase(listingId, dropoff, fallbackShopId).fold(
                 onSuccess = { requestId -> observeRequest(requestId) },
                 onFailure = {
                     _uiState.value = state.copy(isSubmitting = false)

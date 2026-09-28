@@ -419,7 +419,7 @@ data class Message(
 // ─── Delivery ────────────────────────────────────────────────────────────────
 
 enum class DeliveryStatus {
-    REQUESTED, ASSIGNED, PICKUP, IN_TRANSIT, DELIVERED, FAILED, CANCELLED
+    REQUESTED, ASSIGNED, AT_PICKUP, PICKUP_CONFIRMED, IN_TRANSIT, DELIVERED, FAILED, CANCELLED
 }
 
 @Serializable

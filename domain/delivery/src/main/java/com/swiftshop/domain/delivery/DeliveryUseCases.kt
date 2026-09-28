@@ -15,8 +15,8 @@ class RequestDeliveryUseCase(private val repository: DeliveryRepository) {
 }
 
 class CreateDeliveryRequestUseCase(private val repository: DeliveryRepository) {
-    suspend operator fun invoke(listingId: String, dropoff: GeoPoint): Result<String> =
-        repository.createDeliveryRequest(listingId, dropoff)
+    suspend operator fun invoke(listingId: String, dropoff: GeoPoint, merchandiseShopId: String): Result<String> =
+        repository.createDeliveryRequest(listingId, dropoff, merchandiseShopId)
 }
 
 class ObserveDeliveryRequestUseCase(private val repository: DeliveryRepository) {

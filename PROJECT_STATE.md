@@ -98,12 +98,12 @@ a batch to continue.
 
 | File | Last reviewed commit/state | Status as of this writing | Notes |
 |---|---|---|---|
-| `functions/src/commerce.ts` | Reviewed 2026-09-16 | Reviewed + partially fixed — 2 items still open (see Section 5) | Three layers reconciled 2026-09-16: (1) original Incident-1 diff (delivery-listing selection + seller status-transition matrix) — traced line-by-line, retroactively authorized by human operator; (2) Bug 1 fix (named-item "not found" error) — implemented + build-verified, see Batch 3; (3) shop-mismatch `shopId` ownership check — implemented + build-verified, see Batch 3. Open: fallback-path arbitrary pick when 2+ DELIVER listings exist and none selected (Section 5); `SELLER_TRANSITIONS` matrix not yet adversarially tested. |
+| `functions/src/commerce.ts` | Reviewed 2026-09-16 | **DIRTY, this session — see Batch 6** | Three layers reconciled 2026-09-16 (Bug 1 fix, shop-mismatch check — Batch 3). **Batch 6 addition:** `createOrder` now snapshots the merchandise shop's pickup lat/lng/name onto the order at creation time (`pickupSnapshot`) as part of closing RED-1 — additive only, no change to money/inventory/status logic. `tsc --noEmit` PASS. NOT Gradle/live-verified. Still open: fallback-path arbitrary pick when 2+ DELIVER listings exist and none selected (Section 5); `SELLER_TRANSITIONS` matrix not yet adversarially tested (RED-8, not started). |
 | `functions/src/finance.ts` | `ebfae2c` | Clean | No known pending work |
 | `functions/src/mopay.ts` | `ebfae2c` | Clean | No known pending work |
 | `core/model/Models.kt` | `ebfae2c` | **DIRTY, UNREVIEWED** — adds `requiresDelivery: Boolean` and `selectedDeliveryListingId: String` to `Order` | Same unauthorized change set as commerce.ts above |
 | Firestore rules (`docs/firestore.rules`) | `ebfae2c` | Clean | `deliveryRequests`, `wallets`, `ledgerEntries`, `walletTransactions` all correctly server-only as of last read. `listings.likeCount`/`commentCount` still weak (any signed-in user can write) — known, unfixed, tracked as open item |
-| `functions/src/logistics.ts` | `ebfae2c` | Clean, batch complete | `respondToDeliveryRequest` (accept/decline) implemented and verified this session — see Section 6, Batch 1 |
+| `functions/src/logistics.ts` | `ebfae2c` | **DIRTY, this session** — see Batch 6 | `respondToDeliveryRequest` (Batch 1) plus new changes (Batch 6): `createDeliveryRequest` pickup now resolves from the merchandise shop, not the delivery listing's shop; `requestDelivery` (legacy callable) prefers `order.deliveryProviderSellerId` over shop owner; `onOrderConfirmed` switched from `onDocumentUpdated` to `onDocumentWritten` to also fire for Swift Wallet orders (created already CONFIRMED, so never triggered an update-based listener). `tsc --noEmit` PASS. NOT build-verified on a real Android/Gradle build (sandbox has no network access to Google's Maven repos) — needs `gradlew assembleDevDebug` on a real machine before merge. |
 
 **If you are an agent and you find a RED file dirty with no row here
 explaining why: STOP. Add a row documenting exactly what you found, flag it
@@ -130,26 +130,16 @@ to the human operator, and do not build on top of it until reviewed.**
   unavailable item — not a bare exception. Needs a product decision on
   which behavior is wanted before implementation.
 
-### Bug 2 — cart appears to empty when choosing a delivery provider (confirmed root cause)
-- **Symptom:** tapping a delivery provider in checkout step 1 makes the
-  cart list disappear with no error message.
-- **Confirmed root cause:** in `CheckoutViewModel.updateFees()`,
-  `_uiState.value = CheckoutUiState.Loading` is set synchronously, with no
-  debounce, the instant a provider is tapped (`updateSelectedDeliveryListing`
-  calls `updateFees()` directly). `CheckoutScreen.CartStep` reads
-  `val items = (state as? CheckoutUiState.CartLoaded)?.items ?: emptyList()`
-  — so during the `Loading` window (or indefinitely, if the call hangs) the
-  screen renders `EmptyState("Your cart is empty")`, which is
-  indistinguishable from an actually-empty cart. Same latent bug exists for
-  the address and requires-delivery toggles too, just masked by their
-  500ms debounce.
-- **Fix classification:** AMBER, client-only. Does not touch commerce.ts.
-- **Proposed fix shape (not yet authorized/implemented):** stop discarding
-  the last-known items/summary on recalculation — either keep rendering the
-  previous `CartLoaded` data with a small inline spinner overlay while a
-  new fee calculation is in flight, or add a distinct
-  `Recalculating(items, summary)` state that `CartStep` treats the same as
-  `CartLoaded` for rendering purposes.
+### Bug 2 — RESOLVED (this entry was stale — fix already present in tree)
+- Previously described as open: cart disappearing when a delivery provider
+  is selected, root-caused to `updateFees()` clobbering `CartLoaded` with
+  bare `Loading`.
+- **Correction (verified this session):** `CheckoutUiState.CartLoaded` now
+  carries `isRecalculating: Boolean`, and `updateFees()` preserves the
+  current state via `.copy(isRecalculating = true)` instead of dropping to
+  `Loading` when already `CartLoaded`. The fix matches Batch 2/3's history
+  below, but this section had not been updated to reflect it — exactly the
+  kind of drift Section 0 warns against. No further action needed here.
 
 ### Open item (not a bug, a known gap) — delivery-listing shop mismatch
 - The new `selectedDeliveryListingId` path in `commerce.ts` never checks
@@ -201,8 +191,20 @@ to the human operator, and do not build on top of it until reviewed.**
   project yet (checked exhaustively across `functions/src/`); needed for
   the delivery-request flow to be genuinely usable, not yet scoped as its
   own batch
-- Accepted-delivery-request → order/payment/escrow bridge — explicitly
-  deferred pending a read-only architecture recon (never started)
+- Accepted-delivery-request → order/payment/escrow bridge — **partially
+  addressed in Batch 6** (see Section 6): `createOrder` already captured
+  `deliveryRequestId`/`deliveryProviderSellerId` on the order (pre-existing,
+  not new), and `onOrderConfirmed` already used `dr.merchantId` as the
+  route's `providerId` (pre-existing, correct). What Batch 6 fixed: (1) that
+  trigger never fired for Swift Wallet orders, since they're created already
+  `CONFIRMED` — a document CREATE, not an UPDATE; (2) the separate, legacy
+  `requestDelivery` callable (currently unreferenced by any live UI — traced
+  via `RequestDeliveryUseCase`, which is DI-provided but never injected into
+  a ViewModel) still used the merchandise shop owner as `providerId` instead
+  of `order.deliveryProviderSellerId` — fixed for correctness/future safety
+  even though presently unreachable. Still NOT done: reconciling whether
+  the legacy `requestDelivery` callable should be removed entirely now that
+  `onOrderConfirmed` is the real path — flagged, not decided.
 - **MoPay web redirect** (RED, `functions/src/commerce.ts`, `createOrder`) —
   `mopayRequest.redirectUrl` is hardcoded to `"swiftshop://checkout/verify"`
   (a mobile deep link). A browser paying via MoPay on Swift Web has nowhere
@@ -219,11 +221,158 @@ to the human operator, and do not build on top of it until reviewed.**
 
 ## AUTHORIZED / IN PROGRESS
 
-(none)
+### Commerce state-machine RED plan (8 batches, dependency-ordered)
+RED-1 Delivery linkage/route creation → RED-2 Reservation expiry → RED-3
+Cancellation/refund → RED-4 Pickup handoff → RED-5 Delivery failure/disputes
+→ RED-6 Settlement exceptions → RED-7 DELIVER fallback → RED-8 Adversarial
+state-machine tests. Each batch requires: inspect current code first,
+produce a short written proposal, implement only the named surfaces, run
+available typechecks, report findings, then stop for review before the
+next batch starts.
+
+- RED-1: **DONE this session (Batch 6).** Both halves closed: delivery
+  linkage/provider-identity in `logistics.ts` + Kotlin (prior batch), and
+  the `commerce.ts` pickup-location snapshot (this batch).
+- RED-2: **Already implemented pre-existing** (`functions/src/reservations.ts`,
+  `cleanupExpiredReservations`) — verified correct on inspection, no new
+  work needed.
+- RED-3: **DONE this session (Batch 7).** Design simplified by human
+  operator: payment success is a hard, unconditional cancellation
+  boundary; post-payment issues go through a separate, not-yet-built
+  complaint mechanism (COM-1) instead of refund-via-cancel. Found and
+  fixed a real live bug in the process (see Batch 7) rather than just
+  implementing the new policy on clean ground.
+- COM-1 (post-payment complaints), RED-4 through RED-8: **not started.**
+  RED-4 (pickup handoff) is next per the updated priority order.
 
 ---
 
 ## 6. BATCH LOG (append a new entry every time a batch closes — never delete history)
+
+### Batch 8 -- RED-4: pickup handoff state machine (2026-09-28)
+- **Classification:** RED (`core/model/Models.kt` -- named on the locked
+  list explicitly). Implemented under standing authorization for this
+  design; driver-vs-seller authorization question for PICKUP_CONFIRMED was
+  explicitly answered by the human operator as "both."
+- **Scoping finding:** `updateDeliveryStatus` / the driver-side transition
+  calls are fully built and correctly authorized server-side, but are
+  currently uncalled from ANY Kotlin UI -- there is no driver-facing
+  feature module in this repo yet. This batch is backend-correct and
+  client-model-correct, but not end-to-end testable until a driver app
+  surface exists. Flagged, not built here -- out of scope.
+- **What changed:** split the single `PICKUP` route status into
+  `AT_PICKUP` (driver arrival ping, driver-only) and `PICKUP_CONFIRMED`
+  (actual physical handoff -- driver OR merchandise seller may confirm it,
+  via new `isMerchandiseSeller` check against `route.sellerId`). Updated in
+  lockstep: `functions/src/logistics.ts` (`VALID_DELIVERY_STATUSES`,
+  `ALLOWED_TRANSITIONS`, authorization branch), `core/model/Models.kt`
+  (`DeliveryStatus` enum), `FirebaseDeliveryRepository.kt` (active-route
+  `whereIn` filter), `DeliveryTrackingScreen.kt` (customer-facing status
+  copy: "Driver at Seller" / "Order Picked Up").
+  **Deliberately NOT done:** did not add a matching `OrderStatus` value
+  (e.g. `PICKED_UP`) to mirror onto the order document -- `DISPATCHED`
+  already covers the customer-facing "on the way" signal at `IN_TRANSIT`;
+  treating `PICKUP_CONFIRMED` as an internal provider/seller handoff audit
+  point, not a new buyer-visible order state, kept this batch from pulling
+  in a second Models.kt enum plus `OrderScreens.kt` changes unprompted.
+- **Verification:** `tsc --noEmit` PASS. Full-repo grep confirms no stale
+  `"PICKUP"` literal remains anywhere (TS, Kotlin, JS). Checked
+  `RemediationAdversarialTest.kt` (only Kotlin test file referencing
+  `DeliveryStatus`) -- it simulates logic locally and only references
+  `DeliveryStatus.REQUESTED`, unaffected. NOT Gradle-build-verified (no
+  network access to Android/Maven repos in this sandbox). NOT committed,
+  NOT pushed, NOT deployed.
+- **Explicitly not done:** RED-5 through RED-8 not started. No driver-side
+  UI built to actually exercise `AT_PICKUP`/`PICKUP_CONFIRMED` calls.
+
+### Batch 7 -- RED-3: hard payment boundary on cancelOrder (2026-09-28)
+- **Classification:** RED (`functions/src/commerce.ts`). Implemented under
+  standing authorization for this design ("the server must enforce the
+  payment boundary... cancelOrder must never succeed on a paid order").
+- **Finding (real, live bug, not hypothetical):** `cancelOrder` had a
+  branch that let a CONFIRMED (paid) Swift Wallet order be cancelled and
+  auto-refunded -- reachable by buyer, seller, OR admin (no distinct
+  authorization gate on that branch), and it never restored
+  `stockQuantity` (only the already-decremented reservation bookkeeping
+  existed, not the committed stock) -- money would have gone back to the
+  buyer while the unit stayed permanently marked as sold. This directly
+  contradicted the payment-is-a-hard-boundary design and was a genuine
+  inventory/financial correctness bug independent of that design.
+  Separately, `updateOrderStatus` had its own, different, INCOMPLETE
+  buyer-cancel path (no reservation release at all) that nothing in the
+  app currently calls (verified: Kotlin only calls `cancelOrder`), but
+  remained live and callable.
+- **What changed:** `cancelOrder` now throws immediately for any order not
+  in `PENDING`/`RESERVED`, for every caller including admin -- no
+  refund-on-cancel code path exists anymore. Authorization narrowed to
+  buyer or admin (seller dropped -- sellers act through
+  `updateOrderStatus`'s own transition matrix). Reservation release is now
+  unconditional within the (already guaranteed pre-payment) success path.
+  `updateOrderStatus`'s buyer-CANCELLED branch now throws, directing
+  callers to `cancelOrder` -- removes the incomplete duplicate path rather
+  than fixing it in two places.
+  Verified unchanged and already correct: `verifyMopayPayment`'s decline/
+  failure branch already released reservations and set a status distinct
+  from `CANCELLED` (the raw MoPay `FAILED`) -- no changes needed there.
+- **Verification:** `tsc --noEmit` PASS. NOT Gradle-build-verified (no
+  Kotlin changes this batch). NOT committed, NOT pushed, NOT deployed.
+- **Explicitly not done:** COM-1 (post-payment complaint mechanism) --
+  separate batch, not started. RED-4 through RED-8 not started.
+
+### Batch 6 — Delivery pickup/provider-identity fixes + Wallet dispatch gap (2026-09-28)
+- **Classification:** AMBER (`functions/src/logistics.ts` — not on the RED
+  locked-files list; does not touch commerce/finance/mopay/Firestore rules/
+  Models.kt) + GREEN Kotlin plumbing.
+- **Context:** verified against real code (not just prior analysis) two
+  concrete bugs in the delivery-request/dispatch path, both confirmed by
+  tracing actual call sites rather than assumed from the architecture
+  discussion:
+  1. `createDeliveryRequest` resolved pickup coordinates from the DELIVER
+     listing's own shop (`listing.shopId`) — the delivery provider's shop —
+     instead of the merchandise shop the goods actually ship from. Since
+     this callable only ever received `listingId` + `dropoff`, it had no way
+     to know the merchandise shop at all.
+  2. Swift Wallet orders are created directly at `status: "CONFIRMED"` (a
+     Firestore document CREATE). `onOrderConfirmed` was an
+     `onDocumentUpdated` trigger, so it only ever fired for MoPay orders
+     (which start `RESERVED` and transition later) — wallet-paid orders
+     requiring delivery got no automatic delivery route at all. The one
+     Kotlin code path that could otherwise create one
+     (`RequestDeliveryUseCase` / cloud function `requestDelivery`) is wired
+     into DI but never actually injected into any ViewModel — dead code.
+- **What changed:**
+  - `functions/src/logistics.ts`: `createDeliveryRequest` now requires a
+    `merchandiseShopId` param and resolves pickup from that shop
+    (`merchantId` on the request doc, i.e. the delivery PROVIDER, is
+    unchanged — still `listing.sellerId`). `onOrderConfirmed` switched from
+    `onDocumentUpdated` to `onDocumentWritten`, firing on both order create
+    and update. The legacy `requestDelivery` callable now prefers
+    `order.deliveryProviderSellerId` over the shop owner for `providerId`.
+  - Kotlin: `DeliveryRepository.createDeliveryRequest` /
+    `CreateDeliveryRequestUseCase` gained a `merchandiseShopId` param.
+    `FirebaseDeliveryRepository` passes it through.
+    `CheckoutViewModel.requestDelivery()` sources it from the existing
+    `_cartShopId` state (already tracked, unused for this purpose before).
+    `RequestDeliveryViewModel` (a separate, cart-less "request delivery for
+    a listing" screen reached only by `listingId`, no order/shop context)
+    was kept compiling by falling back to the listing's own shop —
+    preserving its prior behavior unchanged, not fixing it, since it isn't
+    part of the checkout flow this batch addressed. Flagged for a product
+    decision: does this screen still have a purpose?
+- **Verification:** `tsc --noEmit` PASS on `functions/`. Kotlin call sites
+  for `DeliveryRepository`/`CreateDeliveryRequestUseCase` traced exhaustively
+  (only one real implementation, no test fakes, two call sites, both
+  updated). **NOT build-verified with Gradle** — this session's sandbox has
+  no network access to Google's Maven/Android repos, so `gradlew
+  assembleDevDebug` could not be run here. Needs that build on a real
+  machine before merge.
+- **Explicitly not done:** the `selectedDeliveryListingId` shop-mismatch
+  check in `commerce.ts` (separate, still-open RED item, different code
+  path — direct listing selection bypassing the request/accept flow);
+  fallback-ordering gap in `commerce.ts`; deciding whether the now-partially-
+  fixed legacy `requestDelivery` callable should be deleted.
+- **Status:** implemented, `tsc` build-verified only. NOT committed, NOT
+  deployed, NOT Gradle-build-verified.
 
 ### Batch 5 — Real Swift Web marketplace: browse/shop/listing/cart/checkout (2026-09-22)
 - **Classification:** GREEN (`hosting/index.html`, `hosting/app.js`, new

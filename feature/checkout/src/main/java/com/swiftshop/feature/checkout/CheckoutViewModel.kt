@@ -262,13 +262,18 @@ class CheckoutViewModel @Inject constructor(
      */
     fun requestDelivery() {
         val listingId = selectedDeliveryListingId ?: return
+        val merchandiseShopId = _cartShopId.value
+        if (merchandiseShopId.isBlank()) {
+            _uiState.value = CheckoutUiState.Error("Your cart is empty.")
+            return
+        }
 
         viewModelScope.launch {
             _uiState.value = CheckoutUiState.Loading
 
             val dropoff = GeoPoint(deliveryAddress.lat, deliveryAddress.lng)
 
-            createDeliveryRequest(listingId, dropoff).fold(
+            createDeliveryRequest(listingId, dropoff, merchandiseShopId).fold(
                 onSuccess = { requestId ->
                     _uiState.value = CheckoutUiState.AwaitingDeliveryAcceptance(requestId)
                     observeDeliveryRequestStatus(requestId)

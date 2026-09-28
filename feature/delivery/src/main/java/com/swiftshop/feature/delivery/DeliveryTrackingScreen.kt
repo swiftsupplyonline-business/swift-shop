@@ -93,7 +93,8 @@ private fun DeliveryStatusPanel(route: DeliveryRoute, onMessage: () -> Unit) {
             val steps = listOf(
                 DeliveryStatus.REQUESTED to "Order Placed",
                 DeliveryStatus.ASSIGNED to "Driver Assigned",
-                DeliveryStatus.PICKUP to "Driver at Pickup",
+                DeliveryStatus.AT_PICKUP to "Driver at Seller",
+                DeliveryStatus.PICKUP_CONFIRMED to "Order Picked Up",
                 DeliveryStatus.IN_TRANSIT to "On the Way",
                 DeliveryStatus.DELIVERED to "Delivered"
             )
