@@ -586,8 +586,20 @@ export const confirmDelivery = onCall(async (request) => {
             const order = orderDoc.data()!;
 
             if (order.buyerId !== auth.uid) throw new Error("Unauthorized");
-            if (order.status !== "DELIVERED") {
-                 throw new Error(`Order must be DELIVERED before customer confirmation; current state is ${order.status}`);
+            // Delivery orders settle only once the route reports DELIVERED.
+            // Self-pickup orders (requiresDelivery === false) never get a
+            // delivery route at all, so DISPATCHED/DELIVERED can never occur
+            // for them -- READY (set by the seller) is their real completion
+            // point, and always has been the only way these orders could be
+            // confirmed at all.
+            if (order.requiresDelivery) {
+                if (order.status !== "DELIVERED") {
+                     throw new Error(`Order must be DELIVERED before customer confirmation; current state is ${order.status}`);
+                }
+            } else {
+                if (order.status !== "READY") {
+                     throw new Error(`Self-pickup order must be READY before customer confirmation; current state is ${order.status}`);
+                }
             }
 
             if (order.settlementStatus === "SETTLED") return; // Idempotent

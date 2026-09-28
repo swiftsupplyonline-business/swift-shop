@@ -249,6 +249,33 @@ next batch starts.
 
 ## 6. BATCH LOG (append a new entry every time a batch closes — never delete history)
 
+### Batch 9 -- two corrections to Batch 8/external commits (2026-09-28)
+- **Context:** after Batch 8 was pushed, two follow-up commits landed on
+  `delivery-first-checkout` from outside this session (`46658b6` driver-only
+  pickup confirmation, `43dc849` require-DELIVERED customer confirmation).
+  Audited both against real code on request.
+- **Finding 1 (verified, concrete regression):** the DELIVERED-only
+  `confirmDelivery` gate made self-pickup orders (`requiresDelivery ===
+  false`) permanently unconfirmable/unsettleable -- grepped every place
+  `order.status` is ever set to `"DELIVERED"`; the only one is gated behind
+  an actual delivery route, which self-pickup orders never get. `READY` was
+  their only real completion point and always had been.
+- **Finding 2:** the driver-only `PICKUP_CONFIRMED` change directly
+  contradicted the "both driver and seller" authorization decision made
+  earlier in this session -- flagged rather than silently reconciled.
+- **Human decision (this batch):** `confirmDelivery` branches on
+  `requiresDelivery` -- `DELIVERED` required when true, `READY` required
+  when false. `PICKUP_CONFIRMED` restored to driver-OR-seller; admin
+  override explicitly NOT restored (separate decision if wanted later).
+  Scope explicitly limited to only these two corrections.
+- **What changed:** `functions/src/commerce.ts` (`confirmDelivery` state
+  gate), `functions/src/logistics.ts` (`PICKUP_CONFIRMED` authorization +
+  stale comment). Nothing else touched -- diff verified scoped to exactly
+  these two hunks before commit.
+- **Verification:** `tsc --noEmit` PASS. NOT Gradle-build-verified (no
+  Kotlin changes this batch). Pushed per explicit standing instruction to
+  keep GitHub in sync with implementation for audit purposes. NOT deployed.
+
 ### Batch 8 -- RED-4: pickup handoff state machine (2026-09-28)
 - **Classification:** RED (`core/model/Models.kt` -- named on the locked
   list explicitly). Implemented under standing authorization for this

@@ -104,8 +104,8 @@ export const requestDelivery = onCall(async (request) => {
 const VALID_DELIVERY_STATUSES = ["REQUESTED", "ASSIGNED", "AT_PICKUP", "PICKUP_CONFIRMED", "IN_TRANSIT", "DELIVERED", "FAILED", "CANCELLED"];
 
 // RED-4: explicit handoff sequence. AT_PICKUP records the assigned driver's
-// arrival. PICKUP_CONFIRMED is the physical custody transition and is
-// authoritative only when confirmed by the assigned driver.
+// arrival. PICKUP_CONFIRMED is the physical custody transition and can be
+// confirmed by the assigned driver or the merchandise seller.
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
     REQUESTED: ["ASSIGNED", "CANCELLED"],
     ASSIGNED: ["AT_PICKUP", "CANCELLED"],
@@ -191,11 +191,12 @@ export const updateDeliveryStatus = onCall(async (request) => {
                 if (!isBuyer && !isAssignedDriver && !isAdmin) throw new Error("Unauthorized");
                 if (isBuyer && route.status !== "REQUESTED") throw new Error("Buyer can only cancel before a driver is assigned");
             } else if (status === "PICKUP_CONFIRMED") {
-                // RED-4: physical custody is confirmed only by the assigned driver.
-                // The seller may mark the order READY, but cannot attest on
-                // behalf of the delivery provider that custody transferred.
-                if (!isAssignedDriver) {
-                    throw new Error("Only the assigned driver can confirm pickup");
+                // RED-4: either party physically present at the handoff can
+                // confirm it -- the driver (who now has custody) or the
+                // merchandise seller (who just released the goods). No admin
+                // override here -- that's a separate decision if we want it.
+                if (!isAssignedDriver && !isMerchandiseSeller) {
+                    throw new Error("Only the assigned driver or the merchandise seller can confirm pickup");
                 }
             } else {
                 if (!isAssignedDriver && !isAdmin) throw new Error("Only the assigned driver can update this delivery");
