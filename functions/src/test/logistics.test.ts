@@ -76,6 +76,14 @@ describe('Logistics Authoritative Logic (SWIFT-019)', () => {
     const routeId = 'route_normal_path';
 
     await db.collection('deliveryProviders').doc(providerId).collection('drivers').doc(driverId).set({ authorized: true });
+    await db.collection('orders').doc('order_normal_path').set({
+      id: 'order_normal_path',
+      buyerId: 'buyer_normal_path',
+      sellerId: providerId,
+      status: 'CONFIRMED',
+      requiresDelivery: true
+    });
+
     await db.collection('deliveryRoutes').doc(routeId).set({
       id: routeId, orderId: 'order_normal_path', buyerId: 'buyer_normal_path',
       sellerId: providerId, providerId, driverId: '', status: 'REQUESTED',
