@@ -104,22 +104,30 @@ async function sendNotification(userId: string, payload: { notification: { title
 
         response.responses.forEach((resp, idx) => {
             const device = targetDevices[idx];
-            if (resp.success) {
-                deviceAccountingUpdate[`deviceAccounting.${device.id}`] = {
-                    status: "SENT",
-                    messageId: resp.messageId,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                };
-            } else {
-                const errorCode = resp.error?.code;
-                const isPermanent = errorCode === "messaging/registration-token-not-registered" ||
-                                   errorCode === "messaging/invalid-argument";
+            const accountingEntry: Record<string, any> = {
+                status: resp.success
+                    ? "SENT"
+                    : (() => {
+                        const errorCode = resp.error?.code;
+                        return errorCode === "messaging/registration-token-not-registered" ||
+                               errorCode === "messaging/invalid-argument"
+                            ? "FAILED_PERMANENT"
+                            : "FAILED_RETRYABLE";
+                    })(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            };
 
-                deviceAccountingUpdate[`deviceAccounting.${device.id}`] = {
-                    status: isPermanent ? "FAILED_PERMANENT" : "FAILED_RETRYABLE",
-                    error: resp.error?.message,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                };
+            // FCM normally supplies a messageId for successful sends, but tests
+            // and alternate providers may omit it. Never write undefined to
+            // Firestore.
+            if (resp.messageId) {
+                accountingEntry.messageId = resp.messageId;
+            }
+            if (!resp.success) {
+                accountingEntry.error = resp.error?.message;
+            }
+
+            deviceAccountingUpdate[`deviceAccounting.${device.id}`] = accountingEntry;
 
                 if (isPermanent) {
                     console.log(`Deactivating invalid token for device ${device.id}`);
