@@ -117,18 +117,16 @@ async function sendNotification(userId: string, payload: { notification: { title
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             };
 
-            // FCM normally supplies a messageId for successful sends, but tests
-            // and alternate providers may omit it. Never write undefined to
-            // Firestore.
+            // Never write undefined message IDs to Firestore.
             if (resp.messageId) {
                 accountingEntry.messageId = resp.messageId;
             }
             if (!resp.success) {
                 accountingEntry.error = resp.error?.message;
-            }
 
-            deviceAccountingUpdate[`deviceAccounting.${device.id}`] = accountingEntry;
-
+                const errorCode = resp.error?.code;
+                const isPermanent = errorCode === "messaging/registration-token-not-registered" ||
+                                   errorCode === "messaging/invalid-argument";
                 if (isPermanent) {
                     console.log(`Deactivating invalid token for device ${device.id}`);
                     batch.update(db.collection("users").doc(userId).collection("devices").doc(device.id), {
@@ -137,6 +135,8 @@ async function sendNotification(userId: string, payload: { notification: { title
                     });
                 }
             }
+
+            deviceAccountingUpdate[`deviceAccounting.${device.id}`] = accountingEntry;
         });
 
         // 3. Update Accounting & Determine Terminal State
