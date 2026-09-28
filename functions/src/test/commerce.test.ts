@@ -156,7 +156,7 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
 
     const result = await testEnv.wrap(cancelOrder)({
       data: { orderId, reason: 'Customer changed mind' },
-      auth: { uid: 'buyer_cancel', token: {} as any }
+      auth: { uid: 'buyer_cancel', token: {} as any , rawToken: '' }
     });
 
     expect(result.success).toBe(true);
@@ -178,7 +178,7 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
     });
 
     const result = await testEnv.wrap(confirmDelivery)({
-      data: { orderId }, auth: { uid: 'buyer_pickup', token: {} as any }
+      data: { orderId }, auth: { uid: 'buyer_pickup', token: {} as any , rawToken: '' }
     });
 
     expect(result.success).toBe(true);
@@ -200,7 +200,7 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
     });
 
     const result = await testEnv.wrap(confirmDelivery)({
-      data: { orderId }, auth: { uid: 'buyer_delivery', token: {} as any }
+      data: { orderId }, auth: { uid: 'buyer_delivery', token: {} as any , rawToken: '' }
     });
 
     expect(result.success).toBe(true);
