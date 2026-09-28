@@ -65,4 +65,32 @@ describe('Logistics Authoritative Logic (SWIFT-019)', () => {
       auth: { uid: driverId, token: { role: 'DRIVER' } }
     })).rejects.toThrow(/not an authorized driver/);
   });
+
+  test('Delivery route - normal claimed-to-delivered path', async () => {
+    const providerId = 'merchant_normal_path';
+    const driverId = 'driver_normal_path';
+    const routeId = 'route_normal_path';
+
+    await db.collection('deliveryProviders').doc(providerId).collection('drivers').doc(driverId).set({ authorized: true });
+    await db.collection('deliveryRoutes').doc(routeId).set({
+      id: routeId, orderId: 'order_normal_path', buyerId: 'buyer_normal_path',
+      sellerId: providerId, providerId, driverId: '', status: 'REQUESTED',
+      pickupLat: -29.31, pickupLng: 27.48, dropoffLat: -29.30, dropoffLng: 27.49
+    });
+
+    const call = (status: string) => testEnv.wrap(updateDeliveryStatus)({
+      data: { routeId, status },
+      auth: { uid: driverId, token: { role: 'DRIVER' } }
+    });
+
+    await call('ASSIGNED');
+    await call('AT_PICKUP');
+    await call('PICKUP_CONFIRMED');
+    await call('IN_TRANSIT');
+    await call('DELIVERED');
+
+    const route = (await db.collection('deliveryRoutes').doc(routeId).get()).data();
+    expect(route?.status).toBe('DELIVERED');
+    expect(route?.driverId).toBe(driverId);
+  });
 });
