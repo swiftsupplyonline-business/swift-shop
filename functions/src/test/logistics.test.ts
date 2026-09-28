@@ -62,7 +62,7 @@ describe('Logistics Authoritative Logic (SWIFT-019)', () => {
     // Call as unauthorized driver
     await expect(wrapped({
       data: { routeId, status: 'ASSIGNED' },
-      auth: { uid: driverId, token: { role: 'DRIVER' } as any }
+      auth: { uid: driverId, token: { role: 'DRIVER' } }
     })).rejects.toThrow(/not an authorized driver/);
   });
 
@@ -81,7 +81,7 @@ describe('Logistics Authoritative Logic (SWIFT-019)', () => {
     const call = (status: string) => testEnv.wrap(updateDeliveryStatus)({
       data: { routeId, status },
       auth: { uid: driverId, token: { role: 'DRIVER' } as any }
-    });
+    } as any);
 
     await call('ASSIGNED');
     await call('AT_PICKUP');
