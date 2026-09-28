@@ -6,6 +6,10 @@ const testEnv = firebaseTest({
   projectId: 'swift-shop-reconciled',
 });
 
+if (admin.apps.length === 0) {
+  admin.initializeApp({ projectId: 'swift-shop-reconciled' });
+}
+
 // Mock admin.messaging without replacing the firebase-admin module namespace.
 const mockSend = jest.fn();
 beforeAll(() => {
