@@ -13,6 +13,8 @@
     header a.logo { font-weight: 700; font-size: 18px; color: var(--blue); text-decoration: none; }
     header .cart-link { position: relative; text-decoration: none; color: var(--text); font-weight: 600; }
     [data-cart-badge] { display: none; position: absolute; top: -8px; right: -14px; background: var(--blue); color: white; font-size: 11px; padding: 1px 6px; border-radius: 10px; }
+    .hero-banner { width: 100%; margin: 0 auto 24px; overflow: hidden; background: #fff; }
+    .hero-banner img { display: block; width: 100%; height: auto; max-height: 560px; object-fit: cover; }
     main { max-width: 960px; margin: 0 auto; padding: 16px; }
     h1 { font-size: 22px; }
     h2 { font-size: 16px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 24px 0 12px; }
@@ -47,6 +49,7 @@
     .loading, .empty, .error, .success { padding: 40px 0; text-align: center; color: var(--muted); }
     .error { color: #c00; }
     #checkoutMsg { margin-top: 10px; text-align: center; color: var(--muted); }
+    @media (max-width: 700px) { .hero-banner { margin-bottom: 16px; } .hero-banner img { min-height: 260px; object-fit: cover; object-position: center; } }
   </style>
 </head>
 <body>
@@ -54,6 +57,9 @@
     <a class="logo" href="/">SwiftShop</a>
     <a class="cart-link" href="/cart">Cart <span data-cart-badge></span></a>
   </header>
+  <section class="hero-banner" aria-label="Swift shopping and delivery">
+    <img src="https://d2ol7oe51mr4n9.cloudfront.net/user_3JcBFKioSjjhMWhdbh2ILNIqklk/1b89a04f-d556-4b4f-9812-ab95681f8b2e.jpg" alt="Swift — Buy and get delivered. Your favourite shops, local sellers and fast delivery, all on Swift." loading="eager" fetchpriority="high" width="1280" height="640">
+  </section>
   <main id="app"><div class="loading">Loading…</div></main>
   <script type="module" src="/app.js"></script>
 </body>
