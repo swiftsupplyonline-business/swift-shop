@@ -18,6 +18,10 @@ beforeAll(() => {
   } as any);
 });
 
+beforeEach(() => {
+  mockSend.mockClear();
+});
+
 describe('Notifications Accounting (SWIFT-022)', () => {
   const db = admin.firestore();
 
