@@ -103,13 +103,9 @@ export const requestDelivery = onCall(async (request) => {
 
 const VALID_DELIVERY_STATUSES = ["REQUESTED", "ASSIGNED", "AT_PICKUP", "PICKUP_CONFIRMED", "IN_TRANSIT", "DELIVERED", "FAILED", "CANCELLED"];
 
-// RED-4: split the old single "PICKUP" state into an explicit handoff
-// sequence. AT_PICKUP is the driver's arrival ping (driver-only -- it only
-// asserts the driver's own presence). PICKUP_CONFIRMED is the actual
-// physical handoff -- after this point the delivery provider has custody of
-// the goods -- and can be confirmed by EITHER the assigned driver or the
-// merchandise seller, since either party present at the handoff can attest
-// to it (see authorization block below).
+// RED-4: explicit handoff sequence. AT_PICKUP records the assigned driver's
+// arrival. PICKUP_CONFIRMED is the physical custody transition and is
+// authoritative only when confirmed by the assigned driver.
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
     REQUESTED: ["ASSIGNED", "CANCELLED"],
     ASSIGNED: ["AT_PICKUP", "CANCELLED"],
@@ -195,11 +191,11 @@ export const updateDeliveryStatus = onCall(async (request) => {
                 if (!isBuyer && !isAssignedDriver && !isAdmin) throw new Error("Unauthorized");
                 if (isBuyer && route.status !== "REQUESTED") throw new Error("Buyer can only cancel before a driver is assigned");
             } else if (status === "PICKUP_CONFIRMED") {
-                // RED-4: either party physically present at the handoff can
-                // confirm it -- the driver (who now has custody) or the
-                // merchandise seller (who just released the goods).
-                if (!isAssignedDriver && !isMerchandiseSeller && !isAdmin) {
-                    throw new Error("Only the assigned driver or the merchandise seller can confirm pickup");
+                // RED-4: physical custody is confirmed only by the assigned driver.
+                // The seller may mark the order READY, but cannot attest on
+                // behalf of the delivery provider that custody transferred.
+                if (!isAssignedDriver) {
+                    throw new Error("Only the assigned driver can confirm pickup");
                 }
             } else {
                 if (!isAssignedDriver && !isAdmin) throw new Error("Only the assigned driver can update this delivery");
