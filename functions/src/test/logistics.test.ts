@@ -6,6 +6,10 @@ const testEnv = firebaseTest({
   projectId: 'swift-shop-reconciled',
 });
 
+if (admin.apps.length === 0) {
+  admin.initializeApp({ projectId: 'swift-shop-reconciled' });
+}
+
 describe('Logistics Authoritative Logic (SWIFT-019)', () => {
   let wrapped: any;
   const db = admin.firestore();
