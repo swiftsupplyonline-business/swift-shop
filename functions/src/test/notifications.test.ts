@@ -59,7 +59,7 @@ describe('Notifications Accounting (SWIFT-022)', () => {
     }, 'messages/msg_123');
 
     await wrapped({
-       data: () => ({ ...snap.data() }),
+       data: snap,
        id: eventId
     } as any);
 
@@ -103,7 +103,7 @@ describe('Notifications Accounting (SWIFT-022)', () => {
     }, 'messages/group_msg_1');
 
     await wrapped({
-       data: () => ({ ...snap.data() }),
+       data: snap,
        id: eventId
     } as any);
 
