@@ -38,7 +38,7 @@ describe('Logistics Authoritative Logic (SWIFT-019)', () => {
     // 3. Call as authorized driver
     await wrapped({
       data: { routeId, status: 'ASSIGNED' },
-      auth: { uid: driverId, token: { role: 'DRIVER' } }
+      auth: { uid: driverId, token: { role: 'DRIVER' } as any }
     });
 
     // 4. Verify
