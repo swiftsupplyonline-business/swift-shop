@@ -586,8 +586,8 @@ export const confirmDelivery = onCall(async (request) => {
             const order = orderDoc.data()!;
 
             if (order.buyerId !== auth.uid) throw new Error("Unauthorized");
-            if (order.status !== "READY" && order.status !== "DISPATCHED" && order.status !== "DELIVERED") {
-                 throw new Error(`Order cannot be confirmed in state ${order.status}`);
+            if (order.status !== "DELIVERED") {
+                 throw new Error(`Order must be DELIVERED before customer confirmation; current state is ${order.status}`);
             }
 
             if (order.settlementStatus === "SETTLED") return; // Idempotent
