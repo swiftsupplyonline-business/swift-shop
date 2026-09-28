@@ -141,24 +141,32 @@ private fun ProfileContent(
         ) {
 
         // ── Cover + Avatar ─────────────────────────────────────────────────
+        // ── Cover + Avatar + Actions (all float over cover photo) ──────────
         item {
-            Box(modifier = Modifier.fillMaxWidth().height(200.dp)) {
-                // Cover photo
+            Box(modifier = Modifier.fillMaxWidth()) {
+                // Cover photo — full bleed
                 AsyncImage(
                     model = profile.coverUrl,
                     contentDescription = "Cover",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxWidth().height(420.dp)
                 )
-                // Gradient overlay
+                // Glassmorphic fade: transparent → glass bloom → surface
+                val surfaceColor = MaterialTheme.colorScheme.surface
                 Box(
-                    modifier = Modifier.fillMaxSize().background(
+                    modifier = Modifier.fillMaxWidth().height(420.dp).background(
                         Brush.verticalGradient(
-                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.4f))
+                            colorStops = arrayOf(
+                                0.00f to Color.Transparent,
+                                0.55f to Color.Transparent,
+                                0.72f to Color.White.copy(alpha = 0.04f),
+                                0.83f to surfaceColor.copy(alpha = 0.92f),
+                                1.00f to surfaceColor
+                            )
                         )
                     )
                 )
-                // Back / Settings row
+                // Back / Settings row — pinned to top
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -168,104 +176,93 @@ private fun ProfileContent(
                 ) {
                     IconButton(
                         onClick = onBack,
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.3f))
+                        modifier = Modifier.clip(CircleShape).background(Color.Black.copy(alpha = 0.3f))
                     ) {
                         Icon(Icons.Default.ArrowBack, "Back", tint = Color.White)
                     }
                     if (isOwnProfile) {
                         IconButton(
                             onClick = onSettings,
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.3f))
+                            modifier = Modifier.clip(CircleShape).background(Color.Black.copy(alpha = 0.3f))
                         ) {
                             Icon(Icons.Default.Settings, "Settings", tint = Color.White)
                         }
                     }
                 }
-            }
-        }
-
-        // ── Avatar row ─────────────────────────────────────────────────────
-        item {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(horizontal = 16.dp)
-            ) {
-                // Avatar positioned to overlap cover
-                SwiftAvatar(
-                    url = profile.avatarUrl,
-                    size = 80.dp,
-                    tier = profile.tier,
-                    modifier = Modifier.offset(y = (-40).dp)
-                )
-                // Action buttons — right aligned
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.End
+                // Avatar + buttons — float over the bottom of the cover
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomStart)
+                        .padding(horizontal = 16.dp, vertical = 16.dp)
                 ) {
-                    if (!isOwnProfile) {
-                        OutlinedButton(
-                            onClick = onMessage,
-                            shape = MaterialTheme.shapes.medium
-                        ) {
-                            Icon(Icons.Default.Message, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Message")
+                    // Avatar + Edit/Follow/Message row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        SwiftAvatar(
+                            url = profile.avatarUrl,
+                            size = 80.dp,
+                            tier = profile.tier
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (!isOwnProfile) {
+                                OutlinedButton(
+                                    onClick = onMessage,
+                                    shape = MaterialTheme.shapes.medium
+                                ) {
+                                    Icon(Icons.Default.Message, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Message")
+                                }
+                                Button(
+                                    onClick = onFollow,
+                                    shape = MaterialTheme.shapes.medium
+                                ) {
+                                    Text(if (profile.isFollowedByMe) "Following" else "Follow")
+                                }
+                            } else {
+                                OutlinedButton(onClick = onEditProfile, shape = MaterialTheme.shapes.medium) {
+                                    Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Edit Profile")
+                                }
+                            }
                         }
-                        Spacer(Modifier.width(8.dp))
-                        Button(
-                            onClick = onFollow,
-                            shape = MaterialTheme.shapes.medium
+                    }
+                    // Post / Sell / Hustle buttons (own profile only)
+                    if (isOwnProfile) {
+                        Spacer(Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(if (profile.isFollowedByMe) "Following" else "Follow")
-                        }
-                    } else {
-                        OutlinedButton(onClick = onEditProfile, shape = MaterialTheme.shapes.medium) {
-                            Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Edit Profile")
+                            SwiftGradientButton(
+                                text = "Post",
+                                onClick = onCreatePost,
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                icon = { Icon(Icons.Default.AddPhotoAlternate, null, modifier = Modifier.size(16.dp), tint = androidx.compose.ui.graphics.Color.White) }
+                            )
+                            SwiftGradientButton(
+                                text = "Sell",
+                                onClick = onCreateListing,
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                icon = { Icon(Icons.Default.AddShoppingCart, null, modifier = Modifier.size(16.dp), tint = androidx.compose.ui.graphics.Color.White) }
+                            )
+                            SwiftGradientButton(
+                                text = "Hustle",
+                                onClick = onCreateShop,
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                icon = { Icon(Icons.Default.Storefront, null, modifier = Modifier.size(16.dp), tint = androidx.compose.ui.graphics.Color.White) }
+                            )
                         }
                     }
                 }
             }
         }
 
-        // ── Action Row (own profile) ───────────────────────────────────────
-        if (isOwnProfile) {
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surface)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    SwiftGradientButton(
-                        text = "Post",
-                        onClick = onCreatePost,
-                        modifier = Modifier.weight(1f).height(48.dp),
-                        icon = { Icon(Icons.Default.AddPhotoAlternate, null, modifier = Modifier.size(16.dp), tint = androidx.compose.ui.graphics.Color.White) }
-                    )
-                    SwiftGradientButton(
-                        text = "Sell",
-                        onClick = onCreateListing,
-                        modifier = Modifier.weight(1f).height(48.dp),
-                        icon = { Icon(Icons.Default.AddShoppingCart, null, modifier = Modifier.size(16.dp), tint = androidx.compose.ui.graphics.Color.White) }
-                    )
-                    SwiftGradientButton(
-                        text = "Hustle",
-                        onClick = onCreateShop,
-                        modifier = Modifier.weight(1f).height(48.dp),
-                        icon = { Icon(Icons.Default.Storefront, null, modifier = Modifier.size(16.dp), tint = androidx.compose.ui.graphics.Color.White) }
-                    )
-                }
-            }
-        }
 
         // ── Name + Bio ─────────────────────────────────────────────────────
         item {
