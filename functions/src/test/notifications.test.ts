@@ -41,14 +41,15 @@ describe('Notifications Accounting (SWIFT-022)', () => {
     });
 
     // 3. Mock partial failure (d1 succeeds, d2 fails permanent)
-    mockSend.mockResolvedValue({
-      successCount: 1,
-      failureCount: 1,
-      responses: [
-        { success: true, messageId: 'm1' },
-        { success: false, error: { code: 'messaging/registration-token-not-registered', message: 'unregistered' } }
-      ]
-    });
+    mockSend.mockImplementation(async ({ tokens }: { tokens: string[] }) => ({
+      successCount: tokens.filter((token) => token === 't1').length,
+      failureCount: tokens.filter((token) => token === 't2').length,
+      responses: tokens.map((token) =>
+        token === 't1'
+          ? { success: true, messageId: 'm1' }
+          : { success: false, error: { code: 'messaging/registration-token-not-registered', message: 'unregistered' } }
+      )
+    }));
 
     // 4. Trigger function
     const wrapped = testEnv.wrap(notifyOnMessage);
@@ -91,7 +92,7 @@ describe('Notifications Accounting (SWIFT-022)', () => {
     await db.collection('users').doc('user_1').collection('devices').doc('d1').set({ token: 't1', isActive: true });
     await db.collection('users').doc('user_2').collection('devices').doc('d2').set({ token: 't2', isActive: true });
 
-    mockSend.mockResolvedValue({ successCount: 1, failureCount: 0, responses: [{ success: true }] });
+    mockSend.mockResolvedValue({ successCount: 1, failureCount: 0, responses: [{ success: true, messageId: 'group-message' }] });
 
     // 3. Trigger function
     const { notifyOnMessage } = require('../notifications');
