@@ -477,8 +477,12 @@ export const onOrderConfirmed = onDocumentWritten("orders/{orderId}", async (eve
             sellerId: after.sellerId,
             providerId: dr.merchantId, // Designated provider from the request
             driverId: "", // SWIFT-019: Unassigned initially
-            pickupLat: dr.pickup.lat,
-            pickupLng: dr.pickup.lng,
+            // RED-1 refinement: the order snapshot is the immutable
+            // commercial source of truth for where the merchandise is picked up.
+            // Fall back to the accepted request only for legacy orders created
+            // before pickupSnapshot existed.
+            pickupLat: after.pickupSnapshot?.lat ?? dr.pickup.lat,
+            pickupLng: after.pickupSnapshot?.lng ?? dr.pickup.lng,
             dropoffLat: dr.dropoff.lat,
             dropoffLng: dr.dropoff.lng,
             status: "REQUESTED", // SWIFT-019: Waiting for a driver to claim
