@@ -632,6 +632,18 @@ export const confirmDelivery = onCall(async (request) => {
             const deliveryProviderSellerId: string =
                 order.deliveryProviderSellerId || order.sellerId;
 
+            // Firestore transactions require all reads before any writes.
+            // Read every wallet needed for settlement first.
+            const sellerWalletRef = db.collection("wallets").doc(order.sellerId);
+            const sellerWalletDoc = await transaction.get(sellerWalletRef);
+            const currentSellerBalance = sellerWalletDoc.data()?.availableBalanceMinorUnits || 0;
+
+            const providerWalletRef = db.collection("wallets").doc(deliveryProviderSellerId);
+            const providerWalletDoc = deliveryFee > 0
+                ? await transaction.get(providerWalletRef)
+                : null;
+            const currentProviderBalance = providerWalletDoc?.data()?.availableBalanceMinorUnits || 0;
+
             // Debit Escrow
             const ledgerId = db.collection("ledgerEntries").doc().id;
             transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
@@ -644,13 +656,12 @@ export const confirmDelivery = onCall(async (request) => {
                 timestamp: now
             });
 
-            // Credit Product Seller Wallet (subtotal only)
-            const sellerWalletRef = db.collection("wallets").doc(order.sellerId);
-            const sellerWalletDoc = await transaction.get(sellerWalletRef);
-            const currentSellerBalance = sellerWalletDoc.data()?.availableBalanceMinorUnits || 0;
-
+            // Credit Product Seller Wallet. If the delivery provider is the
+            // same user, combine both credits into one wallet write so the
+            // delivery-fee update cannot overwrite the merchandise proceeds.
+            const sellerCredit = subtotal + (deliveryFee > 0 && deliveryProviderSellerId === order.sellerId ? deliveryFee : 0);
             transaction.update(sellerWalletRef, {
-                availableBalanceMinorUnits: currentSellerBalance + subtotal,
+                availableBalanceMinorUnits: currentSellerBalance + sellerCredit,
                 updatedAt: now
             });
 
@@ -668,11 +679,7 @@ export const confirmDelivery = onCall(async (request) => {
             // Credit Delivery Provider Wallet (delivery fee)
             // When the delivery provider is the same as the product seller, we credit
             // them separately so the ledger entries remain auditable regardless.
-            if (deliveryFee > 0) {
-                const providerWalletRef = db.collection("wallets").doc(deliveryProviderSellerId);
-                const providerWalletDoc = await transaction.get(providerWalletRef);
-                const currentProviderBalance = providerWalletDoc.data()?.availableBalanceMinorUnits || 0;
-
+            if (deliveryFee > 0 && deliveryProviderSellerId !== order.sellerId) {
                 transaction.update(providerWalletRef, {
                     availableBalanceMinorUnits: currentProviderBalance + deliveryFee,
                     updatedAt: now
