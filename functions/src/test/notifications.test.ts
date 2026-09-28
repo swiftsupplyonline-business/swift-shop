@@ -6,16 +6,12 @@ const testEnv = firebaseTest({
   projectId: 'swift-shop-reconciled',
 });
 
-// Mock admin.messaging
+// Mock admin.messaging without replacing the firebase-admin module namespace.
 const mockSend = jest.fn();
-jest.mock('firebase-admin', () => {
-  const actual = jest.requireActual('firebase-admin');
-  return {
-    ...actual,
-    messaging: () => ({
-      sendEachForMulticast: mockSend
-    })
-  };
+beforeAll(() => {
+  jest.spyOn(admin, 'messaging').mockReturnValue({
+    sendEachForMulticast: mockSend
+  } as any);
 });
 
 describe('Notifications Accounting (SWIFT-022)', () => {
