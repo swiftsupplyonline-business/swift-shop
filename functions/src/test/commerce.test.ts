@@ -157,7 +157,7 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
     const result = await testEnv.wrap(cancelOrder)({
       data: { orderId, reason: 'Customer changed mind' },
       auth: { uid: 'buyer_cancel', token: {} as any , rawToken: '' }
-    });
+    } as any);
 
     expect(result.success).toBe(true);
     expect((await db.collection('orders').doc(orderId).get()).data()?.status).toBe('CANCELLED');
@@ -179,7 +179,7 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
 
     const result = await testEnv.wrap(confirmDelivery)({
       data: { orderId }, auth: { uid: 'buyer_pickup', token: {} as any , rawToken: '' }
-    });
+    } as any);
 
     expect(result.success).toBe(true);
     const order = (await db.collection('orders').doc(orderId).get()).data();
@@ -201,7 +201,7 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
 
     const result = await testEnv.wrap(confirmDelivery)({
       data: { orderId }, auth: { uid: 'buyer_delivery', token: {} as any , rawToken: '' }
-    });
+    } as any);
 
     expect(result.success).toBe(true);
     expect((await db.collection('orders').doc(orderId).get()).data()?.settlementStatus).toBe('SETTLED');
