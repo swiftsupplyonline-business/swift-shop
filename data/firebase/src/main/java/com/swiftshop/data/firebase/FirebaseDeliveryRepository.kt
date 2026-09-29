@@ -18,6 +18,46 @@ class FirebaseDeliveryRepository @Inject constructor(
     private val functions: FirebaseFunctions
 ) : DeliveryRepository {
 
+    override suspend fun getDeliveryOptions(): Result<List<com.swiftshop.domain.delivery.DeliveryOption>> = runCatching {
+        val result = functions.getHttpsCallable("getDeliveryOptions").call(emptyMap<String, Any>()).await()
+        val data = result.data as Map<*, *>
+        val options = (data["options"] as? List<*>)?.mapNotNull { raw ->
+            val d = raw as? Map<*, *> ?: return@mapNotNull null
+            val currency = d["priceCurrency"] as? String ?: "LSL"
+            com.swiftshop.domain.delivery.DeliveryOption(
+                listingId = d["listingId"] as? String ?: "",
+                shopId = d["shopId"] as? String ?: "",
+                sellerId = d["sellerId"] as? String ?: "",
+                title = d["title"] as? String ?: "",
+                price = MoneyAmount(currency, (d["priceMinorUnits"] as? Number)?.toLong() ?: 0L),
+                deliveryEstimateDays = (d["deliveryEstimateDays"] as? Number)?.toInt() ?: 0
+            )
+        } ?: emptyList()
+        options
+    }
+
+    override suspend fun createPostPurchaseDeliveryRequest(
+        orderId: String,
+        listingId: String,
+        dropoff: GeoPoint
+    ): Result<String> = runCatching {
+        val data = mapOf(
+            "orderId" to orderId,
+            "listingId" to listingId,
+            "dropoff" to mapOf("lat" to dropoff.lat, "lng" to dropoff.lng)
+        )
+        val result = functions.getHttpsCallable("createDeliveryRequest").call(data).await()
+        val map = result.data as Map<*, *>
+        map["requestId"] as String
+    }
+
+    override suspend fun createDeliveryJob(requestId: String): Result<String> = runCatching {
+        val result = functions.getHttpsCallable("createDeliveryJob")
+            .call(mapOf("requestId" to requestId)).await()
+        val map = result.data as Map<*, *>
+        map["routeId"] as String
+    }
+
     override fun observeDeliveryRoute(routeId: String): Flow<DeliveryRoute> = callbackFlow {
         val subscription = firestore.collection("deliveryRoutes").document(routeId)
             .addSnapshotListener { snapshot, _ ->
