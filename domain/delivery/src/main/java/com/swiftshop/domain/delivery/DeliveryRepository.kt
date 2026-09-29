@@ -6,7 +6,19 @@ import com.swiftshop.core.model.DeliveryStatus
 import com.swiftshop.core.model.GeoPoint
 import kotlinx.coroutines.flow.Flow
 
+data class DeliveryOption(
+    val listingId: String,
+    val shopId: String,
+    val sellerId: String,
+    val title: String,
+    val price: com.swiftshop.core.model.MoneyAmount,
+    val deliveryEstimateDays: Int = 0
+)
+
 interface DeliveryRepository {
+    suspend fun getDeliveryOptions(): Result<List<DeliveryOption>>
+    suspend fun createPostPurchaseDeliveryRequest(orderId: String, listingId: String, dropoff: GeoPoint): Result<String>
+    suspend fun createDeliveryJob(requestId: String): Result<String>
     fun observeDeliveryRoute(routeId: String): Flow<DeliveryRoute>
     suspend fun requestDelivery(orderId: String, pickup: GeoPoint, dropoff: GeoPoint): Result<String>
     suspend fun updateDriverLocation(routeId: String, location: GeoPoint): Result<Unit>
