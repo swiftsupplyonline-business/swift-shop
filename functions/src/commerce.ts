@@ -124,6 +124,7 @@ export const calculatePurchaseTotal = onCall(async (request) => {
 
     const db = admin.firestore();
     let subtotal = 0;
+    let shopId = "";
     const validItems: any[] = [];
 
     for (const item of items) {
@@ -133,6 +134,10 @@ export const calculatePurchaseTotal = onCall(async (request) => {
         const listing = snap.data()!;
         const quantity = item.quantity || 1;
         assertPurchasable(listing, quantity);
+        if (!shopId) shopId = listing.shopId || "";
+        else if (listing.shopId !== shopId) {
+            throw new HttpsError("invalid-argument", "Multi-shop orders are not supported in this version.");
+        }
         subtotal += (listing.priceMinorUnits || 0) * quantity;
         validItems.push({
             listingId: item.listingId,
