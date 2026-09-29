@@ -64,8 +64,6 @@ class OfflineFirstCommerceRepository @Inject constructor(
 
     override fun getDeliveryListings(shopId: String): Flow<List<Listing>> = remote.getDeliveryListings(shopId)
 
-    override suspend fun getListingByShareSlugs(shopSlug: String, productSlug: String) = remote.getListingByShareSlugs(shopSlug, productSlug)
-
     override suspend fun getListing(listingId: String) = runCatching {
         remote.getListing(listingId).getOrThrow()
     }.recoverCatching {
@@ -94,9 +92,6 @@ class OfflineFirstCommerceRepository @Inject constructor(
     override suspend fun searchListings(query: String): Result<List<Listing>> = 
         remote.searchListings(query)
 
-    override suspend fun searchShops(query: String): Result<List<Shop>> =
-        remote.searchShops(query)
-
     override suspend fun createListing(listing: Listing) = remote.createListing(listing)
     override suspend fun updateListing(listing: Listing) = remote.updateListing(listing)
     override suspend fun deleteListing(listingId: String) = remote.deleteListing(listingId)
@@ -109,6 +104,17 @@ class OfflineFirstCommerceRepository @Inject constructor(
     override suspend fun clearCart(userId: String) = remote.clearCart(userId)
 
     override suspend fun initiateSubscription(targetTier: com.swiftshop.core.model.UserTier) = remote.initiateSubscription(targetTier)
+
+    override suspend fun calculatePurchaseTotal(items: List<com.swiftshop.core.model.OrderItem>) =
+        remote.calculatePurchaseTotal(items)
+
+    override suspend fun placePurchase(
+        items: List<com.swiftshop.core.model.OrderItem>,
+        paymentMethod: com.swiftshop.core.model.PaymentMethod,
+        provider: String?,
+        phoneNumber: String,
+        idempotencyKey: String
+    ) = remote.placePurchase(items, paymentMethod, provider, phoneNumber, idempotencyKey)
 
     override suspend fun calculateOrderFees(
         items: List<com.swiftshop.core.model.OrderItem>,

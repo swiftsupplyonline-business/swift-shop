@@ -6,15 +6,26 @@ import com.swiftshop.core.model.DeliveryStatus
 import com.swiftshop.core.model.GeoPoint
 import kotlinx.coroutines.flow.Flow
 
+data class DeliveryOption(
+    val listingId: String,
+    val shopId: String,
+    val sellerId: String,
+    val title: String,
+    val price: com.swiftshop.core.model.MoneyAmount,
+    val deliveryEstimateDays: Int = 0
+)
+
 interface DeliveryRepository {
+    suspend fun getDeliveryOptions(): Result<List<DeliveryOption>>
+    suspend fun createPostPurchaseDeliveryRequest(orderId: String, listingId: String, dropoff: GeoPoint): Result<String>
+    suspend fun createDeliveryJob(requestId: String): Result<String>
     fun observeDeliveryRoute(routeId: String): Flow<DeliveryRoute>
-    suspend fun requestDelivery(orderId: String, dropoff: GeoPoint): Result<String>
+    suspend fun requestDelivery(orderId: String, pickup: GeoPoint, dropoff: GeoPoint): Result<String>
     suspend fun updateDriverLocation(routeId: String, location: GeoPoint): Result<Unit>
     suspend fun updateDeliveryStatus(routeId: String, status: DeliveryStatus): Result<Unit>
     fun getActiveDeliveriesForDriver(driverId: String): Flow<List<DeliveryRoute>>
-    suspend fun createDeliveryRequest(listingId: String, dropoff: GeoPoint, merchandiseShopId: String): Result<String>
+    suspend fun createDeliveryRequest(listingId: String, pickup: GeoPoint, dropoff: GeoPoint): Result<String>
     fun observeDeliveryRequest(requestId: String): Flow<DeliveryRequest>
     fun observePendingDeliveryRequestsForMerchant(merchantId: String): Flow<List<DeliveryRequest>>
     suspend fun respondToDeliveryRequest(requestId: String, accept: Boolean): Result<Unit>
-    suspend fun cancelDeliveryRequest(requestId: String): Result<Unit>
 }
