@@ -336,10 +336,7 @@ fun OrderDetailScreen(
                         item {
                             OutlinedButton(
                                 onClick = {
-                                    val listingId = viewModel.getDeliveryListingId()
-                                    if (listingId != null) {
-                                        navController.navigate(Screen.RequestDelivery.createRoute(listingId))
-                                    }
+                                    navController.navigate(Screen.DeliveryCheckout.createRoute(order.id))
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = MaterialTheme.shapes.medium
@@ -352,12 +349,14 @@ fun OrderDetailScreen(
                         }
                     }
 
-                    if (order.status == OrderStatus.DISPATCHED) {
+                    if (order.fulfillmentId.isNotBlank() &&
+                        order.fulfillmentStatus != FulfillmentStatus.DELIVERED &&
+                        order.fulfillmentStatus != FulfillmentStatus.CANCELLED) {
                         item {
                             SwiftPrimaryButton(
                                 text = "Track Delivery",
                                 onClick = {
-                                    navController.navigate(Screen.DeliveryTracking.createRoute(order.id))
+                                    navController.navigate(Screen.DeliveryTracking.createRoute(order.fulfillmentId))
                                 },
                                 leadingIcon = { Icon(Icons.Default.LocalShipping, null,
                                     modifier = Modifier.size(18.dp)) },
