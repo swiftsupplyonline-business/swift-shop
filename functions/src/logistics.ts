@@ -2,6 +2,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onDocumentUpdated } from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
+import { MopayClient, MOPAY_API_KEY } from "./mopay";
 
 const DELIVERY_REQUEST_WINDOW_MS = 120_000; // 120 seconds, server-authoritative
 
@@ -100,7 +101,7 @@ export const requestDelivery = onCall(async (request) => {
 const VALID_DELIVERY_STATUSES = ["REQUESTED", "ASSIGNED", "PICKUP", "IN_TRANSIT", "AWAITING_SIGNATURE", "DELIVERED", "FAILED", "CANCELLED"];
 
 // Linear, conservative transition map. Driver dispatch/matching isn't designed yet
-// (blueprint Â§27 lists this as an architectural unknown) â€” revisit once it is.
+// (blueprint Ã‚Â§27 lists this as an architectural unknown) Ã¢â‚¬â€ revisit once it is.
 // NOTE: a driver can only bring a route to AWAITING_SIGNATURE. Only the buyer's
 // signature (confirmDeliverySignature) can move it to DELIVERED, since that is
 // also the moment the delivery fee is released to the provider.
@@ -444,7 +445,7 @@ export const createDeliveryRequest = onCall(async (request) => {
  * Scope note: ACCEPTED/DECLINED here means only that the merchant has
  * responded to the job request. This function intentionally does not
  * create an order, touch payment, wallet, ledger, inventory, escrow, or
- * deliveryRoutes Ã¢â‚¬â€ the handoff from an accepted request into those systems
+ * deliveryRoutes ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the handoff from an accepted request into those systems
  * is separate, not-yet-designed work.
  */
 export const respondToDeliveryRequest = onCall(async (request) => {
@@ -507,7 +508,7 @@ export const respondToDeliveryRequest = onCall(async (request) => {
  * Cancels a pending delivery request initiated by the requester.
  * Only the requester (customer) may cancel a PENDING request.
  * Requests in any terminal state (ACCEPTED, DECLINED, EXPIRED, CANCELLED)
- * cannot be cancelled Ã¢â‚¬â€ the client must handle those states in the UI.
+ * cannot be cancelled ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the client must handle those states in the UI.
  *
  * Contract:
  * - Request: { requestId: string }
@@ -655,3 +656,298 @@ export const authorizeDriver = onCall(async (request) => {
 
     return { success: true };
 });
+/**
+ * Charges the buyer for an ACCEPTED delivery request's fee (wallet or Mopay,
+ * same pattern as createOrder). On success (wallet) or after Mopay verification,
+ * creates the deliveryRoutes doc so a driver can claim it ΓÇö this replaces the
+ * route-creation that onOrderConfirmed used to do at order-confirmation time.
+ * Contract:
+ * - Request: { requestId: string, paymentMethod: "SWIFT_WALLET" | "MOPAY", idempotencyKey: string, customerEmail?, customerName? }
+ * - Response: { requestId } or { requestId, paymentUrl, mopaySessionId }
+ */
+export const payForDelivery = onCall({ secrets: [MOPAY_API_KEY] }, async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { requestId, paymentMethod, idempotencyKey, customerEmail, customerName } = request.data;
+    if (!requestId || !idempotencyKey) {
+        throw new HttpsError("invalid-argument", "Missing requestId or idempotencyKey");
+    }
+
+    const db = admin.firestore();
+    let finalTotal = 0;
+    let existingPayment: { paymentUrl?: string, mopaySessionId?: string } | null = null;
+
+    try {
+        const transactionResult = await db.runTransaction(async (transaction) => {
+            const requestRef = db.collection("deliveryRequests").doc(requestId);
+            const requestDoc = await transaction.get(requestRef);
+            if (!requestDoc.exists) throw new Error("Delivery request not found");
+            const deliveryRequest = requestDoc.data()!;
+
+            if (deliveryRequest.requesterId !== auth.uid) {
+                throw new Error("Only the requester can pay for this delivery");
+            }
+
+            if (deliveryRequest.idempotencyKey === idempotencyKey) {
+                const sessionStatus = deliveryRequest.paymentSessionStatus || "FAILED";
+                const isCreated = sessionStatus === "CREATED";
+                const isCreating = sessionStatus === "CREATING";
+                const lastUpdated = deliveryRequest.updatedAt || 0;
+                const leaseExpired = isCreating && (Date.now() - lastUpdated > 120 * 1000);
+
+                if (isCreated || deliveryRequest.status === "PAID") {
+                    return {
+                        requestId,
+                        total: deliveryRequest.paymentTotalMinorUnits || 0,
+                        paymentUrl: deliveryRequest.paymentUrl,
+                        mopaySessionId: deliveryRequest.mopaySessionId,
+                        isIdempotent: true,
+                        recoveryNeeded: false
+                    };
+                }
+                if (isCreating && !leaseExpired) {
+                    throw new Error("RETRY_TOO_SOON: Payment session creation is still in progress.");
+                }
+
+                const nextAttempt = (deliveryRequest.paymentAttemptCount || 0) + 1;
+                transaction.update(requestRef, {
+                    paymentSessionStatus: "CREATING",
+                    paymentAttemptCount: nextAttempt,
+                    updatedAt: Date.now()
+                });
+                return {
+                    requestId,
+                    total: deliveryRequest.paymentTotalMinorUnits || 0,
+                    isIdempotent: true,
+                    recoveryNeeded: true,
+                    attemptIndex: nextAttempt
+                };
+            }
+
+            if (deliveryRequest.status !== "AWAITING_PAYMENT") {
+                throw new Error(`Delivery request must be AWAITING_PAYMENT to pay (current status: ${deliveryRequest.status})`);
+            }
+
+            const deliverySubtotal = deliveryRequest.deliveryFeeMinorUnits || 0;
+            const platformFee = Math.floor((deliverySubtotal * 15) / 1000);
+            const total = deliverySubtotal + platformFee;
+            finalTotal = total;
+
+            let newStatus = "AWAITING_PAYMENT";
+
+            if (paymentMethod === "SWIFT_WALLET") {
+                const walletRef = db.collection("wallets").doc(auth.uid);
+                const walletDoc = await transaction.get(walletRef);
+                if (!walletDoc.exists) throw new Error("Wallet not found");
+
+                const availableBalance = walletDoc.data()?.availableBalanceMinorUnits || 0;
+                if (availableBalance < total) {
+                    throw new Error(`Insufficient wallet balance. Required: ${total}, Available: ${availableBalance}`);
+                }
+
+                transaction.update(walletRef, {
+                    availableBalanceMinorUnits: availableBalance - total,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+
+                const ledgerId = db.collection("ledgerEntries").doc().id;
+                transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
+                    id: ledgerId,
+                    debitAccount: `user_${auth.uid}`,
+                    creditAccount: "system_delivery_escrow",
+                    amountMinorUnits: total,
+                    currency: "LSL",
+                    reference: `DELIVERY_PAY_${requestId}`,
+                    timestamp: admin.firestore.FieldValue.serverTimestamp()
+                });
+
+                newStatus = "PAID";
+            }
+
+            transaction.update(requestRef, {
+                status: newStatus,
+                platformFeeMinorUnits: platformFee,
+                paymentTotalMinorUnits: total,
+                paymentMethod: paymentMethod || "MOPAY",
+                idempotencyKey,
+                paymentSessionStatus: paymentMethod === "MOPAY" ? "CREATING" : "NA",
+                paymentAttemptCount: paymentMethod === "MOPAY" ? 1 : 0,
+                updatedAt: Date.now()
+            });
+
+            return { requestId, total, isIdempotent: false, newStatus };
+        });
+
+        finalTotal = transactionResult.total;
+        if (transactionResult.isIdempotent) {
+            existingPayment = {
+                paymentUrl: transactionResult.paymentUrl,
+                mopaySessionId: transactionResult.mopaySessionId
+            };
+            if (!transactionResult.recoveryNeeded && !existingPayment.paymentUrl) {
+                await createRouteForPaidDelivery(requestId);
+                return { requestId };
+            }
+        }
+
+        if (paymentMethod === "SWIFT_WALLET") {
+            await createRouteForPaidDelivery(requestId);
+            return { requestId };
+        }
+
+        if (paymentMethod === "MOPAY") {
+            if (existingPayment?.paymentUrl && !transactionResult.recoveryNeeded) {
+                return {
+                    requestId,
+                    paymentUrl: existingPayment.paymentUrl,
+                    mopaySessionId: existingPayment.mopaySessionId
+                };
+            }
+
+            const attemptIndex = transactionResult.recoveryNeeded ? transactionResult.attemptIndex : 1;
+
+            const mopayRequest = {
+                amount: finalTotal / 100,
+                reference: requestId,
+                redirectUrl: "swiftshop://delivery/verify",
+                description: `Delivery fee for request ${requestId}`,
+                customerEmail: customerEmail || auth.token.email || "",
+                customerName: customerName || auth.token.name || auth.uid,
+                idempotencyKey: `mopay_delivery_${requestId}_v${attemptIndex}`
+            };
+
+            const mopayResponse = await MopayClient.initiatePaymentSession(mopayRequest);
+
+            if (mopayResponse.success && mopayResponse.sessionId) {
+                await db.collection("deliveryRequests").doc(requestId).update({
+                    mopaySessionId: mopayResponse.sessionId,
+                    paymentUrl: mopayResponse.paymentUrl,
+                    paymentSessionStatus: "CREATED",
+                    updatedAt: Date.now()
+                });
+                return {
+                    requestId,
+                    paymentUrl: mopayResponse.paymentUrl,
+                    mopaySessionId: mopayResponse.sessionId
+                };
+            } else {
+                await db.collection("deliveryRequests").doc(requestId).update({
+                    paymentSessionStatus: "FAILED",
+                    updatedAt: Date.now()
+                });
+                return {
+                    requestId,
+                    error: mopayResponse.message || "Failed to initiate payment gateway"
+                };
+            }
+        }
+
+        return { requestId };
+    } catch (error: any) {
+        console.error("Delivery payment failed:", error);
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
+ * Verifies a Mopay session for a delivery-fee payment and, on success,
+ * transitions the delivery request to PAID and creates its deliveryRoutes doc.
+ * Contract:
+ * - Request: { sessionId: string }
+ * - Response: { success: true }
+ */
+export const verifyDeliveryMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { sessionId } = request.data;
+    if (!sessionId) throw new HttpsError("invalid-argument", "Missing sessionId");
+
+    const db = admin.firestore();
+
+    try {
+        const drQuery = await db.collection("deliveryRequests")
+            .where("mopaySessionId", "==", sessionId)
+            .where("requesterId", "==", auth.uid)
+            .limit(1)
+            .get();
+        if (drQuery.empty) throw new Error("Delivery request not found for this session.");
+
+        const drDoc = drQuery.docs[0];
+        const dr = drDoc.data();
+
+        const mopaySession = await MopayClient.verifyPaymentSession(sessionId);
+        if (!mopaySession) throw new Error("Could not verify session with MoPay.");
+        if (mopaySession.reference !== drDoc.id) throw new Error("Session reference mismatch.");
+
+        const mopayAmountMinor = Math.round(mopaySession.amount * 100);
+        if (mopayAmountMinor !== dr.paymentTotalMinorUnits) {
+            throw new Error(`Amount mismatch. Expected: ${dr.paymentTotalMinorUnits}, Got: ${mopayAmountMinor}`);
+        }
+
+        if (mopaySession.transactionStatus === "SUCCESS") {
+            await db.runTransaction(async (transaction) => {
+                const freshDoc = await transaction.get(drDoc.ref);
+                const fresh = freshDoc.data()!;
+                if (fresh.status === "PAID") return;
+                if (fresh.status !== "AWAITING_PAYMENT") throw new Error(`Delivery request is in state ${fresh.status}, cannot confirm.`);
+
+                transaction.update(drDoc.ref, {
+                    status: "PAID",
+                    updatedAt: Date.now()
+                });
+            });
+            await createRouteForPaidDelivery(drDoc.id);
+        }
+
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
+ * Creates the deliveryRoutes doc for a PAID delivery request, so a driver can
+ * claim it. Idempotent: does nothing if a route already exists for this order.
+ * This replaces the route-creation onOrderConfirmed used to do at order-
+ * confirmation time, now that delivery is paid for separately and later.
+ */
+async function createRouteForPaidDelivery(requestId: string): Promise<void> {
+    const db = admin.firestore();
+    const drDoc = await db.collection("deliveryRequests").doc(requestId).get();
+    if (!drDoc.exists) return;
+    const dr = drDoc.data()!;
+    if (!dr.relatedOrderId) return;
+
+    const orderDoc = await db.collection("orders").doc(dr.relatedOrderId).get();
+    if (!orderDoc.exists) return;
+    const order = orderDoc.data()!;
+
+    const existingRoute = await db.collection("deliveryRoutes").where("orderId", "==", dr.relatedOrderId).limit(1).get();
+    if (!existingRoute.empty) return;
+
+    const routeId = db.collection("deliveryRoutes").doc().id;
+    await db.collection("deliveryRoutes").doc(routeId).set({
+        id: routeId,
+        orderId: dr.relatedOrderId,
+        buyerId: order.buyerId,
+        sellerId: order.sellerId,
+        providerId: dr.merchantId,
+        driverId: "",
+        pickupLat: dr.pickup.lat,
+        pickupLng: dr.pickup.lng,
+        dropoffLat: dr.dropoff.lat,
+        dropoffLng: dr.dropoff.lng,
+        status: "REQUESTED",
+        distanceMeters: 0,
+        estimatedMinutes: 0,
+        conversationId: "",
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    await db.collection("orders").doc(dr.relatedOrderId).update({
+        deliveryRouteId: routeId,
+        fulfillmentStatus: "DISPATCHED",
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+}
