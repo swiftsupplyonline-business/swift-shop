@@ -97,15 +97,19 @@ export const requestDelivery = onCall(async (request) => {
     }
 });
 
-const VALID_DELIVERY_STATUSES = ["REQUESTED", "ASSIGNED", "PICKUP", "IN_TRANSIT", "DELIVERED", "FAILED", "CANCELLED"];
+const VALID_DELIVERY_STATUSES = ["REQUESTED", "ASSIGNED", "PICKUP", "IN_TRANSIT", "AWAITING_SIGNATURE", "DELIVERED", "FAILED", "CANCELLED"];
 
 // Linear, conservative transition map. Driver dispatch/matching isn't designed yet
 // (blueprint Â§27 lists this as an architectural unknown) â€” revisit once it is.
+// NOTE: a driver can only bring a route to AWAITING_SIGNATURE. Only the buyer's
+// signature (confirmDeliverySignature) can move it to DELIVERED, since that is
+// also the moment the delivery fee is released to the provider.
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
     REQUESTED: ["ASSIGNED", "CANCELLED"],
     ASSIGNED: ["PICKUP", "CANCELLED"],
     PICKUP: ["IN_TRANSIT", "FAILED"],
-    IN_TRANSIT: ["DELIVERED", "FAILED"],
+    IN_TRANSIT: ["AWAITING_SIGNATURE", "FAILED"],
+    AWAITING_SIGNATURE: ["DELIVERED", "FAILED"],
     DELIVERED: [],
     FAILED: [],
     CANCELLED: []
@@ -124,6 +128,9 @@ export const updateDeliveryStatus = onCall(async (request) => {
     const { routeId, status } = request.data;
     if (!routeId || !status || !VALID_DELIVERY_STATUSES.includes(status)) {
         throw new HttpsError("invalid-argument", "routeId and a valid status are required");
+    }
+    if (status === "DELIVERED") {
+        throw new HttpsError("invalid-argument", "Use confirmDeliverySignature to mark a route DELIVERED");
     }
 
     const db = admin.firestore();
@@ -192,18 +199,134 @@ export const updateDeliveryStatus = onCall(async (request) => {
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
 
-            // Mirror terminal delivery states back onto the order.
+            // Mirror in-transit state back onto the order. DELIVERED is mirrored
+            // separately by confirmDeliverySignature, since that is also when
+            // the delivery fee settles.
             if (status === "IN_TRANSIT") {
                 transaction.update(db.collection("orders").doc(route.orderId), {
                     status: "DISPATCHED",
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 });
-            } else if (status === "DELIVERED") {
-                transaction.update(db.collection("orders").doc(route.orderId), {
+            }
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+/**
+ * Buyer signs for the delivery at handoff. This is the single moment that:
+ * releases the package (route -> DELIVERED), and releases the delivery fee
+ * to the provider (settlement, mirroring confirmDelivery's product-side logic).
+ * Contract:
+ * - Request: { routeId: string }
+ * - Response: { success: true }
+ */
+export const confirmDeliverySignature = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { routeId } = request.data;
+    if (!routeId) throw new HttpsError("invalid-argument", "Missing routeId");
+
+    const db = admin.firestore();
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const routeRef = db.collection("deliveryRoutes").doc(routeId);
+            const routeDoc = await transaction.get(routeRef);
+            if (!routeDoc.exists) throw new Error("Delivery route not found");
+            const route = routeDoc.data()!;
+
+            if (route.buyerId !== auth.uid) throw new Error("Only the buyer can sign for this delivery");
+            if (route.status !== "AWAITING_SIGNATURE") {
+                throw new Error(`Route cannot be signed for in state ${route.status}`);
+            }
+
+            const drQuery = await transaction.get(
+                db.collection("deliveryRequests").where("relatedOrderId", "==", route.orderId).limit(1)
+            );
+            if (drQuery.empty) throw new Error("No delivery request found for this route's order");
+            const drDoc = drQuery.docs[0];
+            const dr = drDoc.data();
+
+            if (dr.settlementStatus === "SETTLED") {
+                // Idempotent: already settled, just mirror status if needed.
+                transaction.update(routeRef, {
                     status: "DELIVERED",
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 });
+                return;
             }
+
+            const now = admin.firestore.Timestamp.now();
+            const deliverySubtotal = dr.deliveryFeeMinorUnits || 0;
+            const platformFee = Math.floor((deliverySubtotal * 15) / 1000);
+            const total = deliverySubtotal + platformFee;
+
+            // Debit delivery escrow
+            const ledgerId = db.collection("ledgerEntries").doc().id;
+            transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
+                id: ledgerId,
+                debitAccount: "system_delivery_escrow",
+                creditAccount: "system_clearing",
+                amountMinorUnits: total,
+                currency: "LSL",
+                reference: `SETTLE_DELIVERY_${route.orderId}`,
+                timestamp: now
+            });
+
+            // Credit provider wallet (delivery subtotal only)
+            const providerWalletRef = db.collection("wallets").doc(route.providerId);
+            const providerWalletDoc = await transaction.get(providerWalletRef);
+            const currentProviderBalance = providerWalletDoc.data()?.availableBalanceMinorUnits || 0;
+
+            transaction.update(providerWalletRef, {
+                availableBalanceMinorUnits: currentProviderBalance + deliverySubtotal,
+                updatedAt: now
+            });
+
+            const providerLedgerId = db.collection("ledgerEntries").doc().id;
+            transaction.set(db.collection("ledgerEntries").doc(providerLedgerId), {
+                id: providerLedgerId,
+                debitAccount: "system_clearing",
+                creditAccount: `user_${route.providerId}`,
+                amountMinorUnits: deliverySubtotal,
+                currency: "LSL",
+                reference: `DELIVERY_FEE_${route.orderId}`,
+                timestamp: now
+            });
+
+            // Credit platform fee
+            if (platformFee > 0) {
+                const feeLedgerId = db.collection("ledgerEntries").doc().id;
+                transaction.set(db.collection("ledgerEntries").doc(feeLedgerId), {
+                    id: feeLedgerId,
+                    debitAccount: "system_clearing",
+                    creditAccount: "system_fees",
+                    amountMinorUnits: platformFee,
+                    currency: "LSL",
+                    reference: `PLATFORM_FEE_DELIVERY_${route.orderId}`,
+                    timestamp: now
+                });
+            }
+
+            transaction.update(routeRef, {
+                status: "DELIVERED",
+                updatedAt: now
+            });
+
+            transaction.update(drDoc.ref, {
+                status: "DELIVERED",
+                settlementStatus: "SETTLED",
+                updatedAt: Date.now()
+            });
+
+            transaction.update(db.collection("orders").doc(route.orderId), {
+                fulfillmentStatus: "DELIVERED",
+                updatedAt: now
+            });
         });
         return { success: true };
     } catch (error: any) {
@@ -321,7 +444,7 @@ export const createDeliveryRequest = onCall(async (request) => {
  * Scope note: ACCEPTED/DECLINED here means only that the merchant has
  * responded to the job request. This function intentionally does not
  * create an order, touch payment, wallet, ledger, inventory, escrow, or
- * deliveryRoutes â€” the handoff from an accepted request into those systems
+ * deliveryRoutes Ã¢â‚¬â€ the handoff from an accepted request into those systems
  * is separate, not-yet-designed work.
  */
 export const respondToDeliveryRequest = onCall(async (request) => {
@@ -384,7 +507,7 @@ export const respondToDeliveryRequest = onCall(async (request) => {
  * Cancels a pending delivery request initiated by the requester.
  * Only the requester (customer) may cancel a PENDING request.
  * Requests in any terminal state (ACCEPTED, DECLINED, EXPIRED, CANCELLED)
- * cannot be cancelled â€” the client must handle those states in the UI.
+ * cannot be cancelled Ã¢â‚¬â€ the client must handle those states in the UI.
  *
  * Contract:
  * - Request: { requestId: string }

@@ -24,7 +24,7 @@ export { publicMarketplace } from "./publicMarketplace";
 export * from "./finance";
 
 // Logistics Functions
-export { requestDelivery, updateDeliveryStatus, createDeliveryRequest, respondToDeliveryRequest, cancelDeliveryRequest, expireDeliveryRequests, onOrderConfirmed, authorizeDriver } from "./logistics";
+export { requestDelivery, updateDeliveryStatus, createDeliveryRequest, respondToDeliveryRequest, cancelDeliveryRequest, expireDeliveryRequests, onOrderConfirmed, authorizeDriver, confirmDeliverySignature } from "./logistics";
 
 // Reservation Functions
 export * from "./reservations";
