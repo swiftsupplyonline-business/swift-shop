@@ -279,7 +279,7 @@ export const renderSharedListing = functions.onRequest(async (req, res) => {
 });
 
 export const renderSharedDelivery = functions.onRequest(async (req, res) => {
-    const match = req.path.match(/^\\/d\\/([^/]+)\\/([^/]+)\\/?$/);
+    const match = req.path.match(/^\/d\/([^/]+)\/([^/]+)\/?$/);
     if (!match) {
         res.status(404).send("Delivery listing not found");
         return;
