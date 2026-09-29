@@ -22,12 +22,11 @@ export const getDeliveryOptions = onCall(async (request) => {
     const db = admin.firestore();
     const snap = await db.collection("listings")
         .where("listingType", "==", "DELIVER")
-        .where("isAvailable", "==", true)
         .limit(50)
         .get();
 
     return {
-        options: snap.docs.map(doc => {
+        options: snap.docs.filter(doc => doc.data().isAvailable === true).map(doc => {
             const d = doc.data();
             return {
                 listingId: doc.id,
