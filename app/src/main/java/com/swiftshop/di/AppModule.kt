@@ -222,6 +222,12 @@ object CommerceModule {
     fun provideCalculateOrderFeesUseCase(repo: CommerceRepository) = CalculateOrderFeesUseCase(repo)
 
     @Provides
+    fun provideCalculatePurchaseTotalUseCase(repo: CommerceRepository) = CalculatePurchaseTotalUseCase(repo)
+
+    @Provides
+    fun provideCreatePurchaseOrderUseCase(repo: CommerceRepository) = CreatePurchaseOrderUseCase(repo)
+
+    @Provides
     fun providePlaceOrderUseCase(repo: CommerceRepository) = PlaceOrderUseCase(repo)
 
     @Provides
@@ -304,6 +310,15 @@ object LogisticsModule {
 
     @Provides
     fun provideCreateDeliveryRequestUseCase(repo: DeliveryRepository) = CreateDeliveryRequestUseCase(repo)
+
+    @Provides
+    fun provideGetDeliveryOptionsUseCase(repo: DeliveryRepository) = GetDeliveryOptionsUseCase(repo)
+
+    @Provides
+    fun provideCreatePostPurchaseDeliveryRequestUseCase(repo: DeliveryRepository) = CreatePostPurchaseDeliveryRequestUseCase(repo)
+
+    @Provides
+    fun provideCreateDeliveryJobUseCase(repo: DeliveryRepository) = CreateDeliveryJobUseCase(repo)
 
     @Provides
     fun provideObserveDeliveryRequestUseCase(repo: DeliveryRepository) = ObserveDeliveryRequestUseCase(repo)
