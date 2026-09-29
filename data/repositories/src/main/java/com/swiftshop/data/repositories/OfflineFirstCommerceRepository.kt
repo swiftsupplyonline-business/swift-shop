@@ -105,6 +105,17 @@ class OfflineFirstCommerceRepository @Inject constructor(
 
     override suspend fun initiateSubscription(targetTier: com.swiftshop.core.model.UserTier) = remote.initiateSubscription(targetTier)
 
+    override suspend fun calculatePurchaseTotal(items: List<com.swiftshop.core.model.OrderItem>) =
+        remote.calculatePurchaseTotal(items)
+
+    override suspend fun placePurchase(
+        items: List<com.swiftshop.core.model.OrderItem>,
+        paymentMethod: com.swiftshop.core.model.PaymentMethod,
+        provider: String?,
+        phoneNumber: String,
+        idempotencyKey: String
+    ) = remote.placePurchase(items, paymentMethod, provider, phoneNumber, idempotencyKey)
+
     override suspend fun calculateOrderFees(
         items: List<com.swiftshop.core.model.OrderItem>,
         requiresDelivery: Boolean,
