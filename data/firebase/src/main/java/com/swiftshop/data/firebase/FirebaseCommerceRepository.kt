@@ -271,6 +271,44 @@ class FirebaseCommerceRepository @Inject constructor(
 
     // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Orders Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
+    override suspend fun calculatePurchaseTotal(
+        items: List<OrderItem>
+    ): Result<OrderSummary> = runCatching {
+        val data = mapOf("items" to items.map { it.toFirestore() })
+        val result = functions.getHttpsCallable("calculatePurchaseTotal").call(data).await()
+        val resMap = result.data as Map<String, Any>
+        val currency = resMap["currency"] as? String ?: "LSL"
+        OrderSummary(
+            subtotal = MoneyAmount(currency, (resMap["subtotalMinorUnits"] as Number).toLong()),
+            deliveryFee = MoneyAmount.ZERO,
+            platformFee = MoneyAmount(currency, (resMap["platformFeeMinorUnits"] as Number).toLong()),
+            total = MoneyAmount(currency, (resMap["totalMinorUnits"] as Number).toLong())
+        )
+    }
+
+    override suspend fun placePurchase(
+        items: List<OrderItem>,
+        paymentMethod: PaymentMethod,
+        provider: String?,
+        phoneNumber: String,
+        idempotencyKey: String
+    ): Result<OrderInitiation> = runCatching {
+        val data = mapOf(
+            "items" to items.map { it.toFirestore() },
+            "paymentMethod" to paymentMethod.name,
+            "provider" to provider,
+            "phoneNumber" to phoneNumber,
+            "idempotencyKey" to idempotencyKey
+        )
+        val result = functions.getHttpsCallable("createPurchaseOrder").call(data).await()
+        val resMap = result.data as Map<String, Any>
+        OrderInitiation(
+            orderId = resMap["orderId"] as String,
+            paymentUrl = resMap["paymentUrl"] as? String,
+            mopaySessionId = resMap["mopaySessionId"] as? String
+        )
+    }
+
     override suspend fun calculateOrderFees(
         items: List<OrderItem>,
         requiresDelivery: Boolean,
