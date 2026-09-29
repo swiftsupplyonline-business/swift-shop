@@ -154,7 +154,8 @@ fun ListingDetailScreen(
                             IconButton(onClick = {
                                 val shopSlug = sharedShop?.name?.let(::normalizeShareSlug) ?: "shop"
                                 val productSlug = normalizeShareSlug(listing.title.ifBlank { listing.id })
-                                val shareUrl = "https://swift-dev-3d3ae.web.app/s/${Uri.encode(shopSlug)}/${Uri.encode(productSlug)}"
+                                val basePath = if (listing.listingType == ListingType.DELIVER) "/d/" else "/s/"
+                                val shareUrl = "https://swift-dev-3d3ae.web.app" + basePath + Uri.encode(shopSlug) + "/" + Uri.encode(productSlug)
                                 val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(android.content.Intent.EXTRA_TEXT, "Check out ${listing.title} on SwiftShop: $shareUrl")

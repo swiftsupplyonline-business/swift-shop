@@ -25,6 +25,10 @@ function shareUrl(shopSlug: string, productSlug: string): string {
     return `${SITE_ORIGIN}/s/${encodeURIComponent(shopSlug)}/${encodeURIComponent(productSlug)}`;
 }
 
+function deliveryShareUrl(shopSlug: string, productSlug: string): string {
+    return `${SITE_ORIGIN}/d/${encodeURIComponent(shopSlug)}/${encodeURIComponent(productSlug)}`;
+}
+
 function whatsappShareUrl(product: string, shop: string, whatsappNumber?: string): string {
     const message = `Hi, I want ${product} from ${shop}`;
     const encodedMessage = encodeURIComponent(message);
@@ -39,6 +43,7 @@ function renderPage(opts: {
     pageUrl: string;
     deepLink: string | null;
     listingId: string | null;
+    listingType: string | null;
     priceDisplay: string | null;
     priceAmount: string | null;
     priceCurrency: string | null;
@@ -47,7 +52,7 @@ function renderPage(opts: {
     whatsappUrl: string | null;
 }): string {
     const {
-        title, description, imageUrl, pageUrl, deepLink, listingId,
+        title, description, imageUrl, pageUrl, deepLink, listingId, listingType,
         priceDisplay, priceAmount, priceCurrency, inStock, shopName, whatsappUrl
     } = opts;
 
@@ -57,17 +62,20 @@ function renderPage(opts: {
     const safeUrl = escapeHtml(pageUrl);
     const safeShopName = shopName ? escapeHtml(shopName) : "";
 
+    const isDeliveryListing = listingType === "DELIVER";
     const commerceButtons = listingId ? `
     <div class="price">${priceDisplay ? escapeHtml(priceDisplay) : ""}</div>
-    ${safeShopName ? `<p class="shop">Sold by ${safeShopName}</p>` : ""}
+    ${safeShopName ? `<p class="shop">${isDeliveryListing ? "Delivery service by" : "Sold by"} ${safeShopName}</p>` : ""}
     <div class="actions">
-      <button class="btn primary" id="buyNowBtn" ${inStock ? "" : "disabled"}>Buy</button>
-      <a class="btn whatsapp" href="${whatsappUrl ? escapeHtml(whatsappUrl) : "#"}" ${whatsappUrl ? "" : 'aria-disabled="true"'}>Order via WhatsApp</a>
+      ${isDeliveryListing
+        ? `<a class="btn primary" href="${escapeHtml(deepLink || "#")}">Request delivery in SwiftShop</a>`
+        : `<button class="btn primary" id="buyNowBtn" ${inStock ? "" : "disabled"}>Buy</button>`}
+      <a class="btn whatsapp" href="${whatsappUrl ? escapeHtml(whatsappUrl) : "#"}" ${whatsappUrl ? "" : 'aria-disabled="true"'}>${isDeliveryListing ? "Contact provider on WhatsApp" : "Order via WhatsApp"}</a>
     </div>
-    ${!inStock ? '<p class="oos">Out of stock</p>' : ""}
+    ${!inStock ? '<p class="oos">Currently unavailable</p>' : ""}
     ` : "";
 
-    const commerceScript = listingId ? `
+    const commerceScript = listingId && !isDeliveryListing ? `
     <script type="module">
       import { addToCart } from "/app.js";
       const id = ${JSON.stringify(listingId)};
@@ -178,15 +186,19 @@ function listingResponse(
     const priceAmount = (priceMinorUnits / 100).toFixed(2);
     const priceDisplay = `M${priceAmount}`;
     const inStock = listing.isAvailable !== false && Number(listing.stockQuantity ?? 1) > 0;
-    const canonicalUrl = shareUrl(shopSlug, productSlug);
+    const listingType = String(listing.listingType || "BUY");
+    const canonicalUrl = listingType === "DELIVER"
+        ? deliveryShareUrl(shopSlug, productSlug)
+        : shareUrl(shopSlug, productSlug);
 
     res.status(200).send(renderPage({
         title: `${title} — ${priceDisplay}`,
-        description: SHARE_DESCRIPTION,
+        description: listingType === "DELIVER" ? "Book a delivery service in Maseru" : SHARE_DESCRIPTION,
         imageUrl,
         pageUrl: canonicalUrl,
         deepLink: `swiftshop://listing/${listingDoc.id}`,
         listingId: listingDoc.id,
+        listingType,
         priceDisplay,
         priceAmount,
         priceCurrency,
@@ -221,7 +233,10 @@ export const renderListingPreview = functions.onRequest(async (req, res) => {
         const shop = shopDoc.data()!;
         const shopSlug = String(shop.shareSlug || normalizeShareSlug(shop.name));
         const productSlug = String(listing.shareSlug || normalizeShareSlug(listing.title));
-        res.redirect(301, shareUrl(shopSlug, productSlug));
+        const listingType = String(listing.listingType || "BUY");
+        res.redirect(301, listingType === "DELIVER"
+            ? deliveryShareUrl(shopSlug, productSlug)
+            : shareUrl(shopSlug, productSlug));
     } catch (err) {
         console.error("renderListingPreview failed", err);
         res.status(500).send("Unable to load listing");
@@ -252,10 +267,45 @@ export const renderSharedListing = functions.onRequest(async (req, res) => {
             return;
         }
 
+        if (String(listingDoc.data().listingType || "BUY") === "DELIVER") {
+            res.redirect(301, deliveryShareUrl(shopSlug, productSlug));
+            return;
+        }
         listingResponse(res, listingDoc, shopDoc);
     } catch (err) {
         console.error("renderSharedListing failed", err);
         res.status(500).send("Unable to load listing");
+    }
+});
+
+export const renderSharedDelivery = functions.onRequest(async (req, res) => {
+    const match = req.path.match(/^\\/d\\/([^/]+)\\/([^/]+)\\/?$/);
+    if (!match) {
+        res.status(404).send("Delivery listing not found");
+        return;
+    }
+
+    const shopSlug = decodeURIComponent(match[1]);
+    const productSlug = decodeURIComponent(match[2]);
+
+    try {
+        const db = admin.firestore();
+        const shopDoc = await findShopBySlug(db, shopSlug);
+        if (!shopDoc) {
+            res.status(404).send("Delivery provider shop not found");
+            return;
+        }
+
+        const listingDoc = await findListingBySlug(db, shopDoc.id, productSlug);
+        if (!listingDoc || String(listingDoc.data().listingType || "") !== "DELIVER") {
+            res.status(404).send("Delivery listing not found");
+            return;
+        }
+
+        listingResponse(res, listingDoc, shopDoc);
+    } catch (err) {
+        console.error("renderSharedDelivery failed", err);
+        res.status(500).send("Unable to load delivery listing");
     }
 });
 
@@ -284,6 +334,7 @@ export const renderShopPreview = functions.onRequest(async (req, res) => {
             pageUrl: `${SITE_ORIGIN}/shop/${shopId}`,
             deepLink: `swiftshop://shop/${shopId}`,
             listingId: null,
+            listingType: null,
             priceDisplay: null,
             priceAmount: null,
             priceCurrency: null,

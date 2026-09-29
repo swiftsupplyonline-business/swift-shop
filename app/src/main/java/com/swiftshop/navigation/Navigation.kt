@@ -117,7 +117,9 @@ fun SwiftShopNavHost(
             arguments = listOf(navArgument("listingId") { type = NavType.StringType }),
             deepLinks = listOf(
                 navDeepLink { uriPattern = "swiftshop://listing/{listingId}" },
-                navDeepLink { uriPattern = "https://swift-dev-3d3ae.web.app/listing/{listingId}" }
+                navDeepLink { uriPattern = "https://swift-dev-3d3ae.web.app/listing/{listingId}" },
+                navDeepLink { uriPattern = "https://swift-dev-3d3ae.web.app/s/{shopSlug}/{productSlug}" },
+                navDeepLink { uriPattern = "https://swift-dev-3d3ae.web.app/d/{shopSlug}/{productSlug}" }
             )
         ) { ListingDetailScreen(navController = navController) }
 
