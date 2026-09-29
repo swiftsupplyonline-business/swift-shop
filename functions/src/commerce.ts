@@ -115,6 +115,44 @@ export const calculateOrderFees = onCall(async (request) => {
     };
 });
 
+export const calculatePurchaseTotal = onCall(async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Auth required");
+    const { items } = request.data;
+    if (!Array.isArray(items) || items.length === 0) {
+        throw new HttpsError("invalid-argument", "items are required");
+    }
+
+    const db = admin.firestore();
+    let subtotal = 0;
+    const validItems: any[] = [];
+
+    for (const item of items) {
+        const ref = db.collection("listings").doc(item.listingId);
+        const snap = await ref.get();
+        if (!snap.exists) throw new HttpsError("not-found", `Listing ${item.listingId} not found`);
+        const listing = snap.data()!;
+        const quantity = item.quantity || 1;
+        assertPurchasable(listing, quantity);
+        subtotal += (listing.priceMinorUnits || 0) * quantity;
+        validItems.push({
+            listingId: item.listingId,
+            title: listing.title || item.title || "",
+            quantity,
+            unitPriceMinorUnits: listing.priceMinorUnits || 0,
+            unitPriceCurrency: listing.priceCurrency || "LSL"
+        });
+    }
+
+    const platformFee = Math.floor((subtotal * 15) / 1000);
+    return {
+        items: validItems,
+        subtotalMinorUnits: subtotal,
+        platformFeeMinorUnits: platformFee,
+        totalMinorUnits: subtotal + platformFee,
+        currency: "LSL"
+    };
+});
+
 // ─── createPurchaseOrder: product purchase only ───────────────────────────────
 export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) => {
     const auth = request.auth;
