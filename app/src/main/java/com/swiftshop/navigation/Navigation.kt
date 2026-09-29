@@ -209,6 +209,11 @@ fun SwiftShopNavHost(
         ) { ConversationScreen(navController = navController) }
 
         composable(
+            route = Screen.DeliveryCheckout.route,
+            arguments = listOf(navArgument("orderId") { type = NavType.StringType })
+        ) { com.swiftshop.feature.delivery.DeliveryCheckoutScreen(navController = navController) }
+
+        composable(
             route = Screen.DeliveryTracking.route,
             arguments = listOf(navArgument("routeId") { type = NavType.StringType }),
             deepLinks = listOf(navDeepLink { uriPattern = "swiftshop://delivery/{routeId}" })
