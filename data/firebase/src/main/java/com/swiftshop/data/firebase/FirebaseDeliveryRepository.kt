@@ -111,8 +111,9 @@ class FirebaseDeliveryRepository @Inject constructor(
 
     override suspend fun respondToDeliveryRequest(requestId: String, accept: Boolean): Result<Unit> = runCatching {
         // The callable is authoritative; this client never mutates status directly.
-        val data = mapOf("requestId" to requestId, "accept" to accept)
-        functions.getHttpsCallable("respondToDeliveryRequest").call(data).await()
+        val callable = if (accept) "acceptDeliveryRequest" else "declineDeliveryRequest"
+        val data = mapOf("requestId" to requestId)
+        functions.getHttpsCallable(callable).call(data).await()
         Unit
     }
 
