@@ -47,10 +47,10 @@ export const calculateOrderFees = onCall(async (request) => {
             const deliveryListing = deliveryListingDoc.data()!;
             if (deliveryListing.listingType !== "DELIVER") throw new HttpsError("failed-precondition", "Invalid delivery listing type");
             if (!deliveryListing.isAvailable) throw new HttpsError("failed-precondition", "Delivery service is currently unavailable");
-            // Delivery provider may belong to a different shop than the merchant ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â cross-shop is valid.
+            // Delivery provider may belong to a different shop than the merchant ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â cross-shop is valid.
             deliveryFee = deliveryListing.priceMinorUnits || 0;
         } else {
-            // No listing selected Ã¢â‚¬â€ fee is 0; authoritative fee comes from the accepted request.
+            // No listing selected ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â fee is 0; authoritative fee comes from the accepted request.
             deliveryFee = 0;
         }
     }
@@ -81,13 +81,10 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { items, requiresDelivery, deliveryAddress, paymentMethod, provider, idempotencyKey, selectedDeliveryListingId, deliveryRequestId, customerEmail, customerName } = request.data;
+    const { items, paymentMethod, idempotencyKey, customerEmail, customerName } = request.data;
     if (!items || !Array.isArray(items) || !idempotencyKey) {
         throw new HttpsError("invalid-argument", "Missing items or idempotencyKey");
     }
-    if (typeof requiresDelivery !== "boolean") throw new HttpsError("invalid-argument", "requiresDelivery is required");
-    if (requiresDelivery && !deliveryAddress) throw new HttpsError("invalid-argument", "deliveryAddress is required when requiresDelivery is true");
-    if (requiresDelivery && !deliveryRequestId) throw new HttpsError("invalid-argument", "deliveryRequestId is required for orders requiring delivery");
 
     const db = admin.firestore();
     let orderId = "";
@@ -103,13 +100,11 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 const orderSnap = await transaction.get(db.collection("orders").doc(existingId));
                 const orderData = orderSnap.data();
 
-                // SWIFT-021: Check session lifecycle with LEASE
                 const sessionStatus = orderData?.paymentSessionStatus || "FAILED";
                 const isCreated = sessionStatus === "CREATED";
                 const isCreating = sessionStatus === "CREATING";
                 const lastUpdated = orderData?.updatedAt?.toMillis() || 0;
 
-                // 2-minute lease for session creation
                 const leaseExpired = isCreating && (Date.now() - lastUpdated > 120 * 1000);
 
                 if (isCreated) {
@@ -128,10 +123,8 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                     throw new Error("RETRY_TOO_SOON: Payment session creation is still in progress.");
                 }
 
-                // Recovery needed (FAILED or STALE_CREATING)
                 console.log(`Recovery needed for order ${existingId} (status: ${sessionStatus})`);
 
-                // SWIFT-021: Exclusive creation ownership / lease
                 const nextAttempt = (orderData?.paymentAttemptCount || 0) + 1;
 
                 transaction.update(db.collection("orders").doc(existingId), {
@@ -155,30 +148,6 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
             let shopId = "";
             let sellerId = "";
 
-            // 1. Validate Delivery Request if applicable
-            let deliveryFee = 0;
-            let finalDeliveryListingId = selectedDeliveryListingId;
-            // deliveryProviderSellerId is the uid of the seller who owns the delivery listing.
-            // This may differ from the product merchant ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â cross-shop delivery is valid.
-            let deliveryProviderSellerId = "";
-
-            if (requiresDelivery) {
-                const drRef = db.collection("deliveryRequests").doc(deliveryRequestId);
-                const drDoc = await transaction.get(drRef);
-                if (!drDoc.exists) throw new Error("Delivery request not found");
-                const drData = drDoc.data()!;
-                if (drData.status !== "ACCEPTED") throw new Error(`Delivery request status is ${drData.status}. Must be ACCEPTED.`);
-                if (drData.requesterId !== auth.uid) throw new Error("Delivery request ownership mismatch");
-
-                // Capture delivery fee from the accepted request snapshot (not current listing price).
-                deliveryFee = drData.deliveryFeeMinorUnits || 0;
-                finalDeliveryListingId = drData.listingId;
-                // The merchant who accepted the delivery request is the delivery provider.
-                // This is authoritative ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â set by createDeliveryRequest from listing.sellerId.
-                deliveryProviderSellerId = drData.merchantId || "";
-            }
-
-            // 2. Validate Items and Reserve Inventory
             const now = admin.firestore.Timestamp.now();
             const reservationExpiresAt = admin.firestore.Timestamp.fromMillis(now.toMillis() + 15 * 60 * 1000);
 
@@ -203,13 +172,11 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                     throw new Error(`Insufficient stock for ${listing.title}. Requested: ${requestedQty}, Available: ${available}`);
                 }
 
-                // Reserve Stock
                 transaction.update(listingRef, {
                     reservedQuantity: currentReserved + requestedQty,
                     updatedAt: now
                 });
 
-                // Create Reservation Record
                 const resId = db.collection("reservations").doc().id;
                 transaction.set(db.collection("reservations").doc(resId), {
                     id: resId,
@@ -241,7 +208,7 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
             }
 
             const platformFee = Math.floor((subtotal * 15) / 1000);
-            const total = subtotal + deliveryFee + platformFee;
+            const total = subtotal + platformFee;
             finalTotal = total;
 
             let orderStatus = "RESERVED";
@@ -282,7 +249,6 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 shopId: shopId,
                 items: validatedItems,
                 subtotalMinorUnits: subtotal,
-                deliveryFeeMinorUnits: deliveryFee,
                 platformFeeMinorUnits: platformFee,
                 totalMinorUnits: total,
                 currency: "LSL",
@@ -290,13 +256,8 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 inventoryStatus: "RESERVED",
                 settlementStatus: paymentMethod === "SWIFT_WALLET" ? "ESCROW_HOLD" : "PENDING",
                 paymentStatus: paymentMethod === "SWIFT_WALLET" ? "PAID" : "PENDING",
-                requiresDelivery: requiresDelivery,
-                deliveryRequestId: deliveryRequestId || null,
-                deliveryProviderSellerId: deliveryProviderSellerId || null,
-                selectedDeliveryListingId: finalDeliveryListingId || null,
-                deliveryAddress: deliveryAddress || {},
+                fulfillmentStatus: "UNASSIGNED",
                 paymentMethod: paymentMethod || "MOPAY",
-                provider: provider || null,
                 idempotencyKey: idempotencyKey,
                 paymentSessionStatus: paymentMethod === "MOPAY" ? "CREATING" : "NA",
                 paymentAttemptCount: paymentMethod === "MOPAY" ? 1 : 0,
@@ -328,7 +289,6 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
         }
 
         if (paymentMethod === "MOPAY" && orderId) {
-            // SWIFT-021: Recovery/Creation logic
             if (existingPayment?.paymentUrl && !transactionResult.recoveryNeeded) {
                 return {
                     orderId,
@@ -346,7 +306,6 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 description: `Order ${orderId} at Swift Shop`,
                 customerEmail: customerEmail || auth.token.email || "",
                 customerName: customerName || auth.token.name || auth.uid,
-                // SWIFT-021: Deterministic provider-side idempotency incorporating attempt index
                 idempotencyKey: `mopay_order_${orderId}_v${attemptIndex}`
             };
 
@@ -566,18 +525,10 @@ export const confirmDelivery = onCall(async (request) => {
 
             const now = admin.firestore.Timestamp.now();
 
-            // SETTLEMENT LOGIC
+            // SETTLEMENT LOGIC (product side only ΓÇö delivery settles separately via confirmDeliveryReceived)
             const subtotal = order.subtotalMinorUnits || 0;
-            const deliveryFee = order.deliveryFeeMinorUnits || 0;
             const platformFee = order.platformFeeMinorUnits || 0;
             const total = order.totalMinorUnits || 0;
-
-            // The delivery provider may be a different seller from the product merchant.
-            // deliveryProviderSellerId is set at order-creation time from the accepted
-            // delivery request's merchantId. Fall back to sellerId for non-delivery orders
-            // or legacy orders created before this field existed.
-            const deliveryProviderSellerId: string =
-                order.deliveryProviderSellerId || order.sellerId;
 
             // Debit Escrow
             const ledgerId = db.collection("ledgerEntries").doc().id;
@@ -612,31 +563,6 @@ export const confirmDelivery = onCall(async (request) => {
                 timestamp: now
             });
 
-            // Credit Delivery Provider Wallet (delivery fee)
-            // When the delivery provider is the same as the product seller, we credit
-            // them separately so the ledger entries remain auditable regardless.
-            if (deliveryFee > 0) {
-                const providerWalletRef = db.collection("wallets").doc(deliveryProviderSellerId);
-                const providerWalletDoc = await transaction.get(providerWalletRef);
-                const currentProviderBalance = providerWalletDoc.data()?.availableBalanceMinorUnits || 0;
-
-                transaction.update(providerWalletRef, {
-                    availableBalanceMinorUnits: currentProviderBalance + deliveryFee,
-                    updatedAt: now
-                });
-
-                const providerLedgerId = db.collection("ledgerEntries").doc().id;
-                transaction.set(db.collection("ledgerEntries").doc(providerLedgerId), {
-                    id: providerLedgerId,
-                    debitAccount: "system_clearing",
-                    creditAccount: `user_${deliveryProviderSellerId}`,
-                    amountMinorUnits: deliveryFee,
-                    currency: "LSL",
-                    reference: `DELIVERY_FEE_${orderId}`,
-                    timestamp: now
-                });
-            }
-
             // Credit Platform Fees
             if (platformFee > 0) {
                 const feeLedgerId = db.collection("ledgerEntries").doc().id;
@@ -652,7 +578,7 @@ export const confirmDelivery = onCall(async (request) => {
             }
 
             transaction.update(orderRef, {
-                status: "DELIVERED",
+                status: "RECEIVED",
                 settlementStatus: "SETTLED",
                 completedAt: now,
                 updatedAt: now
@@ -774,7 +700,7 @@ export const cancelOrder = onCall(async (request) => {
             }
 
             // P0 #3: Release reservations for RESERVED orders only.
-            // createOrder increments reservedQuantity ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â it does NOT decrement stockQuantity.
+            // createOrder increments reservedQuantity ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â it does NOT decrement stockQuantity.
             // Therefore cancellation must mirror the payment-failure release path:
             // decrement reservedQuantity, mark reservation RELEASED, never touch stockQuantity.
             if (order.status === 'RESERVED') {
@@ -834,7 +760,7 @@ export const confirmMopayPayment = onCall(async (request) => {
             // against an already-CONFIRMED order is a real conflict, not a retry.
             if (order.status === "CONFIRMED") {
                 if (order.paymentId === paymentId) {
-                    return; // already processed with this exact payment — no-op success
+                    return; // already processed with this exact payment Ã¢â‚¬â€ no-op success
                 }
                 throw new Error(`Order ${orderId} is already CONFIRMED with a different paymentId (${order.paymentId}); refusing to overwrite with ${paymentId}.`);
             }

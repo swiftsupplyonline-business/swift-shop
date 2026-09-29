@@ -100,7 +100,7 @@ export const requestDelivery = onCall(async (request) => {
 const VALID_DELIVERY_STATUSES = ["REQUESTED", "ASSIGNED", "PICKUP", "IN_TRANSIT", "DELIVERED", "FAILED", "CANCELLED"];
 
 // Linear, conservative transition map. Driver dispatch/matching isn't designed yet
-// (blueprint §27 lists this as an architectural unknown) — revisit once it is.
+// (blueprint Â§27 lists this as an architectural unknown) â€” revisit once it is.
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
     REQUESTED: ["ASSIGNED", "CANCELLED"],
     ASSIGNED: ["PICKUP", "CANCELLED"],
@@ -225,15 +225,41 @@ export const createDeliveryRequest = onCall(async (request) => {
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { listingId, dropoff } = request.data;
+    const { orderId, listingId, dropoff } = request.data;
     if (
-        !listingId || !dropoff ||
+        !orderId || !listingId || !dropoff ||
         typeof dropoff.lat !== "number" || typeof dropoff.lng !== "number"
     ) {
-        throw new HttpsError("invalid-argument", "listingId and dropoff ({lat, lng}) are required");
+        throw new HttpsError("invalid-argument", "orderId, listingId and dropoff ({lat, lng}) are required");
     }
 
     const db = admin.firestore();
+
+    const orderRef = db.collection("orders").doc(orderId);
+    const orderDoc = await orderRef.get();
+    if (!orderDoc.exists) {
+        throw new HttpsError("not-found", "Order not found");
+    }
+    const order = orderDoc.data()!;
+    if (order.buyerId !== auth.uid) {
+        throw new HttpsError("permission-denied", "Only the buyer of this order can request delivery for it");
+    }
+    if (order.status !== "CONFIRMED") {
+        throw new HttpsError("failed-precondition", `Order must be CONFIRMED before requesting delivery (current status: ${order.status})`);
+    }
+    if (order.fulfillmentStatus && order.fulfillmentStatus !== "UNASSIGNED") {
+        throw new HttpsError("failed-precondition", `Order already has a fulfillment in progress (${order.fulfillmentStatus})`);
+    }
+
+    const existingForOrder = await db.collection("deliveryRequests")
+        .where("relatedOrderId", "==", orderId)
+        .where("status", "in", ["PENDING", "ACCEPTED", "AWAITING_PAYMENT", "PAID", "DISPATCHED"])
+        .limit(1)
+        .get();
+    if (!existingForOrder.empty) {
+        throw new HttpsError("failed-precondition", "This order already has an active delivery request");
+    }
+
     const listingDoc = await db.collection("listings").doc(listingId).get();
     if (!listingDoc.exists) {
         throw new HttpsError("not-found", "Listing not found");
@@ -246,7 +272,6 @@ export const createDeliveryRequest = onCall(async (request) => {
         throw new HttpsError("failed-precondition", "This delivery listing is not currently available");
     }
 
-    // Resolve authoritative pickup from the merchant's shop
     const shopRef = db.collection("shops").doc(listing.shopId);
     const shopDoc = await shopRef.get();
     if (!shopDoc.exists) {
@@ -277,7 +302,7 @@ export const createDeliveryRequest = onCall(async (request) => {
         deliveryFeeCurrency: listing.priceCurrency ?? "LSL",
         status: "PENDING",
         expiresAt: now + DELIVERY_REQUEST_WINDOW_MS,
-        relatedOrderId: "",
+        relatedOrderId: orderId,
         createdAt: now,
         updatedAt: now
     };
@@ -296,7 +321,7 @@ export const createDeliveryRequest = onCall(async (request) => {
  * Scope note: ACCEPTED/DECLINED here means only that the merchant has
  * responded to the job request. This function intentionally does not
  * create an order, touch payment, wallet, ledger, inventory, escrow, or
- * deliveryRoutes — the handoff from an accepted request into those systems
+ * deliveryRoutes â€” the handoff from an accepted request into those systems
  * is separate, not-yet-designed work.
  */
 export const respondToDeliveryRequest = onCall(async (request) => {
@@ -309,7 +334,7 @@ export const respondToDeliveryRequest = onCall(async (request) => {
     }
 
     const db = admin.firestore();
-    const newStatus = accept ? "ACCEPTED" : "DECLINED";
+    const newStatus = accept ? "AWAITING_PAYMENT" : "DECLINED";
 
     try {
         await db.runTransaction(async (transaction) => {
@@ -318,20 +343,30 @@ export const respondToDeliveryRequest = onCall(async (request) => {
             if (!requestDoc.exists) throw new Error("Delivery request not found");
             const deliveryRequest = requestDoc.data()!;
 
-            // Strict ownership check only — no admin bypass, no new role model.
             if (deliveryRequest.merchantId !== auth.uid) {
                 throw new Error("Only the requested merchant can respond to this delivery request");
             }
 
-            // Fail closed: any non-PENDING status (ACCEPTED, DECLINED, EXPIRED,
-            // CANCELLED) rejects a second response, including a double-tap of
-            // the same action or Accept racing the expiry sweep.
             if (deliveryRequest.status !== "PENDING") {
                 throw new Error(`Cannot respond to a request that is already ${deliveryRequest.status}`);
             }
 
             if (deliveryRequest.expiresAt <= Date.now()) {
                 throw new Error("This delivery request has expired");
+            }
+
+            if (accept && deliveryRequest.relatedOrderId) {
+                const orderRef = db.collection("orders").doc(deliveryRequest.relatedOrderId);
+                const orderDoc = await transaction.get(orderRef);
+                if (!orderDoc.exists) throw new Error("Related order not found");
+                const order = orderDoc.data()!;
+                if (order.fulfillmentStatus && order.fulfillmentStatus !== "UNASSIGNED") {
+                    throw new Error(`Order already has a fulfillment in progress (${order.fulfillmentStatus})`);
+                }
+                transaction.update(orderRef, {
+                    fulfillmentStatus: "AWAITING_PAYMENT",
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
             }
 
             transaction.update(requestRef, {
@@ -349,7 +384,7 @@ export const respondToDeliveryRequest = onCall(async (request) => {
  * Cancels a pending delivery request initiated by the requester.
  * Only the requester (customer) may cancel a PENDING request.
  * Requests in any terminal state (ACCEPTED, DECLINED, EXPIRED, CANCELLED)
- * cannot be cancelled — the client must handle those states in the UI.
+ * cannot be cancelled â€” the client must handle those states in the UI.
  *
  * Contract:
  * - Request: { requestId: string }
