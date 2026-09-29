@@ -73,8 +73,7 @@ fun DeliveryTrackingScreen(
                     // Status panel
                     DeliveryStatusPanel(
                         route = state.route,
-                        onMessage = { navController.navigate("conversation/" + state.route.conversationId) },
-                        onOrder = { navController.navigate(com.swiftshop.core.ui.navigation.Screen.OrderDetail.createRoute(state.route.orderId)) }
+                        onMessage = { navController.navigate("conversation/${state.route.conversationId}") }
                     )
                 }
             }
@@ -86,7 +85,7 @@ fun DeliveryTrackingScreen(
 // ─── Status Panel ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun DeliveryStatusPanel(route: DeliveryRoute, onMessage: () -> Unit, onOrder: () -> Unit) {
+private fun DeliveryStatusPanel(route: DeliveryRoute, onMessage: () -> Unit) {
     Surface(tonalElevation = 8.dp) {
         Column(modifier = Modifier.padding(16.dp).navigationBarsPadding()) {
 
@@ -161,26 +160,15 @@ private fun DeliveryStatusPanel(route: DeliveryRoute, onMessage: () -> Unit, onO
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = onOrder,
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Icon(Icons.Default.ReceiptLong, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("View Order")
-                    }
-
-                    // Message driver button
-                        OutlinedButton(
-                        onClick = onMessage,
-                        shape = MaterialTheme.shapes.medium,
-                        enabled = route.conversationId.isNotEmpty()
-                    ) {
-                        Icon(Icons.Default.Message, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Message Driver")
-                    }
+                // Message driver button
+                OutlinedButton(
+                    onClick = onMessage,
+                    shape = MaterialTheme.shapes.medium,
+                    enabled = route.conversationId.isNotEmpty()
+                ) {
+                    Icon(Icons.Default.Message, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Message Driver")
                 }
             }
         }

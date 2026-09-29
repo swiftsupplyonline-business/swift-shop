@@ -330,8 +330,8 @@ fun OrderDetailScreen(
                         }
                     }
 
-                    if (!isSellerMode && order.requiresDelivery &&
-                        order.selectedDeliveryListingId.isNotBlank() &&
+                    if (!isSellerMode &&
+                        order.fulfillmentId.isBlank() &&
                         (order.status == OrderStatus.CONFIRMED || order.status == OrderStatus.READY)) {
                         item {
                             OutlinedButton(
