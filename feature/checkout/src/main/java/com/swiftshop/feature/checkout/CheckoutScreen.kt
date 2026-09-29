@@ -181,6 +181,10 @@ fun CheckoutScreen(
                         val orderId = (uiState as? CheckoutUiState.OrderPlaced)?.orderId ?: return@ConfirmationStep
                         navController.navigate(Screen.OrderDetail.createRoute(orderId))
                     },
+                    onRequestDelivery = {
+                        val orderId = (uiState as? CheckoutUiState.OrderPlaced)?.orderId ?: return@ConfirmationStep
+                        navController.navigate(Screen.DeliveryCheckout.createRoute(orderId))
+                    },
                     onContinueShopping = {
                         navController.navigate(Screen.Home.route) {
                             popUpTo(0) { inclusive = true }
@@ -665,6 +669,7 @@ private fun PaymentStep(
 private fun ConfirmationStep(
     state: CheckoutUiState,
     onTrackOrder: () -> Unit,
+    onRequestDelivery: () -> Unit,
     onContinueShopping: () -> Unit
 ) {
     Column(
@@ -689,6 +694,11 @@ private fun ConfirmationStep(
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(32.dp))
         SwiftPrimaryButton("Track Order", onClick = onTrackOrder, modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(onClick = onRequestDelivery, modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium) {
+            Text("Get It Delivered")
+        }
         Spacer(Modifier.height(12.dp))
         OutlinedButton(onClick = onContinueShopping, modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.medium) {
