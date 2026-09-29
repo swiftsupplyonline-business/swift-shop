@@ -295,10 +295,9 @@ async function renderCheckout(root) {
 
   try {
     await ensureSignedIn();
-    const calculateOrderFees = httpsCallable(functions, "calculateOrderFees");
+    const calculateOrderFees = httpsCallable(functions, "calculatePurchaseTotal");
     const { data: fees } = await calculateOrderFees({
-      items: items.map(i => ({ listingId: i.listingId, quantity: i.quantity, title: i.title })),
-      requiresDelivery: false
+      items: items.map(i => ({ listingId: i.listingId, quantity: i.quantity, title: i.title }))
     });
 
     root.innerHTML = `
@@ -319,11 +318,10 @@ async function renderCheckout(root) {
       const msg = root.querySelector("#checkoutMsg");
       msg.textContent = "Placing order…";
       try {
-        const createOrder = httpsCallable(functions, "createOrder");
+        const createOrder = httpsCallable(functions, "createPurchaseOrder");
         const idempotencyKey = `web_${Date.now()}_${Math.random().toString(36).slice(2)}`;
         const { data: result } = await createOrder({
           items: items.map(i => ({ listingId: i.listingId, quantity: i.quantity, title: i.title })),
-          requiresDelivery: false,
           paymentMethod: "SWIFT_WALLET",
           idempotencyKey
         });
