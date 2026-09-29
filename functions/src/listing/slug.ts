@@ -14,8 +14,6 @@
  *     direct index query always hit.
  */
 
-import * as admin from "firebase-admin";
-
 // ─── Core normaliser (matches existing shareSlug module) ─────────────────────
 
 /**

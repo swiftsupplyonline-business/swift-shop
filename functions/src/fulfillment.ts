@@ -271,7 +271,7 @@ export const updateDeliveryStatus = onCall(async (request) => {
             if (!snap.exists) throw new Error("Fulfillment job not found");
             const route = snap.data()!;
 
-            const isAdmin = request.auth.token.admin === true;
+            const isAdmin = auth.token.admin === true;
             const isDriver = route.driverId === auth.uid;
             const isBuyer = route.buyerId === auth.uid;
             const isSeller = route.sellerId === auth.uid;
@@ -281,7 +281,7 @@ export const updateDeliveryStatus = onCall(async (request) => {
             }
 
             if (status === "ASSIGNED" && route.status === "REQUESTED") {
-                if (request.auth.token.role !== "DRIVER" && !isAdmin) throw new Error("Only a driver can claim a delivery");
+                if (auth.token.role !== "DRIVER" && !isAdmin) throw new Error("Only a driver can claim a delivery");
                 if (route.driverId) throw new Error("Delivery already assigned");
 
                 if (!isAdmin && route.providerId !== auth.uid) {

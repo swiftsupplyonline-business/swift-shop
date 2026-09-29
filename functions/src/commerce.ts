@@ -22,7 +22,6 @@ import {
     // Slug
     generateUniqueListingSlug,
     buildSlugUpdatePayload,
-    normalizeSlug,
     // Lifecycle
     ListingStatus,
     isAvailableFromStatus,

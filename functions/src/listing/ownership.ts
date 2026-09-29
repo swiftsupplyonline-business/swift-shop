@@ -11,10 +11,8 @@
  * This module never opens its own transaction.
  */
 
-import * as admin from "firebase-admin";
 import { ListingStatus } from "./types";
 import { activeCountDelta } from "./lifecycle";
-import { isAvailableFromStatus } from "./types";
 
 // ─── Creation ─────────────────────────────────────────────────────────────────
 
