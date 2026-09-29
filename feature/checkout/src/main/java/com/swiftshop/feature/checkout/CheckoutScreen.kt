@@ -36,7 +36,7 @@ import org.osmdroid.views.overlay.Overlay
 
 import androidx.compose.ui.platform.LocalUriHandler
 
-enum class CheckoutStep { CART, ADDRESS, PAYMENT, DELIVERY_WAITING, VERIFICATION, CONFIRMATION }
+enum class CheckoutStep { CART, PAYMENT, VERIFICATION, CONFIRMATION }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,21 +53,18 @@ fun CheckoutScreen(
     val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(sessionId) {
-        if (sessionId != null) {
-            viewModel.verifyPayment(sessionId)
-        }
+        if (sessionId != null) viewModel.verifyPayment(sessionId)
     }
 
     LaunchedEffect(uiState) {
         when (uiState) {
-            is CheckoutUiState.OrderPlaced -> step = CheckoutStep.CONFIRMATION
             is CheckoutUiState.AwaitingPayment -> {
                 val state = uiState as CheckoutUiState.AwaitingPayment
                 step = CheckoutStep.VERIFICATION
                 uriHandler.openUri(state.paymentUrl)
             }
-            is CheckoutUiState.AwaitingDeliveryAcceptance -> step = CheckoutStep.DELIVERY_WAITING
-            else -> {}
+            is CheckoutUiState.OrderPlaced -> step = CheckoutStep.CONFIRMATION
+            else -> Unit
         }
     }
 
@@ -95,23 +92,18 @@ fun CheckoutScreen(
                     Text(
                         when (step) {
                             CheckoutStep.CART -> "My Cart"
-                            CheckoutStep.ADDRESS -> "Delivery Address"
                             CheckoutStep.PAYMENT -> "Payment"
-                            CheckoutStep.DELIVERY_WAITING -> "Waiting for Provider"
                             CheckoutStep.VERIFICATION -> "Verifying Payment"
-                            CheckoutStep.CONFIRMATION -> "Order Confirmed"
+                            CheckoutStep.CONFIRMATION -> "Purchase Confirmed"
                         },
                         style = MaterialTheme.typography.titleLarge
                     )
                 },
                 navigationIcon = {
-                    if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION && step != CheckoutStep.DELIVERY_WAITING) {
+                    if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION) {
                         IconButton(onClick = {
-                            when (step) {
-                                CheckoutStep.CART -> navController.popBackStack()
-                                CheckoutStep.PAYMENT -> step = if (viewModel.requiresDelivery) CheckoutStep.ADDRESS else CheckoutStep.CART
-                                else -> step = CheckoutStep.values()[step.ordinal - 1]
-                            }
+                            if (step == CheckoutStep.PAYMENT) step = CheckoutStep.CART
+                            else navController.popBackStack()
                         }) {
                             Icon(Icons.Default.ArrowBack, "Back")
                         }
@@ -127,7 +119,7 @@ fun CheckoutScreen(
             )
         },
         bottomBar = {
-            if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION && step != CheckoutStep.DELIVERY_WAITING) {
+            if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION) {
                 Surface(tonalElevation = 8.dp) {
                     Column(modifier = Modifier.padding(16.dp).navigationBarsPadding()) {
                         if (uiState is CheckoutUiState.Error) {
@@ -138,30 +130,14 @@ fun CheckoutScreen(
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
                         }
-
-                        val buttonText = when (step) {
-                            CheckoutStep.CART -> "Proceed to Address"
-                            CheckoutStep.ADDRESS -> "Continue to Payment"
-                            CheckoutStep.PAYMENT -> if (viewModel.requiresDelivery) "Request Delivery" else "Place Order"
-                            else -> ""
-                        }
-
                         SwiftPrimaryButton(
-                            text = buttonText,
+                            text = if (step == CheckoutStep.CART) "Continue to Payment" else "Pay & Place Order",
                             onClick = {
-                                when (step) {
-                                    CheckoutStep.CART -> step = if (viewModel.requiresDelivery) CheckoutStep.ADDRESS else CheckoutStep.PAYMENT
-                                    CheckoutStep.ADDRESS -> step = CheckoutStep.PAYMENT
-                                    CheckoutStep.PAYMENT -> viewModel.placeOrder()
-                                    else -> {}
-                                }
+                                if (step == CheckoutStep.CART) step = CheckoutStep.PAYMENT
+                                else viewModel.placeOrder()
                             },
-                            isLoading = uiState is CheckoutUiState.PlacingOrder || (uiState is CheckoutUiState.Loading && step != CheckoutStep.CART),
-                            enabled = when (uiState) {
-                                is CheckoutUiState.CartLoaded -> true
-                                is CheckoutUiState.Loading -> step == CheckoutStep.CART
-                                else -> false
-                            },
+                            isLoading = uiState is CheckoutUiState.PlacingOrder,
+                            enabled = uiState is CheckoutUiState.CartLoaded,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -170,69 +146,44 @@ fun CheckoutScreen(
         }
     ) { padding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
+            modifier = Modifier.fillMaxSize().padding(padding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // Step indicator
-            if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION && step != CheckoutStep.DELIVERY_WAITING) {
-                CheckoutStepIndicator(currentStep = step, requiresDelivery = viewModel.requiresDelivery)
+            if (step != CheckoutStep.CONFIRMATION && step != CheckoutStep.VERIFICATION) {
+                CheckoutStepIndicator(currentStep = step)
             }
-
             when (step) {
-                CheckoutStep.CART -> Column {
-                    DeliveryChoiceToggle(
-                        requiresDelivery = viewModel.requiresDelivery,
-                        onChange = { viewModel.updateRequiresDelivery(it) }
-                    )
-                    if (viewModel.requiresDelivery) {
-                        val providers by viewModel.deliveryListings.collectAsState()
-                        DeliveryProviderSelector(
-                            providers = providers,
-                            selectedProviderId = viewModel.selectedDeliveryListingId,
-                            onProviderSelected = { viewModel.updateSelectedDeliveryListing(it) }
-                        )
-                    }
-                    CartStep(
-                        state = uiState,
-                        cartItems = cartItems,
-                        onRemoveItem = { viewModel.removeItem(it) }
-                    )
-                }
-                CheckoutStep.ADDRESS -> AddressStep(
-                    address = viewModel.deliveryAddress,
-                    onAddressUpdate = { viewModel.updateAddress(it) }
+                CheckoutStep.CART -> CartStep(
+                    state = uiState,
+                    cartItems = cartItems,
+                    onRemoveItem = { viewModel.removeItem(it) }
                 )
                 CheckoutStep.PAYMENT -> PaymentStep(
                     state = uiState,
                     selectedMethod = viewModel.paymentMethod,
                     selectedProvider = viewModel.paymentProvider,
                     phone = viewModel.paymentPhone,
-                    onMethodChange = { method, provider -> 
+                    onMethodChange = { method, provider ->
                         viewModel.paymentMethod = method
                         viewModel.paymentProvider = provider
                     },
                     onPhoneChange = { viewModel.paymentPhone = it }
                 )
-                CheckoutStep.DELIVERY_WAITING -> DeliveryWaitingStep(
-                    onCancel = { /* TODO: Implement cancellation */ }
-                )
                 CheckoutStep.VERIFICATION -> VerificationStep(
                     state = uiState,
-                    onVerify = { 
-                        (uiState as? CheckoutUiState.AwaitingPayment)?.sessionId?.let {
-                            viewModel.verifyPayment(it)
-                        }
+                    onVerify = {
+                        (uiState as? CheckoutUiState.AwaitingPayment)?.sessionId?.let(viewModel::verifyPayment)
                     }
                 )
                 CheckoutStep.CONFIRMATION -> ConfirmationStep(
                     state = uiState,
                     onTrackOrder = {
                         val orderId = (uiState as? CheckoutUiState.OrderPlaced)?.orderId ?: return@ConfirmationStep
-                        navController.navigate(Screen.OrderDetail.createRoute(orderId)) {
-                            popUpTo(Screen.Home.route)
-                        }
+                        navController.navigate(Screen.OrderDetail.createRoute(orderId))
+                    },
+                    onRequestDelivery = {
+                        val orderId = (uiState as? CheckoutUiState.OrderPlaced)?.orderId ?: return@ConfirmationStep
+                        navController.navigate(Screen.DeliveryCheckout.createRoute(orderId))
                     },
                     onContinueShopping = {
                         navController.navigate(Screen.Home.route) {
@@ -240,6 +191,32 @@ fun CheckoutScreen(
                         }
                     }
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CheckoutStepIndicator(currentStep: CheckoutStep) {
+    val steps = listOf("Cart", "Payment")
+    val currentIndex = if (currentStep == CheckoutStep.CART) 0 else 1
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        steps.forEachIndexed { index, label ->
+            Box(
+                modifier = Modifier.size(28.dp).clip(MaterialTheme.shapes.small)
+                    .background(if (index <= currentIndex) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                if (index < currentIndex) Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                else Text("${index + 1}", style = MaterialTheme.typography.labelMedium,
+                    color = if (index <= currentIndex) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (index < steps.size - 1) {
+                Box(modifier = Modifier.weight(1f).height(2.dp)
+                    .background(if (index < currentIndex) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant))
             }
         }
     }
@@ -692,6 +669,7 @@ private fun PaymentStep(
 private fun ConfirmationStep(
     state: CheckoutUiState,
     onTrackOrder: () -> Unit,
+    onRequestDelivery: () -> Unit,
     onContinueShopping: () -> Unit
 ) {
     Column(
@@ -716,6 +694,11 @@ private fun ConfirmationStep(
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(32.dp))
         SwiftPrimaryButton("Track Order", onClick = onTrackOrder, modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(onClick = onRequestDelivery, modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium) {
+            Text("Get It Delivered")
+        }
         Spacer(Modifier.height(12.dp))
         OutlinedButton(onClick = onContinueShopping, modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.medium) {

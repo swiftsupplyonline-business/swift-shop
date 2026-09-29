@@ -126,6 +126,16 @@ interface CommerceRepository {
     fun observeMerchantUsage(userId: String): Flow<MerchantUsage?> = kotlinx.coroutines.flow.emptyFlow()
     fun observeSubscription(userId: String): Flow<Subscription?> = kotlinx.coroutines.flow.emptyFlow()
 
+    // Canonical product-purchase boundary
+    suspend fun calculatePurchaseTotal(items: List<OrderItem>): Result<OrderSummary>
+    suspend fun placePurchase(
+        items: List<OrderItem>,
+        paymentMethod: PaymentMethod,
+        provider: String?,
+        phoneNumber: String,
+        idempotencyKey: String
+    ): Result<OrderInitiation>
+
     // Orders
     suspend fun calculateOrderFees(
         items: List<OrderItem>,
@@ -229,6 +239,27 @@ class RemoveFromCartUseCase(private val repository: CommerceRepository) {
 
 class ClearCartUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(userId: String): Result<Unit> = repository.clearCart(userId)
+}
+
+class CalculatePurchaseTotalUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(items: List<OrderItem>): Result<OrderSummary> {
+        if (items.isEmpty()) return Result.failure(IllegalArgumentException("Cart is empty"))
+        return repository.calculatePurchaseTotal(items)
+    }
+}
+
+class CreatePurchaseOrderUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(
+        items: List<OrderItem>,
+        paymentMethod: PaymentMethod,
+        provider: String?,
+        phoneNumber: String,
+        idempotencyKey: String
+    ): Result<OrderInitiation> {
+        if (items.isEmpty()) return Result.failure(IllegalArgumentException("Cart is empty"))
+        if (idempotencyKey.isBlank()) return Result.failure(IllegalArgumentException("Idempotency key required"))
+        return repository.placePurchase(items, paymentMethod, provider, phoneNumber, idempotencyKey)
+    }
 }
 
 class CalculateOrderFeesUseCase(private val repository: CommerceRepository) {

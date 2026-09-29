@@ -258,6 +258,10 @@ enum class SettlementStatus {
     PENDING, ESCROW_HOLD, SETTLED, REFUNDED
 }
 
+enum class FulfillmentStatus {
+    NOT_REQUESTED, REQUESTED, ASSIGNED, AT_PICKUP, PICKUP_CONFIRMED, IN_TRANSIT, DELIVERED, FAILED, CANCELLED
+}
+
 @Serializable
 @Parcelize
 data class Order(
@@ -273,6 +277,8 @@ data class Order(
     val status: OrderStatus = OrderStatus.PENDING,
     val inventoryStatus: InventoryStatus = InventoryStatus.PENDING,
     val settlementStatus: SettlementStatus = SettlementStatus.PENDING,
+    val fulfillmentId: String = "",
+    val fulfillmentStatus: FulfillmentStatus = FulfillmentStatus.NOT_REQUESTED,
     val deliveryAddress: DeliveryAddress = DeliveryAddress(),
     val requiresDelivery: Boolean = false,
     val selectedDeliveryListingId: String = "",
