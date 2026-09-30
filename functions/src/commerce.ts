@@ -523,6 +523,10 @@ export const confirmDelivery = onCall(async (request) => {
 
             if (order.settlementStatus === "SETTLED") return; // Idempotent
 
+            // All reads must precede all writes in a Firestore transaction.
+            const sellerWalletRef = db.collection("wallets").doc(order.sellerId);
+            const sellerWalletDoc = await transaction.get(sellerWalletRef);
+
             const now = admin.firestore.Timestamp.now();
 
             // SETTLEMENT LOGIC (product side only ΓÇö delivery settles separately via confirmDeliveryReceived)
@@ -543,8 +547,6 @@ export const confirmDelivery = onCall(async (request) => {
             });
 
             // Credit Product Seller Wallet (subtotal only)
-            const sellerWalletRef = db.collection("wallets").doc(order.sellerId);
-            const sellerWalletDoc = await transaction.get(sellerWalletRef);
             const currentSellerBalance = sellerWalletDoc.data()?.availableBalanceMinorUnits || 0;
 
             transaction.update(sellerWalletRef, {
