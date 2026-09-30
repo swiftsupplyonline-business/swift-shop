@@ -1,37 +1,78 @@
-# Canonical Platform Contract
+# Swift Canonical Platform Contract
 
-Status: authoritative. `delivery-first-checkout` is FROZEN (migration-only, no new features).
-This document is the instruction manual for every human and AI agent working in this repo.
+**Status:** Authoritative Block 0 contract.  
+**Master document:** `docs/canonical/CANONICAL_PLATFORM_MIGRATION.md`  
+**Legacy:** `delivery-first-checkout` — FROZEN / migration-only.
 
-## Core rule
-Purchase and Delivery are separate domains. Delivery is a fulfillment service attached to an
-existing, paid Order. It never defines the purchase.
+## Governing rules
 
-Order != Delivery Request; Delivery Request != Fulfillment Job;
-Fulfillment Job != Delivery Listing; Listing != Order.
+1. Swift converges toward one canonical platform.
+2. Purchase and Delivery are separate domains.
+3. Listing, Order, Delivery Listing, Delivery Request, and Fulfillment Job are distinct entities.
+4. Each major domain has one authoritative backend mutation path.
+5. Android, Web, and Admin are consumers, not competing authorities.
+6. No major migration is accepted from compilation or agent claims alone; repository diff and evidence are required.
 
-## Domains and authorities
-- Listing: identity, ownership, lifecycle, inventory, pricing, slug, activity.
-  Sole authority: `functions/src/listing/*` (Listing Engine). No other module may write
-  `stockQuantity`, `reservedQuantity`, `isAvailable`, `status`, `sellerId`, `shopId`, `priceMinorUnits`.
-- Purchase: cart items, pricing snapshot, reservation, payment, order creation.
-  Sole authority: `calculatePurchaseTotal` -> `createPurchaseOrder` -> reserve -> pay -> commit/release.
-- Order: buyer, seller, listing snapshots, payment, reservation, `fulfillmentId` reference only.
-- Fulfillment: `createDeliveryRequest`, provider accept, `createDeliveryJob`, driver, route, tracking.
-  Sole authority: `functions/src/fulfillment.ts`.
-- Links: `/s/<shop>/<product>` product; `/d/<shop>/<delivery>` delivery. `/listing/` is legacy.
+## Canonical authorities
 
-## Canonical fulfillment state machine
-REQUESTED -> (CANCELLED) | ASSIGNED -> AT_PICKUP -> PICKUP_CONFIRMED -> IN_TRANSIT -> (FAILED) | DELIVERED
-Every surface (Functions, Android, Web, Admin, notifications, tracking, tests) uses exactly these
-strings. `PICKUP` is invalid.
+| Domain | Authority |
+|---|---|
+| Listing validation/ownership/lifecycle/inventory/slugs/activity | `functions/src/listing/*` |
+| Purchase totals | `calculatePurchaseTotal` |
+| Purchase creation | `createPurchaseOrder` |
+| Order | Purchase-first Order architecture |
+| Delivery Request | Fulfillment authority |
+| Fulfillment / tracking | `functions/src/fulfillment.ts` |
+| Product smart links | `/s/<shop-slug>/<product-slug>` |
+| Delivery smart links | `/d/<shop-slug>/<delivery-slug>` |
+| Identity | Canonical user/profile authority |
+| Notifications | Canonical platform events |
+| Entitlements | Canonical entitlement authority |
 
-## Clients
-Android, Web and Admin are clients of the same callable contracts. No client-side commerce logic.
-Android: UI -> ViewModel -> UseCase -> Repository -> Callable -> Canonical Function.
+## Canonical fulfillment states
 
-## Migration blocks
-0 baseline+contract, 1 Listing Engine, 2 Purchase/Commerce, 3 Order+Inventory, 4 Fulfillment,
-5 Android, 6 Web/Smart links, 7 Admin, 8 Social/Messaging/Notifications,
-9 Advertising/Entitlements/Profile upgrades, 10 Cross-platform, 11 Legacy elimination, 12 Canonical-main verification.
-Each block: AUDIT, IMPLEMENT, BUILD, UNIT, INTEGRATION, ADVERSARIAL, DIFF AUDIT, ACCEPT.
+`REQUESTED → ASSIGNED → AT_PICKUP → PICKUP_CONFIRMED → IN_TRANSIT → DELIVERED`
+
+Exception/terminal states are defined by the fulfillment implementation contract, including `CANCELLED` and `FAILED`.
+
+**Invalid legacy vocabulary:** `PICKUP`.
+
+## Canonical inventory
+
+`availableQuantity = stockQuantity - reservedQuantity`
+
+Lifecycle:
+
+`AVAILABLE → RESERVED → COMMITTED`
+
+Cancellation:
+
+`RESERVED → RELEASED`
+
+## Server-owned listing fields
+
+Clients cannot authoritatively set:
+
+`sellerId`, `status`, `shareSlug`, `commitmentCount`, `viewCount`, `shareCount`, `publishedAt`, or inventory authority fields.
+
+## Client boundary
+
+```
+Android/Web/Admin
+       ↓
+Canonical client contract
+       ↓
+Callable / canonical function
+       ↓
+Domain authority
+       ↓
+Firestore
+```
+
+Clients must not recreate authoritative pricing, inventory, seller identity, order state, or delivery state machines.
+
+## Migration acceptance
+
+Each block requires audit → implementation → build → tests → adversarial verification → diff audit → acceptance.
+
+See `CANONICAL_PLATFORM_MIGRATION.md` for the complete block roadmap and Definition of Done.
