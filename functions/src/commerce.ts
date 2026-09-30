@@ -25,6 +25,8 @@ import {
     // Lifecycle
     ListingStatus,
     isAvailableFromStatus,
+    statusFromAvailabilityToggle,
+    buildNewListingDoc,
     inventoryModeForType,
     defaultStockForMode,
     // Ownership counters
@@ -952,37 +954,13 @@ export const createListing = onCall(async (request) => {
             const listingId = db.collection("listings").doc().id;
             const shareSlug = await generateUniqueListingSlug(db, rawInput.shopId, rawInput.title, listingId);
 
-            // Lifecycle: new listings start ACTIVE (published immediately)
-            // A future "save as draft" flow would pass status: DRAFT explicitly.
-            const status    = ListingStatus.ACTIVE;
-            const isAvailable = isAvailableFromStatus(status);
-            const now       = admin.firestore.FieldValue.serverTimestamp();
-
-            const newListing = {
-                ...clientFields,
-                id:               listingId,
-                sellerId:         uid,
-                listingType:      listingType,
-                inventoryMode:    inventoryMode,
-                stockQuantity:    stockQuantity,
-                reservedQuantity: 0,
-                status:           status,
-                isAvailable:      isAvailable,
-                isSponsored:      false,
-                shareSlug:        shareSlug,
-                slugAliases:      [],
-                title_lowercase:  rawInput.title.toLowerCase(),
-                commitmentCount:  0,
-                likeCount:        0,
-                bookmarkCount:    0,
-                commentCount:     0,
-                shareCount:       0,
-                viewCount:        0,
-                rankingScore:     0,
-                publishedAt:      now,  // set immediately since we publish on creation
-                createdAt:        now,
-                updatedAt:        now,
-            };
+            const now = admin.firestore.FieldValue.serverTimestamp();
+            // ENGINE: sole assembler of the new listing document (server-owned fields)
+            const newListing = buildNewListingDoc({
+                clientFields, listingId, sellerId: uid, title: rawInput.title,
+                listingType, inventoryMode, stockQuantity, shareSlug, now,
+            });
+            const status = newListing.status as ListingStatus;
 
             transaction.set(db.collection("listings").doc(listingId), newListing);
 
@@ -1065,13 +1043,9 @@ export const updateListing = onCall(async (request) => {
                 Object.assign(filteredUpdates, slugPayload);
             }
 
-            // Derive new status from isAvailable if client passed it (legacy compat)
-            // The engine's status is authoritative; isAvailable is derived from it.
-            // If the client passes isAvailable, interpret it as a PAUSED/ACTIVE toggle.
+            // ENGINE: legacy isAvailable flag -> PAUSED/ACTIVE toggle; status stays authoritative.
             const oldStatus = listing.status as ListingStatus || (listing.isAvailable ? ListingStatus.ACTIVE : ListingStatus.PAUSED);
-            let newStatus   = oldStatus;
-            if (filteredUpdates.isAvailable === true  && oldStatus === ListingStatus.PAUSED) newStatus = ListingStatus.ACTIVE;
-            if (filteredUpdates.isAvailable === false && oldStatus === ListingStatus.ACTIVE)  newStatus = ListingStatus.PAUSED;
+            const newStatus = statusFromAvailabilityToggle(oldStatus, filteredUpdates.isAvailable);
             if (newStatus !== oldStatus) {
                 filteredUpdates.status      = newStatus;
                 filteredUpdates.isAvailable = isAvailableFromStatus(newStatus);
