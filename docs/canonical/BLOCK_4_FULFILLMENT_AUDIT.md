@@ -21,3 +21,15 @@
 1. Port `expireDeliveryRequests` to fulfillment.ts. 2. Migrate Android `requestDelivery` call. 3. Port logistics tests.
 4. Run emulator tests. 5. Delete logistics.ts and its index.ts export. 6. Audit script must show 0.
 Emulator and Android builds could not run in the review sandbox.
+
+## Update: expiry ported; Android contract mismatch found
+- DONE: `expireDeliveryRequests` now lives in `fulfillment.ts` (batched, max 400 per run) and `index.ts` exports it from there.
+  `logistics.ts` now only contributes `requestDelivery` to the deployed set.
+- Android `RequestDeliveryUseCase` / `DeliveryRepository.requestDelivery` (legacy callable) are provided in `AppModule.kt`
+  but no screen uses them: dead code, safe to delete once an Android build can verify it.
+- CONTRACT MISMATCH (needs Android work, Block 5): the canonical backend `createDeliveryRequest` requires
+  `{ orderId, listingId, dropoff:{lat,lng} }` and resolves pickup server-side from the paid order.
+  Android `FirebaseDeliveryRepository.createDeliveryRequest` sends `{ listingId, pickup, dropoff }` with NO `orderId`,
+  so the call is rejected ("orderId, listingId and dropoff are required"). `RequestDeliveryViewModel` also passes
+  (listingId, dropoff, fallbackShopId) into a use case declared as (listingId, pickup, dropoff). The Android request flow
+  must be rebuilt around an existing paid order: purchase -> order confirmed -> choose delivery (getDeliveryOptions) -> createDeliveryRequest(orderId, ...).

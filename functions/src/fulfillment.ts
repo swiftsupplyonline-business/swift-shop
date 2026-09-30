@@ -1,4 +1,5 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as admin from "firebase-admin";
 import { isDeliveryStatus, canTransition } from "./fulfillmentStates";
 
@@ -344,4 +345,25 @@ export const authorizeDriver = onCall(async (request) => {
         });
 
     return { success: true };
+});
+
+/**
+ * Scheduled: expire delivery requests that the provider never answered.
+ * Canonical replacement for logistics.ts expireDeliveryRequests.
+ * Processes at most 400 per run (Firestore batch limit is 500); the remainder is picked up next minute.
+ */
+export const expireDeliveryRequests = onSchedule("every 1 minutes", async () => {
+    const db = admin.firestore();
+    const now = Date.now();
+    const stale = await db.collection("deliveryRequests")
+        .where("status", "==", "PENDING")
+        .where("expiresAt", "<=", now)
+        .limit(400)
+        .get();
+
+    if (stale.empty) return;
+
+    const batch = db.batch();
+    stale.docs.forEach(doc => batch.update(doc.ref, { status: "EXPIRED", updatedAt: now }));
+    await batch.commit();
 });
