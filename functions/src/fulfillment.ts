@@ -1,19 +1,8 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
+import { isDeliveryStatus, canTransition } from "./fulfillmentStates";
 
 const DELIVERY_REQUEST_WINDOW_MS = 120_000;
-const VALID_DELIVERY_STATUSES = ["REQUESTED", "ASSIGNED", "AT_PICKUP", "PICKUP_CONFIRMED", "IN_TRANSIT", "DELIVERED", "FAILED", "CANCELLED"] as const;
-
-const ALLOWED_TRANSITIONS: Record<string, string[]> = {
-    REQUESTED: ["ASSIGNED", "CANCELLED"],
-    ASSIGNED: ["PICKUP", "CANCELLED"],
-    PICKUP: ["IN_TRANSIT", "FAILED"],
-    IN_TRANSIT: ["DELIVERED", "FAILED"],
-    DELIVERED: [],
-    FAILED: [],
-    CANCELLED: []
-};
-
 /** Returns delivery-provider listings without requiring an order or payment. */
 export const getDeliveryOptions = onCall(async (request) => {
     if (!request.auth) throw new HttpsError("unauthenticated", "Auth required");
@@ -259,7 +248,7 @@ export const updateDeliveryStatus = onCall(async (request) => {
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
     const { routeId, status } = request.data;
-    if (!routeId || !VALID_DELIVERY_STATUSES.includes(status)) {
+    if (!routeId || !isDeliveryStatus(status)) {
         throw new HttpsError("invalid-argument", "routeId and valid status are required");
     }
 
@@ -276,7 +265,7 @@ export const updateDeliveryStatus = onCall(async (request) => {
             const isBuyer = route.buyerId === auth.uid;
             const isSeller = route.sellerId === auth.uid;
 
-            if (!(ALLOWED_TRANSITIONS[route.status] || []).includes(status)) {
+            if (!canTransition(route.status, status)) {
                 throw new Error(`Cannot transition delivery from ${route.status} to ${status}`);
             }
 
@@ -303,7 +292,8 @@ export const updateDeliveryStatus = onCall(async (request) => {
             if (status === "CANCELLED") {
                 if (!isBuyer && !isDriver && !isAdmin) throw new Error("Unauthorized");
                 if (isBuyer && route.status !== "REQUESTED") throw new Error("Buyer can only cancel before assignment");
-            } else if (status === "PICKUP") {
+            } else if (status === "PICKUP_CONFIRMED") {
+                // Physical handoff: confirmed by the assigned driver or the merchandise seller.
                 if (!isDriver && !isSeller) throw new Error("Only driver or merchant can confirm pickup");
             } else if (!isDriver && !isAdmin) {
                 throw new Error("Only the assigned driver can update this delivery");
@@ -320,10 +310,14 @@ export const updateDeliveryStatus = onCall(async (request) => {
                 status === "CANCELLED" ? "CANCELLED" :
                 status;
 
-            tx.update(db.collection("orders").doc(route.orderId), {
+            const orderUpdate: Record<string, unknown> = {
                 fulfillmentStatus,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
+            };
+            // Keep the order lifecycle in step (buyer confirm-delivery depends on DISPATCHED/DELIVERED).
+            if (status === "IN_TRANSIT") orderUpdate.status = "DISPATCHED";
+            if (status === "DELIVERED") orderUpdate.status = "DELIVERED";
+            tx.update(db.collection("orders").doc(route.orderId), orderUpdate);
         });
 
         return { success: true };

@@ -135,7 +135,7 @@ class FirebaseDeliveryRepository @Inject constructor(
     override fun getActiveDeliveriesForDriver(driverId: String): Flow<List<DeliveryRoute>> = callbackFlow {
         val subscription = firestore.collection("deliveryRoutes")
             .whereEqualTo("driverId", driverId)
-            .whereIn("status", listOf("ASSIGNED", "PICKUP", "IN_TRANSIT"))
+            .whereIn("status", listOf("ASSIGNED", "AT_PICKUP", "PICKUP_CONFIRMED", "IN_TRANSIT"))
             .addSnapshotListener { snapshot, _ ->
                 val list = snapshot?.documents?.mapNotNull { it.toObject(FirestoreDeliveryRoute::class.java)?.toDomain(it.id) } ?: emptyList()
                 trySend(list)
