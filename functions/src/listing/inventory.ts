@@ -19,7 +19,7 @@
  * NOT_APPLICABLE listings reject reserve/commit/release operations.
  *
  * commerce.ts integration points:
- *  createOrder         → reserveInventory()
+ *  createPurchaseOrder → reserveInventory()
  *  verifyMopayPayment  → commitInventory() + incrementCommitment()
  *  cancelOrder         → releaseInventory()
  *  cleanupExpiredReservations → releaseInventory()

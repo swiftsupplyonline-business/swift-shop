@@ -24,3 +24,15 @@ These must call callables only; no direct Firestore listing writes. Needs a Fire
 2. `grep` for listing-field writes outside listing/ returns 0 (excluding tests).
 3. Unit tests per op, plus adversarial: forged sellerId/price/status, negative stock, reservation race, unauthorized edit.
 4. Firestore rules deny direct client writes to stock/reserved/status/seller/price fields.
+
+## Correction (after reading the code in full)
+The original table above overstated the gap. `createListing`, `updateListing`, `deleteListing` and
+`restockListing` in commerce.ts already call the engine for validation, slugs, counters, activity and
+restock. Remaining real gaps:
+- reservations.ts released stock by hand and never re-derived status. FIXED in block-1-listing-engine
+  (now uses engine `releaseInventory`; unit test added).
+- createListing still assembles the new listing document inline (initial stock/status/counters). TODO: move to an engine builder.
+- updateListing still maps the legacy `isAvailable` flag to PAUSED/ACTIVE inline. TODO: engine transition helper, then retire the flag from clients.
+- Stale `createOrder` wording in engine comments: FIXED.
+- Emulator-based test suites (commerce, logistics, notifications, security-rules) could not run in the
+  review sandbox (Firestore emulator download blocked). They must be run locally or in CI before merge.
