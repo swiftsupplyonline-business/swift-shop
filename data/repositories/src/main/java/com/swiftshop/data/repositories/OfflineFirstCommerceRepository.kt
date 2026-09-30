@@ -116,25 +116,6 @@ class OfflineFirstCommerceRepository @Inject constructor(
         idempotencyKey: String
     ) = remote.placePurchase(items, paymentMethod, provider, phoneNumber, idempotencyKey)
 
-    override suspend fun calculateOrderFees(
-        items: List<com.swiftshop.core.model.OrderItem>,
-        requiresDelivery: Boolean,
-        address: com.swiftshop.core.model.DeliveryAddress?,
-        selectedDeliveryListingId: String?
-    ) = remote.calculateOrderFees(items, requiresDelivery, address, selectedDeliveryListingId)
-
-    override suspend fun placeOrder(
-        items: List<com.swiftshop.core.model.OrderItem>,
-        requiresDelivery: Boolean,
-        address: com.swiftshop.core.model.DeliveryAddress?,
-        paymentMethod: com.swiftshop.core.model.PaymentMethod,
-        provider: String?,
-        phoneNumber: String,
-        idempotencyKey: String,
-        selectedDeliveryListingId: String?,
-        deliveryRequestId: String?
-    ) = remote.placeOrder(items, requiresDelivery, address, paymentMethod, provider, phoneNumber, idempotencyKey, selectedDeliveryListingId, deliveryRequestId)
-
     override suspend fun verifyMopayPayment(sessionId: String) = remote.verifyMopayPayment(sessionId)
 
     override suspend fun confirmDelivery(orderId: String): Result<Unit> = remote.confirmDelivery(orderId)

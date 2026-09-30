@@ -19,7 +19,7 @@ async function verify() {
     });
     console.log("   [OK] Listing seeded.");
 
-    // 2. Test calculateOrderFees Logic (Simulated)
+    // 2. Test calculatePurchaseTotal Logic (Simulated)
     console.log("2. Verifying Fee Logic...");
     const subtotal = 10000 * 2; // 2 units
     const platformFee = Math.floor((subtotal * 15) / 1000); // 1.5%

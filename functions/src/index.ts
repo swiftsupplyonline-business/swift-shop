@@ -6,7 +6,7 @@ admin.initializeApp();
 // Hardened exports
 export { provisionNewUser } from "./auth";
 export {
-    calculateOrderFees, calculatePurchaseTotal, createPurchaseOrder, createOrder, verifyMopayPayment, confirmDelivery,
+    calculatePurchaseTotal, createPurchaseOrder, verifyMopayPayment, confirmDelivery,
     updateOrderStatus, cancelOrder, confirmMopayPayment, initiateSubscription,
     createListing, deleteListing, createShop, updateListing,
     createListingComment, deleteListingComment
