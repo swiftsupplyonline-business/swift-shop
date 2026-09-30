@@ -2,7 +2,8 @@
 
 **Status:** Authoritative audit workflow for the Canonical Platform migration  
 **Applies to:** Blocks 0–12, every implementation branch, every agent, and every release candidate  
-**Master contract:** `docs/canonical/CANONICAL_PLATFORM_MIGRATION.md`
+**Master contract:** `docs/canonical/CANONICAL_PLATFORM_MIGRATION.md`  
+**Implementation contract:** `docs/canonical/CANONICAL_IMPLEMENTATION_PROTOCOL.md`
 
 ---
 
