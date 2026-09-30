@@ -16,5 +16,6 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:media"))
     implementation(libs.kotlinx.coroutines.android)
+    testImplementation(libs.bundles.testing)
 }
 
