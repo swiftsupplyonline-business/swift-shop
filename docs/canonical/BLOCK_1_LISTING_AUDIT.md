@@ -1,0 +1,26 @@
+# Block 1 Audit: Listing Engine authority
+
+Engine: `functions/src/listing/` (activity, inventory, lifecycle, ownership, slug, types, validate).
+Audited on branch block-0-canonical-baseline (from canonical-platform-integration-2026-09-29).
+
+## Listing writes that bypass the engine
+| Location | What it does | Required change |
+|---|---|---|
+| `commerce.ts` createListing (~L890-1018) | derives status/isAvailable, writes stockQuantity=, reservedQuantity: 0, isAvailable inline (~L947-970) | delegate to engine create + validate + slug + ownership + activity |
+| `commerce.ts` updateListing (~L1019-1141) | maps isAvailable<->PAUSED/ACTIVE inline (~L1073-1077) | delegate to engine lifecycle transition |
+| `commerce.ts` deleteListing (~L1142), restockListing (~L1194) | listing mutations in commerce | move to engine (delete / restock) |
+| `reservations.ts` (~L34) | decrements listing.reservedQuantity inline on expiry | call engine releaseInventory |
+| `listing/validate.ts`, `listing/inventory.ts` | still reference `createOrder` | rewire to createPurchaseOrder terminology |
+
+## Read-only consumers (no change to authority, verify field names)
+publicMarketplace.ts, fulfillment.ts (isAvailable on delivery listings), sharePreview.ts, commerce.ts price reads.
+
+## Not yet audited
+Android (FirebaseCommerceRepository, feature/shop screens), hosting/app.js, Admin.
+These must call callables only; no direct Firestore listing writes. Needs a Firestore rules check too.
+
+## Exit criteria for Block 1
+1. Every lifecycle op (create, update, publish, pause, restock, reserve, release, commit, delete, transfer) goes through listing/*.
+2. `grep` for listing-field writes outside listing/ returns 0 (excluding tests).
+3. Unit tests per op, plus adversarial: forged sellerId/price/status, negative stock, reservation race, unauthorized edit.
+4. Firestore rules deny direct client writes to stock/reserved/status/seller/price fields.
