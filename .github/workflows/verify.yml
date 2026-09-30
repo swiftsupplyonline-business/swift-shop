@@ -2,9 +2,9 @@ name: Verify Swift Shop
 
 on:
   push:
-    branches: [ master, delivery-first-checkout ]
+    branches: [ master, delivery-first-checkout, canonical-platform-tree-2026-09-29, 'remediation/**' ]
   pull_request:
-    branches: [ master, delivery-first-checkout ]
+    branches: [ master, delivery-first-checkout, canonical-platform-tree-2026-09-29, 'remediation/**' ]
 
 jobs:
   android-tests:
