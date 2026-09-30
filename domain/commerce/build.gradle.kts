@@ -18,5 +18,4 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.timber)
     testImplementation(libs.bundles.testing)
-    testImplementation("org.mockito.kotlin:mockito-kotlin:5.3.1")
 }

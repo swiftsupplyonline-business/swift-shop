@@ -122,6 +122,18 @@ fun SwiftShopNavHost(
         ) { ListingDetailScreen(navController = navController) }
 
         composable(
+            route = Screen.SharedListing.route,
+            arguments = listOf(
+                navArgument("shopSlug") { type = NavType.StringType },
+                navArgument("productSlug") { type = NavType.StringType }
+            ),
+            deepLinks = listOf(
+                navDeepLink { uriPattern = "https://swift-dev-3d3ae.web.app/s/{shopSlug}/{productSlug}" },
+                navDeepLink { uriPattern = "https://swift-dev-3d3ae.web.app/d/{shopSlug}/{productSlug}" }
+            )
+        ) { ListingDetailScreen(navController = navController) }
+
+        composable(
             route = Screen.RequestDelivery.route,
             arguments = listOf(navArgument("listingId") { type = NavType.StringType })
         ) { com.swiftshop.feature.delivery.RequestDeliveryScreen(navController = navController) }
@@ -144,11 +156,7 @@ fun SwiftShopNavHost(
             deepLinks = listOf(navDeepLink { uriPattern = "swiftshop://checkout/verify?sessionId={sessionId}" })
         ) { backStackEntry ->
             val sessionId = backStackEntry.arguments?.getString("sessionId")
-            CheckoutScreen(
-                navController = navController,
-                biometricGuard = biometricGuard,
-                sessionId = sessionId
-            )
+            CheckoutScreen(navController = navController, sessionId = sessionId)
         }
 
         composable(Screen.Orders.route) {
@@ -159,7 +167,7 @@ fun SwiftShopNavHost(
             route = Screen.OrderDetail.route,
             arguments = listOf(navArgument("orderId") { type = NavType.StringType }),
             deepLinks = listOf(navDeepLink { uriPattern = "swiftshop://order/{orderId}" })
-        ) { OrderDetailScreen(navController = navController, biometricGuard = biometricGuard) }
+        ) { OrderDetailScreen(navController = navController) }
 
         composable(Screen.CreatePost.route) {
             CreatePostScreen(onBack = { navController.popBackStack() },
@@ -215,6 +223,11 @@ fun SwiftShopNavHost(
             arguments = listOf(navArgument("conversationId") { type = NavType.StringType }),
             deepLinks = listOf(navDeepLink { uriPattern = "swiftshop://conversation/{conversationId}" })
         ) { ConversationScreen(navController = navController) }
+
+        composable(
+            route = Screen.DeliveryCheckout.route,
+            arguments = listOf(navArgument("orderId") { type = NavType.StringType })
+        ) { com.swiftshop.feature.delivery.DeliveryCheckoutScreen(navController = navController) }
 
         composable(
             route = Screen.DeliveryTracking.route,

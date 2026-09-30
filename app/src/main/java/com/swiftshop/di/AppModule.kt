@@ -7,7 +7,10 @@ import com.google.firebase.firestore.persistentCacheSettings
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.storage.FirebaseStorage
 import com.swiftshop.BuildConfig
+import com.swiftshop.core.network.PaymentGateway
 import com.swiftshop.data.firebase.*
+import com.swiftshop.data.remote.di.BackendGateway
+import com.swiftshop.data.remote.di.MockGateway
 import com.swiftshop.data.repositories.OfflineFirstCommerceRepository
 import com.swiftshop.domain.auth.*
 import com.swiftshop.domain.commerce.*
@@ -55,6 +58,25 @@ object FirebaseModule {
 
 @Module
 @InstallIn(SingletonComponent::class)
+object PaymentModule {
+
+    /**
+     * The one place BuildConfig.FLAVOR is trustworthy for this decision â€”
+     * this is :app's own BuildConfig, matching whichever product flavor is
+     * actually being assembled. dev builds get the in-memory mock so
+     * wallet/checkout flows can be exercised without a live backend;
+     * staging/production route real HTTP calls through SwiftBackendApi.
+     */
+    @Provides
+    @Singleton
+    fun providePaymentGateway(
+        @MockGateway mock: PaymentGateway,
+        @BackendGateway backend: PaymentGateway
+    ): PaymentGateway = if (BuildConfig.FLAVOR == "dev") mock else backend
+}
+
+@Module
+@InstallIn(SingletonComponent::class)
 object AuthModule {
 
     @Provides
@@ -96,9 +118,6 @@ object ProfileModule {
 
     @Provides @Singleton
     fun provideIsFollowingUseCase(repo: ProfileRepository) = IsFollowingUseCase(repo)
-
-    @Provides
-    fun provideUpdateFcmTokenUseCase(repo: ProfileRepository) = UpdateFcmTokenUseCase(repo)
 }
 
 @Module
@@ -203,6 +222,12 @@ object CommerceModule {
     fun provideCalculateOrderFeesUseCase(repo: CommerceRepository) = CalculateOrderFeesUseCase(repo)
 
     @Provides
+    fun provideCalculatePurchaseTotalUseCase(repo: CommerceRepository) = CalculatePurchaseTotalUseCase(repo)
+
+    @Provides
+    fun provideCreatePurchaseOrderUseCase(repo: CommerceRepository) = CreatePurchaseOrderUseCase(repo)
+
+    @Provides
     fun providePlaceOrderUseCase(repo: CommerceRepository) = PlaceOrderUseCase(repo)
 
     @Provides
@@ -287,6 +312,15 @@ object LogisticsModule {
     fun provideCreateDeliveryRequestUseCase(repo: DeliveryRepository) = CreateDeliveryRequestUseCase(repo)
 
     @Provides
+    fun provideGetDeliveryOptionsUseCase(repo: DeliveryRepository) = GetDeliveryOptionsUseCase(repo)
+
+    @Provides
+    fun provideCreatePostPurchaseDeliveryRequestUseCase(repo: DeliveryRepository) = CreatePostPurchaseDeliveryRequestUseCase(repo)
+
+    @Provides
+    fun provideCreateDeliveryJobUseCase(repo: DeliveryRepository) = CreateDeliveryJobUseCase(repo)
+
+    @Provides
     fun provideObserveDeliveryRequestUseCase(repo: DeliveryRepository) = ObserveDeliveryRequestUseCase(repo)
 
     @Provides
@@ -295,9 +329,6 @@ object LogisticsModule {
 
     @Provides
     fun provideRespondToDeliveryRequestUseCase(repo: DeliveryRepository) = RespondToDeliveryRequestUseCase(repo)
-
-    @Provides
-    fun provideCancelDeliveryRequestUseCase(repo: DeliveryRepository) = CancelDeliveryRequestUseCase(repo)
 }
 
 @Module

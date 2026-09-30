@@ -1,12 +1,13 @@
-name: Deploy Swift Hosting
+name: Deploy Swift Dev Web
 
 on:
-  # Production deployment is intentionally manual. A push to a development
-  # branch must never implicitly deploy to the production Firebase project.
+  push:
+    branches:
+      - delivery-first-checkout
   workflow_dispatch:
 
 concurrency:
-  group: firebase-hosting-production
+  group: firebase-hosting-development
   cancel-in-progress: true
 
 permissions:
@@ -14,7 +15,7 @@ permissions:
 
 jobs:
   deploy:
-    name: Deploy Firebase Hosting
+    name: Deploy Swift Dev Hosting
     runs-on: ubuntu-latest
 
     steps:
@@ -24,7 +25,7 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SWIFT_D1BAA }}
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SWIFT_DEV_3D3AE }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -44,13 +45,13 @@ jobs:
         working-directory: functions
         run: npm run build
 
-      - name: Deploy Firebase Hosting and Marketplace API
-        run: firebase deploy --only hosting,functions:publicMarketplace --project swift-d1baa --non-interactive
+      - name: Deploy Swift Dev Hosting and Marketplace API
+        run: firebase deploy --only hosting,functions:publicMarketplace,functions:payPreview --project swift-dev-3d3ae --non-interactive
 
       - name: Deployment summary
         run: |
           echo "### Swift Firebase Hosting deployment" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Project: `swift-d1baa`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Project: `swift-dev-3d3ae`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Branch: `${GITHUB_REF_NAME}`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Hosting: https://swift-d1baa.web.app" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Hosting: https://swift-dev-3d3ae.web.app" >> "$GITHUB_STEP_SUMMARY"

@@ -26,5 +26,5 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.androidx.core.ktx)
-    testImplementation(libs.junit)
+    testImplementation(libs.bundles.testing)
 }

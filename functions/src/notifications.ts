@@ -30,7 +30,6 @@ export const updateFcmToken = onCall(async (request) => {
  * Implements a durable state machine with per-device accounting.
  */
 async function sendNotification(userId: string, payload: { notification: { title: string, body: string }, data: Record<string, string> }, eventId: string) {
-    if (!userId || typeof userId !== "string" || !eventId) return;
     const db = admin.firestore();
     const eventRef = db.collection("notificationEvents").doc(`${eventId}_${userId}`);
     const leaseTime = 30 * 1000; // 30 second lease
@@ -105,23 +104,29 @@ async function sendNotification(userId: string, payload: { notification: { title
 
         response.responses.forEach((resp, idx) => {
             const device = targetDevices[idx];
-            if (resp.success) {
-                deviceAccountingUpdate[`deviceAccounting.${device.id}`] = {
-                    status: "SENT",
-                    messageId: resp.messageId,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                };
-            } else {
+            const accountingEntry: Record<string, any> = {
+                status: resp.success
+                    ? "SENT"
+                    : (() => {
+                        const errorCode = resp.error?.code;
+                        return errorCode === "messaging/registration-token-not-registered" ||
+                               errorCode === "messaging/invalid-argument"
+                            ? "FAILED_PERMANENT"
+                            : "FAILED_RETRYABLE";
+                    })(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            };
+
+            // Never write undefined message IDs to Firestore.
+            if (resp.messageId) {
+                accountingEntry.messageId = resp.messageId;
+            }
+            if (!resp.success) {
+                accountingEntry.error = resp.error?.message;
+
                 const errorCode = resp.error?.code;
                 const isPermanent = errorCode === "messaging/registration-token-not-registered" ||
                                    errorCode === "messaging/invalid-argument";
-
-                deviceAccountingUpdate[`deviceAccounting.${device.id}`] = {
-                    status: isPermanent ? "FAILED_PERMANENT" : "FAILED_RETRYABLE",
-                    error: resp.error?.message,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                };
-
                 if (isPermanent) {
                     console.log(`Deactivating invalid token for device ${device.id}`);
                     batch.update(db.collection("users").doc(userId).collection("devices").doc(device.id), {
@@ -130,6 +135,8 @@ async function sendNotification(userId: string, payload: { notification: { title
                     });
                 }
             }
+
+            deviceAccountingUpdate[`deviceAccounting.${device.id}`] = accountingEntry;
         });
 
         // 3. Update Accounting & Determine Terminal State

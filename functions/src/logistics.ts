@@ -1,6 +1,6 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { onDocumentUpdated } from "firebase-functions/v2/firestore";
+import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
 
 const DELIVERY_REQUEST_WINDOW_MS = 120_000; // 120 seconds, server-authoritative
@@ -71,7 +71,11 @@ export const requestDelivery = onCall(async (request) => {
                 orderId,
                 buyerId: order.buyerId,
                 sellerId: order.sellerId,
-                providerId: shopData.ownerId, // SWIFT-019: Canonical provider is Merchant UID
+                // Prefer the accepted cross-shop delivery provider captured on the
+                // order at createOrder time; only fall back to the merchandise
+                // seller for orders that never went through a delivery request
+                // (e.g. self-fulfilment/pickup orders calling this legacy path).
+                providerId: order.deliveryProviderSellerId || shopData.ownerId,
                 driverId: "",
                 pickupLat: pickup.lat,
                 pickupLng: pickup.lng,
@@ -97,14 +101,16 @@ export const requestDelivery = onCall(async (request) => {
     }
 });
 
-const VALID_DELIVERY_STATUSES = ["REQUESTED", "ASSIGNED", "PICKUP", "IN_TRANSIT", "DELIVERED", "FAILED", "CANCELLED"];
+const VALID_DELIVERY_STATUSES = ["REQUESTED", "ASSIGNED", "AT_PICKUP", "PICKUP_CONFIRMED", "IN_TRANSIT", "DELIVERED", "FAILED", "CANCELLED"];
 
-// Linear, conservative transition map. Driver dispatch/matching isn't designed yet
-// (blueprint §27 lists this as an architectural unknown) — revisit once it is.
+// RED-4: explicit handoff sequence. AT_PICKUP records the assigned driver's
+// arrival. PICKUP_CONFIRMED is the physical custody transition and can be
+// confirmed by the assigned driver or the merchandise seller.
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
     REQUESTED: ["ASSIGNED", "CANCELLED"],
-    ASSIGNED: ["PICKUP", "CANCELLED"],
-    PICKUP: ["IN_TRANSIT", "FAILED"],
+    ASSIGNED: ["AT_PICKUP", "CANCELLED"],
+    AT_PICKUP: ["PICKUP_CONFIRMED", "FAILED"],
+    PICKUP_CONFIRMED: ["IN_TRANSIT", "FAILED"],
     IN_TRANSIT: ["DELIVERED", "FAILED"],
     DELIVERED: [],
     FAILED: [],
@@ -138,6 +144,7 @@ export const updateDeliveryStatus = onCall(async (request) => {
             const isAdmin = auth.token.admin === true;
             const isAssignedDriver = !!route.driverId && route.driverId === auth.uid;
             const isBuyer = route.buyerId === auth.uid;
+            const isMerchandiseSeller = !!route.sellerId && route.sellerId === auth.uid;
 
             const allowedNext = ALLOWED_TRANSITIONS[route.status] || [];
             if (!allowedNext.includes(status)) {
@@ -183,6 +190,14 @@ export const updateDeliveryStatus = onCall(async (request) => {
                 // Buyer can cancel only before a driver is assigned; the assigned driver/admin can cancel any time before completion.
                 if (!isBuyer && !isAssignedDriver && !isAdmin) throw new Error("Unauthorized");
                 if (isBuyer && route.status !== "REQUESTED") throw new Error("Buyer can only cancel before a driver is assigned");
+            } else if (status === "PICKUP_CONFIRMED") {
+                // RED-4: either party physically present at the handoff can
+                // confirm it -- the driver (who now has custody) or the
+                // merchandise seller (who just released the goods). No admin
+                // override here -- that's a separate decision if we want it.
+                if (!isAssignedDriver && !isMerchandiseSeller) {
+                    throw new Error("Only the assigned driver or the merchandise seller can confirm pickup");
+                }
             } else {
                 if (!isAssignedDriver && !isAdmin) throw new Error("Only the assigned driver can update this delivery");
             }
@@ -215,22 +230,24 @@ export const updateDeliveryStatus = onCall(async (request) => {
  * Creates a delivery job request against a DELIVER-type listing.
  *
  * Server-authoritative: ignores client-supplied pickup coordinates.
- * Fetches the shop's stored location from Firestore.
+ * Pickup is resolved from the MERCHANDISE shop (the buyer's cart), not from
+ * the delivery listing's own shop — the delivery provider may be an entirely
+ * different shop than the one the driver needs to collect goods from.
  *
  * Contract (matches FirebaseDeliveryRepository.createDeliveryRequest on Android):
- * - Request: { listingId: string, dropoff: {lat, lng} }
+ * - Request: { listingId: string, dropoff: {lat, lng}, merchandiseShopId: string }
  * - Response: requestId (string)
  */
 export const createDeliveryRequest = onCall(async (request) => {
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { listingId, dropoff } = request.data;
+    const { listingId, dropoff, merchandiseShopId } = request.data;
     if (
-        !listingId || !dropoff ||
+        !listingId || !dropoff || !merchandiseShopId ||
         typeof dropoff.lat !== "number" || typeof dropoff.lng !== "number"
     ) {
-        throw new HttpsError("invalid-argument", "listingId and dropoff ({lat, lng}) are required");
+        throw new HttpsError("invalid-argument", "listingId, merchandiseShopId, and dropoff ({lat, lng}) are required");
     }
 
     const db = admin.firestore();
@@ -246,20 +263,23 @@ export const createDeliveryRequest = onCall(async (request) => {
         throw new HttpsError("failed-precondition", "This delivery listing is not currently available");
     }
 
-    // Resolve authoritative pickup from the merchant's shop
-    const shopRef = db.collection("shops").doc(listing.shopId);
-    const shopDoc = await shopRef.get();
-    if (!shopDoc.exists) {
-        throw new HttpsError("failed-precondition", "Merchant shop not found");
+    // Resolve authoritative pickup from the MERCHANDISE shop — i.e. the shop
+    // whose goods the driver will actually be collecting — not the delivery
+    // listing's own shop (listing.shopId is the delivery PROVIDER's shop and
+    // may be completely unrelated to where the cart's items live).
+    const merchandiseShopRef = db.collection("shops").doc(merchandiseShopId);
+    const merchandiseShopDoc = await merchandiseShopRef.get();
+    if (!merchandiseShopDoc.exists) {
+        throw new HttpsError("failed-precondition", "Merchandise shop not found");
     }
-    const shopData = shopDoc.data()!;
+    const merchandiseShopData = merchandiseShopDoc.data()!;
     const pickup = {
-        lat: shopData.locationLat,
-        lng: shopData.locationLng
+        lat: merchandiseShopData.locationLat,
+        lng: merchandiseShopData.locationLng
     };
 
     if (typeof pickup.lat !== "number" || typeof pickup.lng !== "number" || (pickup.lat === 0 && pickup.lng === 0)) {
-        throw new HttpsError("failed-precondition", "Merchant shop has no valid location configured");
+        throw new HttpsError("failed-precondition", "Merchandise shop has no valid location configured");
     }
 
     const now = Date.now();
@@ -267,11 +287,12 @@ export const createDeliveryRequest = onCall(async (request) => {
     const newRequest = {
         id: requestRef.id,
         listingId,
-        merchantId: listing.sellerId,
+        merchantId: listing.sellerId, // delivery PROVIDER — the one who must accept/decline this job
+        merchandiseShopId, // shop the goods are actually picked up from — authoritative pickup source
         requesterId: auth.uid,
         pickup,
         dropoff,
-        pickupLabel: shopData.name || "Merchant Shop",
+        pickupLabel: merchandiseShopData.name || "Merchant Shop",
         dropoffLabel: "",
         deliveryFeeMinorUnits: listing.priceMinorUnits ?? 0,
         deliveryFeeCurrency: listing.priceCurrency ?? "LSL",
@@ -418,13 +439,23 @@ export const expireDeliveryRequests = onSchedule("every 1 minutes", async () => 
 /**
  * Trigger: Order confirmed.
  * Automatically creates a delivery route if delivery was requested and accepted.
+ *
+ * Uses onDocumentWritten (not onDocumentUpdated) because Swift Wallet orders
+ * are created already at status CONFIRMED — a document CREATE, not an
+ * UPDATE — so an update-only trigger never fired for wallet-paid orders that
+ * required delivery. MoPay orders still start at RESERVED and transition to
+ * CONFIRMED later, which this also handles.
  */
-export const onOrderConfirmed = onDocumentUpdated("orders/{orderId}", async (event) => {
-    const before = event.data?.before.data();
-    const after = event.data?.after.data();
-    if (!before || !after) return;
+export const onOrderConfirmed = onDocumentWritten("orders/{orderId}", async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!after) return;
 
-    if (before.status !== "CONFIRMED" && after.status === "CONFIRMED" && after.requiresDelivery && after.deliveryRequestId) {
+    const justConfirmed = before
+        ? (before.status !== "CONFIRMED" && after.status === "CONFIRMED")
+        : after.status === "CONFIRMED";
+
+    if (justConfirmed && after.requiresDelivery && after.deliveryRequestId) {
         const db = admin.firestore();
 
         // Fetch the accepted delivery request
@@ -446,8 +477,12 @@ export const onOrderConfirmed = onDocumentUpdated("orders/{orderId}", async (eve
             sellerId: after.sellerId,
             providerId: dr.merchantId, // Designated provider from the request
             driverId: "", // SWIFT-019: Unassigned initially
-            pickupLat: dr.pickup.lat,
-            pickupLng: dr.pickup.lng,
+            // RED-1 refinement: the order snapshot is the immutable
+            // commercial source of truth for where the merchandise is picked up.
+            // Fall back to the accepted request only for legacy orders created
+            // before pickupSnapshot existed.
+            pickupLat: after.pickupSnapshot?.lat ?? dr.pickup.lat,
+            pickupLng: after.pickupSnapshot?.lng ?? dr.pickup.lng,
             dropoffLat: dr.dropoff.lat,
             dropoffLng: dr.dropoff.lng,
             status: "REQUESTED", // SWIFT-019: Waiting for a driver to claim

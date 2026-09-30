@@ -11,6 +11,9 @@ sealed class Screen(val route: String) {
     data object ListingDetail : Screen("listing/{listingId}") {
         fun createRoute(id: String) = "listing/$id"
     }
+    data object SharedListing : Screen("shared_listing/{shopSlug}/{productSlug}") {
+        fun createRoute(shopSlug: String, productSlug: String) = "shared_listing/$shopSlug/$productSlug"
+    }
     data object ShopDetail : Screen("shop/{shopId}") {
         fun createRoute(id: String) = "shop/$id"
     }
@@ -38,6 +41,9 @@ sealed class Screen(val route: String) {
     }
     data object DeliveryTracking : Screen("delivery/{routeId}") {
         fun createRoute(id: String) = "delivery/$id"
+    }
+    data object DeliveryCheckout : Screen("delivery_checkout/{orderId}") {
+        fun createRoute(id: String) = "delivery_checkout/$id"
     }
     data object Settings : Screen("settings")
     data object EditProfile : Screen("edit_profile")

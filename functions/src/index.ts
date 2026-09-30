@@ -6,9 +6,9 @@ admin.initializeApp();
 // Hardened exports
 export { provisionNewUser } from "./auth";
 export {
-    calculateOrderFees, createOrder, verifyMopayPayment, confirmDelivery,
+    calculateOrderFees, calculatePurchaseTotal, createPurchaseOrder, createOrder, verifyMopayPayment, confirmDelivery,
     updateOrderStatus, cancelOrder, confirmMopayPayment, initiateSubscription,
-    createListing, deleteListing, createShop, updateShop, updateListing,
+    createListing, deleteListing, createShop, updateListing,
     createListingComment, deleteListingComment
 } from "./commerce";
 export {
@@ -18,13 +18,24 @@ export {
     createPostComment, deletePostComment
 } from "./social";
 export { syncProfileCounters } from "./maintenance";
-export { publicMarketplace } from "./publicMarketplace";
 
 // Financial Functions
 export * from "./finance";
 
-// Logistics Functions
-export { requestDelivery, updateDeliveryStatus, createDeliveryRequest, respondToDeliveryRequest, cancelDeliveryRequest, expireDeliveryRequests, onOrderConfirmed, authorizeDriver } from "./logistics";
+// Legacy logistics endpoints retained for compatibility.
+export { requestDelivery, expireDeliveryRequests } from "./logistics";
+
+// Canonical fulfillment boundary: delivery is independent of product purchase/payment.
+export {
+    getDeliveryOptions,
+    createDeliveryRequest,
+    acceptDeliveryRequest,
+    declineDeliveryRequest,
+    cancelDeliveryRequest,
+    createDeliveryJob,
+    updateDeliveryStatus,
+    authorizeDriver
+} from "./fulfillment";
 
 // Reservation Functions
 export * from "./reservations";
@@ -35,15 +46,3 @@ export * from "./advertising";
 // Share Preview Functions
 export * from "./sharePreview";
 
-// Notification Functions
-export {
-    updateFcmToken, notifyOnMessage, notifyOnOrderStatusChange,
-    notifyOnDeliveryRequestCreated, notifyOnDeliveryRequestResponded,
-    notifyOnDeliveryStatusChange
-} from "./notifications";
-
-// Admin Functions
-export { getAdminDashboardStats, moderateListing } from "./admin";
-
-// AI Assistant Functions
-export { searchAssistant, generateListingDetails } from "./aiAssistant";

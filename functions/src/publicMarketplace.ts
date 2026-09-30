@@ -1,5 +1,6 @@
 import { onRequest } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
+import { normalizeShareSlug } from "./shareSlug";
 
 /**
  * Public marketplace contract.
@@ -24,6 +25,7 @@ const timestampMillis = (value: any): number | null => {
 
 const mapListing = (data: FirebaseFirestore.DocumentData, id: string) => ({
     id,
+    shareSlug: String(data.shareSlug || normalizeShareSlug(data.title)),
     shopId: String(data.shopId || ""),
     sellerId: String(data.sellerId || ""),
     title: String(data.title || ""),
@@ -56,7 +58,9 @@ const mapListing = (data: FirebaseFirestore.DocumentData, id: string) => ({
 
 const mapShop = (data: FirebaseFirestore.DocumentData, id: string) => ({
     id,
+    shareSlug: String(data.shareSlug || normalizeShareSlug(data.name)),
     ownerId: String(data.ownerId || ""),
+    whatsappNumber: String(data.whatsappNumber || ""),
     name: String(data.name || ""),
     description: String(data.description || ""),
     logoUrl: String(data.logoUrl || ""),
