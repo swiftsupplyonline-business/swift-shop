@@ -94,7 +94,7 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { items, paymentMethod, provider, idempotencyKey, customerEmail, customerName } = request.data;
+    const { items, paymentMethod, provider, idempotencyKey, customerEmail, customerName, redirectTarget } = request.data;
     if (!items || !Array.isArray(items) || !idempotencyKey) {
         throw new HttpsError("invalid-argument", "Missing items or idempotencyKey");
     }
@@ -264,13 +264,19 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
             const mopayRequest = {
                 amount: finalTotal / 100,
                 reference: orderId,
-                redirectUrl: "swiftshop://checkout/verify",
+                redirectUrl: redirectTarget === "WEB"
+                    ? `https://${JSON.parse(process.env.FIREBASE_CONFIG || "{}").projectId || "swift-d1baa"}.web.app/checkout?sessionId={SESSION_ID}`
+                    : "swiftshop://checkout/verify",
                 description: `Order ${orderId} at Swift Shop`,
                 customerEmail: customerEmail || auth.token.email || "",
                 customerName: customerName || auth.token.name || auth.uid,
             };
 
             const mopayResponse = await MopayClient.initiatePaymentSession(mopayRequest);
+
+            // MoPay receives the final session ID from its own request processing;
+            // replace the WEB placeholder in the returned payment URL/redirect flow
+            // is handled by the gateway. The backend never trusts a client-supplied URL.
 
             if (mopayResponse.success && mopayResponse.sessionId) {
                 await db.collection("orders").doc(orderId).update({
