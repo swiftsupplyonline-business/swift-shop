@@ -1,6 +1,6 @@
 # Block 9 — Order money flows (commerce.ts)
 
-Branch `block-9-order-money`, based on `block-8-rules-money`. Not merged. Type-checks; 35 emulator-free unit tests pass.
+Branch `block-9-order-money`, based on `block-8-rules-money`. Not merged. Type-checks; 43 emulator-free unit tests pass.
 NOT run: Firestore emulator tests, any MoPay flow, any order transaction against a real/emulated Firestore.
 
 ## Fixed
@@ -41,8 +41,7 @@ NOT run: Firestore emulator tests, any MoPay flow, any order transaction against
 - Buyer app calls `updateOrderStatus(DISPATCHED)` for READY orders (OrdersViewModel.fulfillOrder), which a seller is not
   allowed to do (courier route sets DISPATCHED). Seller self-delivery therefore fails today; needs a product decision.
 - Cancelling an order that is DELIVERED but not yet settled is refused (buyer must confirm delivery or contact support).
-- `confirmDelivery`: update on a missing seller wallet throws (settlement stuck); delivery fee is paid to the seller, not the
-  delivery provider (product decision); no paymentStatus check.
+- Delivery fee is paid to the seller, not the delivery provider (product decision).
 - `confirmMopayPayment` (admin) only accepts PENDING, which new orders never are; no gateway check, no commit.
 - A delivery request is not consumed by the order that uses it (reusable).
 - `commitmentCount` is not decremented when committed stock is returned.
@@ -53,3 +52,12 @@ New admin-only callable `rejectWithdrawal({ transactionId, reason? })` in `finan
 amount moves pending -> available, reversal ledger entry `system_withdrawal_escrow` -> `user_<uid>`
 (`WITHDRAW_REJECT_<id>`). Idempotent; COMPLETED withdrawals cannot be rejected. Covered by an in-memory-Firestore
 unit test (not the emulator). There is no admin UI yet, and the client is not notified on rejection.
+
+## Block 9d — confirmDelivery
+- It wrote the escrow ledger entry BEFORE reading the seller wallet, so the SDK threw and settlement could not complete
+  at all. Reads now come first.
+- A seller with no wallet doc made `update()` throw and left the order stuck; it now uses set+merge.
+- Now requires paymentStatus SUCCESS/PAID and settlementStatus ESCROW_HOLD, checks subtotal + delivery fee + platform fee
+  == total before paying out, and the already-SETTLED repeat check stays first (idempotent).
+- Test uses an in-memory Firestore fake that, like the real SDK, throws on read-after-write.
+- Unchanged: the delivery fee is still paid to the seller, not the courier (product decision).

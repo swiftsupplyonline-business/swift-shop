@@ -1390,10 +1390,13 @@ export const confirmDelivery = onCall(async (request) => {
             const order = orderDoc.data()!;
 
             if (order.buyerId !== auth.uid) throw new Error("Unauthorized");
+            if (order.settlementStatus === "SETTLED") return; // idempotent repeat
+            // Only a paid order can release escrow to the seller.
+            if (!["SUCCESS", "PAID"].includes(order.paymentStatus)) throw new Error("Order has not been paid");
+            if (order.settlementStatus !== "ESCROW_HOLD") throw new Error("Order has no escrow to release");
             if (!["READY", "DISPATCHED", "DELIVERED"].includes(order.status)) {
                 throw new Error(`Order cannot be confirmed in state ${order.status}`);
             }
-            if (order.settlementStatus === "SETTLED") return;
 
             const now = admin.firestore.Timestamp.now();
             const subtotal      = order.subtotalMinorUnits || 0;
@@ -1401,6 +1404,12 @@ export const confirmDelivery = onCall(async (request) => {
             const platformFee   = order.platformFeeMinorUnits || 0;
             const total         = order.totalMinorUnits || 0;
             const sellerProceeds = subtotal + deliveryFee;
+            if (sellerProceeds + platformFee !== total) throw new Error("Order amounts are inconsistent; refusing to settle.");
+
+            // All reads first: Firestore rejects any transaction read issued after a write.
+            const sellerWalletRef = db.collection("wallets").doc(order.sellerId);
+            const sellerWalletDoc = await transaction.get(sellerWalletRef);
+            const currentSellerBalance = sellerWalletDoc.exists ? (sellerWalletDoc.data()?.availableBalanceMinorUnits || 0) : 0;
 
             const ledgerId = db.collection("ledgerEntries").doc().id;
             transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
@@ -1413,13 +1422,12 @@ export const confirmDelivery = onCall(async (request) => {
                 timestamp: now
             });
 
-            const sellerWalletRef = db.collection("wallets").doc(order.sellerId);
-            const sellerWalletDoc = await transaction.get(sellerWalletRef);
-            const currentSellerBalance = sellerWalletDoc.data()?.availableBalanceMinorUnits || 0;
-            transaction.update(sellerWalletRef, {
+            // set+merge: a seller without a wallet doc yet must still get paid (update() would throw and
+            // leave the order stuck unsettled).
+            transaction.set(sellerWalletRef, {
                 availableBalanceMinorUnits: currentSellerBalance + sellerProceeds,
                 updatedAt: now
-            });
+            }, { merge: true });
 
             const sellerLedgerId = db.collection("ledgerEntries").doc().id;
             transaction.set(db.collection("ledgerEntries").doc(sellerLedgerId), {
