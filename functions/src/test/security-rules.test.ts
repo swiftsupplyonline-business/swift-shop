@@ -1,5 +1,6 @@
 import {
   assertFails,
+  assertSucceeds,
   initializeTestEnvironment,
   RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
@@ -118,5 +119,40 @@ describe("Firestore Security Rules", () => {
     ]) {
         await assertFails(aliceDb.collection("listings").doc("listing_2").update(patch));
     }
+  });
+
+  test("Profile owner cannot write fields outside the editable allowlist", async () => {
+    const aliceDb = testEnv.authenticatedContext("alice").firestore();
+    await testEnv.withSecurityRulesDisabled(async (c) => { await c.firestore().collection("profiles").doc("alice").set({ displayName: "A", isVerified: false }); });
+    await assertFails(aliceDb.collection("profiles").doc("alice").update({ isVerified: true }));
+    await assertSucceeds(aliceDb.collection("profiles").doc("alice").update({ bio: "hello" }));
+  });
+
+  test("User cannot self-verify on their users document", async () => {
+    const aliceDb = testEnv.authenticatedContext("alice").firestore();
+    await testEnv.withSecurityRulesDisabled(async (c) => { await c.firestore().collection("users").doc("alice").set({ uid: "alice", isVerified: false, tier: "BASIC" }); });
+    await assertFails(aliceDb.collection("users").doc("alice").update({ isVerified: true }));
+  });
+
+  test("Conversation participants cannot rewrite participantIds; strangers cannot mark messages read", async () => {
+    const aliceDb = testEnv.authenticatedContext("alice").firestore();
+    const eveDb = testEnv.authenticatedContext("eve").firestore();
+    await testEnv.withSecurityRulesDisabled(async (c) => {
+      await c.firestore().collection("conversations").doc("c1").set({ participantIds: ["alice", "bob"], lastMessage: "" });
+      await c.firestore().collection("messages").doc("m1").set({ conversationId: "c1", senderId: "bob", isRead: false });
+    });
+    await assertFails(aliceDb.collection("conversations").doc("c1").update({ participantIds: ["alice", "bob", "eve"] }));
+    await assertSucceeds(aliceDb.collection("conversations").doc("c1").update({ lastMessage: "hi" }));
+    await assertFails(eveDb.collection("messages").doc("m1").update({ isRead: true }));
+    await assertSucceeds(aliceDb.collection("messages").doc("m1").update({ isRead: true }));
+  });
+
+  test("Ad campaign draft cannot carry fake metrics or a negative budget", async () => {
+    const aliceDb = testEnv.authenticatedContext("alice").firestore();
+    const base = { campaignId: "x", ownerId: "alice", contentId: "l1", contentType: "LISTING", budgetCurrency: "LSL",
+      durationWeeks: 1, status: "DRAFT", impressions: 0, clicks: 0, conversions: 0, includeAllFeed: false, createdAt: 1 };
+    await assertSucceeds(aliceDb.collection("advertisingCampaigns").doc("x").set({ ...base, budgetMinorUnits: 5000 }));
+    await assertFails(aliceDb.collection("advertisingCampaigns").doc("y").set({ ...base, budgetMinorUnits: -5000 }));
+    await assertFails(aliceDb.collection("advertisingCampaigns").doc("z").set({ ...base, budgetMinorUnits: 5000, impressions: 1e6 }));
   });
 });

@@ -15,6 +15,7 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
+    testImplementation(libs.bundles.testing)
     implementation(project(":core:model"))
 
     implementation(platform(libs.firebase.bom))

@@ -372,11 +372,19 @@ function route() {
   root.innerHTML = `<div class="error">Page not found. <a href="/">Go home</a></div>`;
 }
 
+// Paths served by Cloud Functions (smart links, payment pages, API). The client router has no
+// route for them, so they must be real browser navigations, never intercepted.
+const SERVER_ROUTED = /^\/(s|d|pay|api)(\/|\?|#|$)/;
+
 document.addEventListener("click", (e) => {
   const a = e.target.closest("a[href^='/']");
   if (!a) return;
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  if (a.target && a.target !== "_self") return;
+  const href = a.getAttribute("href");
+  if (SERVER_ROUTED.test(href)) return;
   e.preventDefault();
-  navigate(a.getAttribute("href"));
+  navigate(href);
 });
 window.addEventListener("popstate", route);
 document.addEventListener("DOMContentLoaded", () => {
