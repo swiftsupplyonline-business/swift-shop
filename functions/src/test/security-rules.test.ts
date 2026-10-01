@@ -24,6 +24,54 @@ describe("Firestore Security Rules", () => {
     await testEnv.cleanup();
   });
 
+  test("User can read their own ledger record by canonical account identity", async () => {
+    const aliceDb = testEnv.authenticatedContext("alice").firestore();
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore().collection("ledgerEntries").doc("ledger_alice").set({
+        debitAccount: "system_clearing",
+        creditAccount: "user_alice",
+        amountMinorUnits: 1000,
+      });
+    });
+    await expect(aliceDb.collection("ledgerEntries").doc("ledger_alice").get()).resolves.toBeDefined();
+  });
+
+  test("User cannot read another user's ledger record", async () => {
+    const aliceDb = testEnv.authenticatedContext("alice").firestore();
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore().collection("ledgerEntries").doc("ledger_bob").set({
+        debitAccount: "system_clearing",
+        creditAccount: "user_bob",
+        amountMinorUnits: 1000,
+      });
+    });
+    await assertFails(aliceDb.collection("ledgerEntries").doc("ledger_bob").get());
+  });
+
+  test("Unauthenticated user cannot read ledger records", async () => {
+    const db = testEnv.unauthenticatedContext().firestore();
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore().collection("ledgerEntries").doc("ledger_private").set({
+        debitAccount: "system_clearing",
+        creditAccount: "user_alice",
+        amountMinorUnits: 1000,
+      });
+    });
+    await assertFails(db.collection("ledgerEntries").doc("ledger_private").get());
+  });
+
+  test("Admin can read ledger records", async () => {
+    const adminDb = testEnv.authenticatedContext("admin-user", { admin: true }).firestore();
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore().collection("ledgerEntries").doc("ledger_admin_read").set({
+        debitAccount: "system_clearing",
+        creditAccount: "user_alice",
+        amountMinorUnits: 1000,
+      });
+    });
+    await expect(adminDb.collection("ledgerEntries").doc("ledger_admin_read").get()).resolves.toBeDefined();
+  });
+
   test("Unauthorized user cannot write to deliveryRoutes", async () => {
     const unauthedDb = testEnv.unauthenticatedContext().firestore();
     await assertFails(unauthedDb.collection("deliveryRoutes").doc("route_1").set({}));
