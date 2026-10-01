@@ -950,6 +950,11 @@ export const confirmDelivery = onCall(async (request) => {
             const total         = order.totalMinorUnits || 0;
             const sellerProceeds = subtotal + deliveryFee;
 
+            // All transaction reads must happen before any transaction writes.
+            const sellerWalletRef = db.collection("wallets").doc(order.sellerId);
+            const sellerWalletDoc = await transaction.get(sellerWalletRef);
+            const currentSellerBalance = sellerWalletDoc.data()?.availableBalanceMinorUnits || 0;
+
             const ledgerId = db.collection("ledgerEntries").doc().id;
             transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
                 id: ledgerId,
@@ -961,11 +966,6 @@ export const confirmDelivery = onCall(async (request) => {
                 timestamp: now
             });
 
-            // All transaction reads must happen before any transaction writes.
-            const sellerWalletRef = db.collection("wallets").doc(order.sellerId);
-            const sellerWalletDoc = await transaction.get(sellerWalletRef);
-            const currentSellerBalance = sellerWalletDoc.data()?.availableBalanceMinorUnits || 0;
-            
             transaction.update(sellerWalletRef, {
                 availableBalanceMinorUnits: currentSellerBalance + sellerProceeds,
                 updatedAt: now
