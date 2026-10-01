@@ -18,6 +18,5 @@ dependencies {
     implementation(project(":core:media"))
     implementation(libs.kotlinx.coroutines.android)
 
-    testImplementation(libs.junit)
 }
 

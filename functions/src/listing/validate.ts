@@ -45,6 +45,7 @@ export interface ListingCreateInput {
     durationMinutes?:     number;
     customFields?:        unknown[];
     fulfillmentOptions?:  string[];
+    driverShareBps?:      number;  // DELIVER listings: driver's share of the net delivery fee, 0..10000 basis points
     isAvailable?:         boolean; // legacy; engine derives this from status
 }
 

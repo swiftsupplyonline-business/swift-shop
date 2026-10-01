@@ -187,17 +187,22 @@ describe("success path: release at settlement", () => {
     const id = await toDelivered("provider");
     const before = sumWallets();
     await run(confirmDelivery, "buyer", { orderId: "o1" });
-    expect(wallet("provider")).toBe(5000);
+    // Delivery fee 5000 at the canonical 1.5% platform cut: platform 75, provider 4925.
+    expect(wallet("provider")).toBe(4925);
     expect(wallet("seller")).toBe(10000);
     expect(store[`deliveryRequests/${id}`].escrowStatus).toBe("RELEASED");
-    expect(ledger().filter((l) => l.debitAccount === "system_delivery_escrow").reduce((a, l) => a + l.amountMinorUnits, 0)).toBe(5000);
-    expect(sumWallets() - before).toBe(15000); // seller 10000 + provider 5000 leave escrow; platform fee stays in system_fees
+    const fromEscrow = ledger().filter((l) => l.debitAccount === "system_delivery_escrow");
+    expect(fromEscrow.reduce((a, l) => a + l.amountMinorUnits, 0)).toBe(5000); // escrow fully drained: nothing lost or created
+    expect(fromEscrow.filter((l) => l.creditAccount === "system_fees").reduce((a, l) => a + l.amountMinorUnits, 0)).toBe(75);
+    expect(sumWallets() - before).toBe(14925); // seller 10000 + provider 4925 reach wallets; the 75 platform fee stays in system_fees
   });
   test("distinct driver: ledger distinguishes driver compensation from provider earnings", async () => {
     await toDelivered("driver", 6000);
     await run(confirmDelivery, "buyer", { orderId: "o1" });
-    expect(wallet("driver")).toBe(3000);
-    expect(wallet("provider")).toBe(2000);
+    // 5000 fee: platform 75, net 4925; driver share 60% of net = floor(2955), provider keeps the remaining 1970.
+    expect(wallet("driver")).toBe(2955);
+    expect(wallet("provider")).toBe(1970);
+    expect(wallet("driver") + wallet("provider")).toBe(4925);
     const refs = ledger().map((l) => l.reference);
     expect(refs.some((r: string) => r.startsWith("DRIVER_COMPENSATION_"))).toBe(true);
     expect(refs.some((r: string) => r.startsWith("PROVIDER_EARNINGS_"))).toBe(true);
