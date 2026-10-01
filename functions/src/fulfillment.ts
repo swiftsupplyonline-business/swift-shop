@@ -196,15 +196,20 @@ export const createDeliveryJob = onCall(async (request) => {
             if (!orderSnap.exists) throw new Error("Purchase order not found");
             const order = orderSnap.data()!;
 
-            const existing = await db.collection("deliveryRoutes")
-                .where("orderId", "==", dr.relatedOrderId)
-                .limit(1)
-                .get();
-            if (!existing.empty) {
-                return { routeId: existing.docs[0].id, alreadyExists: true };
-            }
+            if (order.buyerId !== auth.uid) throw new Error("Purchase order does not belong to this buyer");
+            if (["CANCELLED", "REFUNDED", "FAILED"].includes(order.status)) throw new Error("Purchase order is no longer active");
 
-            const routeRef = db.collection("deliveryRoutes").doc();
+            // One order -> one job. The deterministic id makes this race-proof: two concurrent transactions
+            // both read the same missing doc, and Firestore aborts/retries the loser, which then sees it exist.
+            // The query covers jobs created earlier under random ids; it is read through the transaction.
+            const routeRef = db.collection("deliveryRoutes").doc(`job_${dr.relatedOrderId}`);
+            const routeSnap = await tx.get(routeRef);
+            if (routeSnap.exists) return { routeId: routeRef.id, alreadyExists: true };
+            const existing = await tx.get(
+                db.collection("deliveryRoutes").where("orderId", "==", dr.relatedOrderId).limit(1)
+            );
+            if (!existing.empty) return { routeId: existing.docs[0].id, alreadyExists: true };
+
             tx.set(routeRef, {
                 id: routeRef.id,
                 orderId: dr.relatedOrderId,

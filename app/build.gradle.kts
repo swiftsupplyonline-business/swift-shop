@@ -51,16 +51,19 @@ android {
             applicationIdSuffix = ".dev.debug"
             versionNameSuffix = "-dev"
             buildConfigField("String", "FLAVOR", "\"dev\"")
+            manifestPlaceholders["appLinkHost"] = "swift-dev-3d3ae.web.app"
         }
         create("staging") {
             dimension = "environment"
             applicationIdSuffix = ".staging.debug"
             versionNameSuffix = "-staging"
             buildConfigField("String", "FLAVOR", "\"staging\"")
+            manifestPlaceholders["appLinkHost"] = "swift-staging-3bed1.web.app"
         }
         create("production") {
             dimension = "environment"
             buildConfigField("String", "FLAVOR", "\"production\"")
+            manifestPlaceholders["appLinkHost"] = "swift-d1baa.web.app"
         }
     }
 

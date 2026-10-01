@@ -25,3 +25,15 @@ commits. Each finding re-checked against current code:
   expires or is cancelled, and released to the delivery listing's author when the buyer confirms delivery. MoPay for the
   fee would be a second phase.
 - Production deploy: manual approval + a separate workflow for `swift-d1baa`, using a service-account secret.
+
+## Second audit (same baseline 33d711b) — checked against current code
+| Finding | Status |
+|---|---|
+| Delivery vocabulary: `PICKUP` still in transition table, auth check and Android `FirebaseDeliveryRepository` | STALE. No `PICKUP` remains anywhere in the tree (grep over .kt/.ts/.js/.html/.rules); a unit test asserts it is not a valid status. |
+| `createDeliveryJob` reads outside the transaction | REAL, fixed (batch A2): all reads go through the transaction, job id is deterministic (`job_<orderId>`) so concurrent calls cannot create two, jobs created earlier under random ids are still found, and buyer/active-order checks added. Unit-tested incl. read-after-write enforcement. |
+| Web `/s/...` product links intercepted by the JS router -> "Page not found" | REAL, fixed: links to `/s/`, `/d/`, `/pay/`, `/api/` are real browser navigations; modified/new-tab clicks are no longer hijacked either. Not run in a browser; regex checked in node. |
+| Android App Links hard-coded to the DEV host | REAL, fixed: host comes from a per-flavor manifest placeholder (dev / staging / production `*.web.app`). Not built here. |
+| Production App Links verification | NOT DONE. `hosting/.well-known/assetlinks.json` only lists the dev debug package + debug cert. Needs the staging/production package names and SHA-256 of the real release signing key. |
+| `docs/canonical/CANONICAL_PLATFORM_*.md`, `AUTHORITY_MATRIX.md` | Still missing, and `PROJECT_STATE.md` is stale. I have not drafted them: they should be written from the decisions you have made, not reverse-engineered by me. |
+| Functions tests 6/14 failing; Android JUnit; exports; CI triggers; confirmDelivery | See the table above (batch A / Block 9). |
+| Web MoPay "coming soon" | Product decision: Wallet-only web, or build MoPay on web? |
