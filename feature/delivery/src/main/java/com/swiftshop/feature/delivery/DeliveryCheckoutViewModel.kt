@@ -61,6 +61,7 @@ class DeliveryCheckoutViewModel @Inject constructor(
 
     fun submit() {
         val state = _uiState.value as? DeliveryCheckoutUiState.Choosing ?: return
+        if (state.submitting) return // duplicate-tap protection: the fee is debited server-side per request
         val listingId = state.selectedListingId ?: return
         val dropoff = state.dropoff ?: return
         _uiState.value = state.copy(submitting = true)
@@ -73,15 +74,19 @@ class DeliveryCheckoutViewModel @Inject constructor(
         }
     }
 
+    private var jobRequested = false
+
     private fun observeRequestStatus(requestId: String) {
         viewModelScope.launch {
             observeRequest(requestId).collect { request ->
                 when (request.status) {
                     DeliveryRequestStatus.ACCEPTED -> {
+                        if (jobRequested) return@collect // the request document re-emits; create the job once
+                        jobRequested = true
                         _uiState.value = DeliveryCheckoutUiState.CreatingJob(request)
                         createJob(request.id).fold(
                             onSuccess = { routeId -> _uiState.value = DeliveryCheckoutUiState.ReadyForTracking(routeId) },
-                            onFailure = { _uiState.value = DeliveryCheckoutUiState.Error(it.message ?: "Failed to create delivery job") }
+                            onFailure = { jobRequested = false; _uiState.value = DeliveryCheckoutUiState.Error(it.message ?: "Failed to create delivery job") }
                         )
                     }
                     DeliveryRequestStatus.DECLINED,

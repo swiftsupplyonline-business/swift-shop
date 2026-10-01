@@ -23,6 +23,7 @@ class SwiftShopApplication : Application(), Configuration.Provider, ImageLoaderF
         super.onCreate()
 
         FirebaseApp.initializeApp(this)
+        com.swiftshop.core.ui.AppLinks.host = BuildConfig.APP_LINK_HOST
 
         if (BuildConfig.ENABLE_LOGGING) {
             Timber.plant(Timber.DebugTree())

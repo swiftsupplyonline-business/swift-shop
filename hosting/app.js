@@ -309,17 +309,22 @@ async function renderCheckout(root) {
       </div>
       <div class="payment-methods">
         <label><input type="radio" name="pm" value="SWIFT_WALLET" checked> Swift Wallet</label>
-        <label class="disabled"><input type="radio" name="pm" value="MOPAY" disabled> Card / Mobile Money (coming soon on web)</label>
       </div>
+      <p class="muted">Swift Wallet is the only payment method on the website right now. To pay with mobile money, use the Swift app.</p>
       <button class="btn primary" id="placeOrderBtn">Place Order</button>
       <div id="checkoutMsg"></div>`;
 
-    root.querySelector("#placeOrderBtn").addEventListener("click", async () => {
+    // One key per checkout screen: a double tap or a retry after a dropped connection replays the same order
+    // on the server instead of creating (and charging) a second one.
+    const idempotencyKey = `web_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const placeBtn = root.querySelector("#placeOrderBtn");
+    placeBtn.addEventListener("click", async () => {
+      if (placeBtn.disabled) return;
+      placeBtn.disabled = true;
       const msg = root.querySelector("#checkoutMsg");
       msg.textContent = "Placing order…";
       try {
         const createPurchaseOrder = httpsCallable(functions, "createPurchaseOrder");
-        const idempotencyKey = `web_${Date.now()}_${Math.random().toString(36).slice(2)}`;
         const { data: result } = await createPurchaseOrder({
           items: items.map(i => ({ listingId: i.listingId, quantity: i.quantity, title: i.title })),
           paymentMethod: "SWIFT_WALLET",
@@ -327,6 +332,7 @@ async function renderCheckout(root) {
         });
         if (result.error) {
           msg.textContent = `Order failed: ${result.error}`;
+          placeBtn.disabled = false;
           return;
         }
         localStorage.removeItem(CART_KEY);
@@ -339,6 +345,7 @@ async function renderCheckout(root) {
           </div>`;
       } catch (err) {
         msg.textContent = `Order failed: ${err.message}`;
+        placeBtn.disabled = false;
       }
     });
   } catch (err) {

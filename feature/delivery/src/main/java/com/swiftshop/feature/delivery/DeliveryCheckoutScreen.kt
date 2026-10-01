@@ -84,7 +84,8 @@ private fun ChoosingDelivery(
 ) {
     Column(Modifier.fillMaxSize()) {
         Text(
-            "Your product purchase is already complete. Choose delivery separately.",
+            "Your product purchase is already complete. The delivery fee is taken from your Swift wallet when you " +
+                "request delivery and returned in full if the provider declines, the request expires or the delivery fails.",
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(16.dp)
         )

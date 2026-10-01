@@ -1,0 +1,95 @@
+name: Deploy Firebase (manual, gated)
+
+# Nothing deploys automatically. A person starts this workflow, CI re-verifies the exact commit, and the
+# `environment` below pauses for approval when that GitHub Environment has required reviewers.
+#
+# One-time GitHub setup (Settings -> Environments), per environment dev / staging / production:
+#   - secret  FIREBASE_SERVICE_ACCOUNT  = service-account JSON for that Firebase project (NEVER commit it)
+#   - staging + production: add "Required reviewers" (manual approval)
+#   - repository variable PRODUCTION_BRANCH = the only branch allowed to deploy production (default: master)
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        options: [dev, staging, production]
+      confirm:
+        description: Type the Firebase project id to confirm (dev swift-dev-3d3ae, staging swift-staging-3bed1, production swift-d1baa)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: CI verification of this commit
+    uses: ./.github/workflows/verify.yml
+
+  deploy:
+    name: Deploy ${{ inputs.environment }}
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Resolve and check target
+        id: target
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          CONFIRM: ${{ inputs.confirm }}
+          PRODUCTION_BRANCH: ${{ vars.PRODUCTION_BRANCH || 'master' }}
+        run: |
+          case "$ENVIRONMENT" in
+            dev)        PROJECT=swift-dev-3d3ae ;;
+            staging)    PROJECT=swift-staging-3bed1 ;;
+            production) PROJECT=swift-d1baa ;;
+            *) echo "Unknown environment"; exit 1 ;;
+          esac
+          if [ "$CONFIRM" != "$PROJECT" ]; then
+            echo "Confirmation '$CONFIRM' does not match project '$PROJECT'. Nothing deployed."; exit 1
+          fi
+          if [ "$ENVIRONMENT" = "production" ] && [ "$GITHUB_REF_NAME" != "$PRODUCTION_BRANCH" ]; then
+            echo "Production may only be deployed from '$PRODUCTION_BRANCH' (this run: '$GITHUB_REF_NAME')."; exit 1
+          fi
+          echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install Firebase CLI
+        run: npm install --global firebase-tools
+
+      - name: Build functions
+        working-directory: functions
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy functions, rules, indexes and hosting
+        run: firebase deploy --only functions,firestore,storage,hosting --project "${{ steps.target.outputs.project }}" --non-interactive
+
+      - name: Summary
+        run: |
+          {
+            echo "### Firebase deployment"
+            echo "- Environment: ${{ inputs.environment }}"
+            echo "- Project: ${{ steps.target.outputs.project }}"
+            echo "- Commit: ${GITHUB_SHA}"
+            echo "- Hosting: https://${{ steps.target.outputs.project }}.web.app"
+          } >> "$GITHUB_STEP_SUMMARY"

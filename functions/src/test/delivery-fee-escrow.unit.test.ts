@@ -41,7 +41,8 @@ jest.mock("firebase-admin", () => {
 });
 
 import {
-  createDeliveryRequest, declineDeliveryRequest, cancelDeliveryRequest, updateDeliveryStatus, expireDeliveryRequests,
+  createDeliveryRequest, acceptDeliveryRequest, declineDeliveryRequest, cancelDeliveryRequest, updateDeliveryStatus,
+  expireDeliveryRequests,
 } from "../fulfillment";
 import { confirmDelivery, cancelOrder } from "../commerce";
 
@@ -170,5 +171,82 @@ describe("payout only on a successful, buyer-confirmed delivery", () => {
     await run(confirmDelivery, { orderId: "o1" }, "buyer1");
     expect(bal("courier1")).toBeUndefined();
     expect(bal("buyer1")).toBe(2000);
+  });
+});
+
+describe("adversarial and concurrency", () => {
+  test("client-supplied fee / provider fields are ignored; the stored listing decides", async () => {
+    const res = await run(createDeliveryRequest, { orderId: "o1", listingId: "dl1", dropoff: { lat: 3, lng: 4 },
+      deliveryFeeMinorUnits: 1, merchantId: "attacker", feePaymentStatus: "NONE" }, "buyer1");
+    expect(res.deliveryFeeMinorUnits).toBe(700);
+    expect(store[`deliveryRequests/${res.requestId}`]).toMatchObject({ merchantId: "courier1", deliveryFeeMinorUnits: 700, feePaymentStatus: "ESCROWED" });
+    expect(bal("buyer1")).toBe(1300);
+  });
+  test("a user cannot create delivery for someone else's order", async () => {
+    await expect(run(createDeliveryRequest, { orderId: "o1", listingId: "dl1", dropoff: { lat: 3, lng: 4 } }, "intruder"))
+      .rejects.toThrow(/Only the buyer/);
+    expect(ledger()).toHaveLength(0);
+  });
+  test("a buyer cannot route the fee to their own delivery listing", async () => {
+    store["listings/dl1"].sellerId = "buyer1";
+    await expect(request()).rejects.toThrow(/own delivery listing/);
+    expect(bal("buyer1")).toBe(2000);
+  });
+  test("an unpaid, cancelled or delivered order cannot be given a delivery request", async () => {
+    for (const patch of [{ status: "RESERVED", paymentStatus: "PENDING" }, { status: "CANCELLED" }, { status: "DELIVERED" }]) {
+      store["orders/o1"] = { ...store["orders/o1"], ...patch };
+      await expect(request()).rejects.toThrow();
+    }
+    expect(bal("buyer1")).toBe(2000);
+  });
+  test("only the requested provider can accept or decline; nobody else", async () => {
+    const id = await request();
+    for (const uid of ["buyer1", "intruder", "seller1"]) {
+      await expect(run(acceptDeliveryRequest, { requestId: id }, uid)).rejects.toThrow(/Only the requested provider/);
+      await expect(run(declineDeliveryRequest, { requestId: id }, uid)).rejects.toThrow(/Only the requested provider/);
+    }
+    expect(bal("buyer1")).toBe(1300);
+    expect(store[`deliveryRequests/${id}`].status).toBe("PENDING");
+  });
+  test("accepting twice, or accepting then declining, is refused (no double transition, no refund after accept)", async () => {
+    const id = await request();
+    await run(acceptDeliveryRequest, { requestId: id }, "courier1");
+    await expect(run(acceptDeliveryRequest, { requestId: id }, "courier1")).rejects.toThrow(/Cannot respond/);
+    await expect(run(declineDeliveryRequest, { requestId: id }, "courier1")).rejects.toThrow(/Cannot respond/);
+    expect(bal("buyer1")).toBe(1300);
+    expect(store[`deliveryRequests/${id}`]).toMatchObject({ status: "ACCEPTED", feePaymentStatus: "ESCROWED" });
+  });
+  test("a stale (expired) request cannot be accepted", async () => {
+    const id = await request();
+    store[`deliveryRequests/${id}`].expiresAt = Date.now() - 1;
+    await expect(run(acceptDeliveryRequest, { requestId: id }, "courier1")).rejects.toThrow(/expired/);
+  });
+  test("a driver cannot update a delivery they are not assigned to; buyer cannot mark it delivered", async () => {
+    const id = await request();
+    store[`deliveryRequests/${id}`].status = "ACCEPTED";
+    store["deliveryRoutes/job_o1"] = { orderId: "o1", requestId: id, buyerId: "buyer1", sellerId: "seller1", providerId: "courier1", driverId: "driver1", status: "IN_TRANSIT" };
+    await expect(run(updateDeliveryStatus, { routeId: "job_o1", status: "DELIVERED" }, "driver2")).rejects.toThrow(/assigned driver/);
+    await expect(run(updateDeliveryStatus, { routeId: "job_o1", status: "DELIVERED" }, "buyer1")).rejects.toThrow(/assigned driver/);
+    expect(store["deliveryRoutes/job_o1"].status).toBe("IN_TRANSIT");
+  });
+  test("a FAILED delivery cannot be replayed to refund twice", async () => {
+    const id = await request();
+    store[`deliveryRequests/${id}`].status = "ACCEPTED";
+    store["deliveryRoutes/job_o1"] = { orderId: "o1", requestId: id, buyerId: "buyer1", sellerId: "seller1", driverId: "driver1", status: "IN_TRANSIT" };
+    await run(updateDeliveryStatus, { routeId: "job_o1", status: "FAILED" }, "driver1");
+    await expect(run(updateDeliveryStatus, { routeId: "job_o1", status: "FAILED" }, "driver1")).rejects.toThrow(/Cannot transition/);
+    expect(bal("buyer1")).toBe(2000);
+    expect(ledger().filter((l) => l.reference.startsWith("DELIVERY_FEE_REFUND"))).toHaveLength(1);
+  });
+  test("a driver cannot be paid by marking their own delivery done: payout waits for the buyer", async () => {
+    const id = await request();
+    store[`deliveryRequests/${id}`].status = "ACCEPTED";
+    store["deliveryRoutes/job_o1"] = { orderId: "o1", requestId: id, buyerId: "buyer1", sellerId: "seller1", driverId: "driver1", status: "IN_TRANSIT" };
+    await run(updateDeliveryStatus, { routeId: "job_o1", status: "DELIVERED" }, "driver1");
+    expect(bal("courier1")).toBeUndefined();
+    expect(store[`deliveryRequests/${id}`].feePaymentStatus).toBe("ESCROWED");
+    await expect(run(confirmDelivery, { orderId: "o1" }, "driver1")).rejects.toThrow(/Unauthorized/);
+    await expect(run(confirmDelivery, { orderId: "o1" }, "courier1")).rejects.toThrow(/Unauthorized/);
+    expect(bal("courier1")).toBeUndefined();
   });
 });

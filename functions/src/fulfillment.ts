@@ -76,6 +76,11 @@ export const createDeliveryRequest = onCall(async (request) => {
             if ((listing.priceCurrency || "LSL") !== "LSL") {
                 throw new HttpsError("failed-precondition", "Delivery listing is not priced in LSL");
             }
+            // Cross-shop providers are allowed (any available DELIVER listing), but the server — not the app —
+            // decides eligibility: a buyer cannot route the fee to themselves, and the provider is always the
+            // listing's author as stored in Firestore, never anything the client sent.
+            if (!listing.sellerId) throw new HttpsError("failed-precondition", "Delivery listing has no owner");
+            if (listing.sellerId === auth.uid) throw new HttpsError("failed-precondition", "You cannot use your own delivery listing for your purchase");
             const fee = listing.priceMinorUnits || 0;
             if (!Number.isSafeInteger(fee) || fee < 0) {
                 throw new HttpsError("failed-precondition", "Delivery listing has an invalid price");

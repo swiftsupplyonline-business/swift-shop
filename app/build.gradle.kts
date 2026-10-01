@@ -52,6 +52,7 @@ android {
             versionNameSuffix = "-dev"
             buildConfigField("String", "FLAVOR", "\"dev\"")
             manifestPlaceholders["appLinkHost"] = "swift-dev-3d3ae.web.app"
+            buildConfigField("String", "APP_LINK_HOST", "\"swift-dev-3d3ae.web.app\"")
         }
         create("staging") {
             dimension = "environment"
@@ -59,11 +60,13 @@ android {
             versionNameSuffix = "-staging"
             buildConfigField("String", "FLAVOR", "\"staging\"")
             manifestPlaceholders["appLinkHost"] = "swift-staging-3bed1.web.app"
+            buildConfigField("String", "APP_LINK_HOST", "\"swift-staging-3bed1.web.app\"")
         }
         create("production") {
             dimension = "environment"
             buildConfigField("String", "FLAVOR", "\"production\"")
             manifestPlaceholders["appLinkHost"] = "swift-d1baa.web.app"
+            buildConfigField("String", "APP_LINK_HOST", "\"swift-d1baa.web.app\"")
         }
     }
 

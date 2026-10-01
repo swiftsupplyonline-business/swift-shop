@@ -4,6 +4,7 @@ on:
   push:
     branches: [ master, delivery-first-checkout, 'canonical-**', 'go-live-**' ]
   pull_request:
+  workflow_call:
 
 jobs:
   android-tests:

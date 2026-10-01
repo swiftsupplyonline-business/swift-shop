@@ -96,7 +96,7 @@ fun CreateListingScreen(
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
-                    val shareUrl = "https://swift-dev-3d3ae.web.app/listing/$listingId"
+                    val shareUrl = com.swiftshop.core.ui.AppLinks.url("/listing/$listingId")
                     val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                         type = "text/plain"
                         putExtra(android.content.Intent.EXTRA_TEXT, "Check out my hustle on Swift: $shareUrl")

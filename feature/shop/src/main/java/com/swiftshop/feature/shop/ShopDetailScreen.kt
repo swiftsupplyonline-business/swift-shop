@@ -76,7 +76,7 @@ fun ShopDetailScreen(
                         val shop = (uiState as ShopDetailUiState.Success).shop
                         // Share
                         IconButton(onClick = {
-                            val shareUrl = "https://swift-dev-3d3ae.web.app/shop/${shop.id}"
+                            val shareUrl = com.swiftshop.core.ui.AppLinks.url("/shop/${shop.id}")
                             val sendIntent = Intent(Intent.ACTION_SEND).apply {
                                 putExtra(Intent.EXTRA_TEXT, "Check out ${shop.name} on SwiftShop: $shareUrl")
                                 type = "text/plain"
