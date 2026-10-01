@@ -80,6 +80,9 @@ class CreateListingViewModel @Inject constructor(
     private val _deliveryEstimateDays = MutableStateFlow("0")
     val deliveryEstimateDays = _deliveryEstimateDays.asStateFlow()
 
+    private val _driverSharePercent = MutableStateFlow("0")
+    val driverSharePercent = _driverSharePercent.asStateFlow()
+
     val showCustomFieldBuilder: StateFlow<Boolean> = _listingType.map { type ->
         type in listOf(ListingType.PLACE_ORDER, ListingType.REGISTER, ListingType.SET_APPOINTMENT)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -144,6 +147,7 @@ class CreateListingViewModel @Inject constructor(
     fun onPriceChange(value: String) { _priceMajor.value = value }
     fun onStockChange(value: String) { _stockQuantity.value = value }
     fun onDeliveryEstimateChange(value: String) { _deliveryEstimateDays.value = value }
+    fun onDriverSharePercentChange(value: String) { _driverSharePercent.value = value }
 
     fun onListingTypeChange(type: ListingType) {
         _listingType.value = type
@@ -224,6 +228,8 @@ class CreateListingViewModel @Inject constructor(
             val price = MoneyAmount.fromMajorUnits(_priceMajor.value.toDoubleOrNull() ?: 0.0)
             val stock = _stockQuantity.value.toIntOrNull() ?: 0
             val deliveryDays = _deliveryEstimateDays.value.toIntOrNull() ?: 0
+            val driverSharePercent = _driverSharePercent.value.toDoubleOrNull() ?: 0.0
+            val driverShareBps = kotlin.math.round(driverSharePercent.coerceIn(0.0, 100.0) * 100.0).toInt()
             createListing(
                 title = _title.value,
                 description = _description.value,
@@ -235,7 +241,8 @@ class CreateListingViewModel @Inject constructor(
                 shopId = shopId,
                 listingType = _listingType.value,
                 customFields = _customFields.value,
-                deliveryEstimateDays = deliveryDays
+                deliveryEstimateDays = deliveryDays,
+                driverShareBps = driverShareBps
             ).onSuccess { listingId ->
                 _uiState.value = CreateListingUiState.Success(listingId)
             }.onFailure {
