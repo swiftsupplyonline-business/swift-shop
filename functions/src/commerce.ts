@@ -961,9 +961,11 @@ export const confirmDelivery = onCall(async (request) => {
                 timestamp: now
             });
 
+            // All transaction reads must happen before any transaction writes.
             const sellerWalletRef = db.collection("wallets").doc(order.sellerId);
             const sellerWalletDoc = await transaction.get(sellerWalletRef);
             const currentSellerBalance = sellerWalletDoc.data()?.availableBalanceMinorUnits || 0;
+            
             transaction.update(sellerWalletRef, {
                 availableBalanceMinorUnits: currentSellerBalance + sellerProceeds,
                 updatedAt: now
