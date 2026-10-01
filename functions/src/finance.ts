@@ -1,6 +1,19 @@
-﻿import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { MopayClient, MOPAY_API_KEY } from "./mopay";
+import { parseAmount, idempotencyDocId, requireText, requireUid, MoneyValidationError } from "./moneyValidation";
+
+/** Rejects suspended/banned accounts from moving money (users/{uid}.accountStatus, default ACTIVE). */
+async function assertAccountActive(uid: string): Promise<void> {
+    const snap = await admin.firestore().collection("users").doc(uid).get();
+    const status = snap.exists ? (snap.data()!.accountStatus ?? "ACTIVE") : "ACTIVE";
+    if (status !== "ACTIVE") throw new HttpsError("permission-denied", "Account is not active.");
+}
+
+function badInput(e: unknown): never {
+    if (e instanceof MoneyValidationError) throw new HttpsError("invalid-argument", e.message);
+    throw e;
+}
 
 /**
  * Initiates a withdrawal from the user's wallet to an external destination.
@@ -10,18 +23,21 @@ export const initiateWithdrawal = onCall(async (request) => {
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
     const uid = auth.uid;
-    const { amount, gateway, provider, destination, idempotencyKey } = request.data;
+    let amount: { minorUnits: number; currency: string };
+    let idempotencyKey: string, destination: string, provider: string, activeGateway: string;
+    try {
+        amount = parseAmount(request.data?.amount);
+        idempotencyKey = idempotencyDocId(uid, "withdraw", request.data?.idempotencyKey);
+        destination = requireText(request.data?.destination, "destination", 64);
+        provider = requireText(request.data?.provider ?? "UNKNOWN", "provider", 40);
+        activeGateway = requireText(request.data?.gateway ?? "MOPAY", "gateway", 20);
+    } catch (e) { badInput(e); }
 
-    if (!amount || typeof amount.minorUnits !== "number" || amount.minorUnits <= 0 || !idempotencyKey) {
-        throw new HttpsError("invalid-argument", "Invalid amount or missing idempotencyKey.");
-    }
-
-    const activeGateway = gateway || "MOPAY";
-
-    if (amount.currency === "LSL" && amount.minorUnits < 20000) {
+    if (amount.minorUnits < 20000) {
         throw new HttpsError("failed-precondition", "Minimum withdrawal amount is M200.00.");
     }
 
+    await assertAccountActive(uid);
     const db = admin.firestore();
 
     try {
@@ -48,9 +64,9 @@ export const initiateWithdrawal = onCall(async (request) => {
             transaction.set(db.collection("walletTransactions").doc(transactionId), {
                 transactionId, userId: uid, type: "WITHDRAWAL",
                 amountMinorUnits: amount.minorUnits, feeMinorUnits: 0,
-                currency: amount.currency || "LSL", status: "PENDING",
+                currency: amount.currency, status: "PENDING",
                 description: `Withdrawal via ${activeGateway} (${provider}) to ${destination}`,
-                gateway: activeGateway, provider: provider || "UNKNOWN",
+                gateway: activeGateway, provider,
                 destinationAccount: destination, idempotencyKey,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -59,7 +75,7 @@ export const initiateWithdrawal = onCall(async (request) => {
             transaction.set(db.collection("ledgerEntries").doc(ledgerEntryId), {
                 id: ledgerEntryId, transactionId, debitAccount: `user_${uid}`,
                 creditAccount: "system_withdrawal_escrow", amountMinorUnits: amount.minorUnits,
-                currency: amount.currency || "LSL", reference: `WITHDRAW_${transactionId}`,
+                currency: amount.currency, reference: `WITHDRAW_${transactionId}`,
                 timestamp: admin.firestore.FieldValue.serverTimestamp()
             });
 
@@ -92,13 +108,17 @@ export const initiateDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (reque
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
     const uid = auth.uid;
-    const { amount, gateway, provider, phoneNumber, idempotencyKey } = request.data;
+    let amount: { minorUnits: number; currency: string };
+    let idempotencyKey: string, phoneNumber: string, provider: string, activeGateway: string;
+    try {
+        amount = parseAmount(request.data?.amount);
+        idempotencyKey = idempotencyDocId(uid, "deposit", request.data?.idempotencyKey);
+        phoneNumber = requireText(request.data?.phoneNumber, "phoneNumber", 20);
+        provider = requireText(request.data?.provider ?? "UNKNOWN", "provider", 40);
+        activeGateway = requireText(request.data?.gateway ?? "MOPAY", "gateway", 20);
+    } catch (e) { badInput(e); }
 
-    if (!amount || typeof amount.minorUnits !== "number" || amount.minorUnits <= 0 || !idempotencyKey) {
-        throw new HttpsError("invalid-argument", "Invalid amount or missing idempotencyKey.");
-    }
-
-    const activeGateway = gateway || "MOPAY";
+    await assertAccountActive(uid);
     const db = admin.firestore();
 
     let transactionId = "";
@@ -120,7 +140,7 @@ export const initiateDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (reque
             transaction.set(db.collection("walletTransactions").doc(txId), {
                 transactionId: txId, userId: uid, type: "DEPOSIT",
                 amountMinorUnits: amount.minorUnits, feeMinorUnits: 0,
-                currency: amount.currency || "LSL", status: "PENDING",
+                currency: amount.currency, status: "PENDING",
                 description: `Deposit via ${activeGateway} (${provider}) from ${phoneNumber}`,
                 gateway: activeGateway, provider: provider || "UNKNOWN",
                 sourceAccount: phoneNumber, idempotencyKey,
@@ -138,6 +158,17 @@ export const initiateDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (reque
             return txId;
         });
 
+        // Replay guard: a repeated call with the same idempotency key must NOT open a second MoPay
+        // session. A second payable session for an already-processed reference would let the user pay
+        // twice while being credited once (confirmDeposit is idempotent per transaction).
+        const existing = (await db.collection("walletTransactions").doc(transactionId).get()).data()!;
+        if (existing.status !== "PENDING") {
+            throw new HttpsError("failed-precondition", `Deposit already ${String(existing.status).toLowerCase()}.`);
+        }
+        if (existing.mopaySessionId) {
+            return { transactionId, paymentUrl: existing.mopayPaymentUrl ?? "", sessionId: existing.mopaySessionId };
+        }
+
         // Step 2: Open MoPay payment session (outside transaction — external API call).
         const mopayRequest = {
             amount: amount.minorUnits / 100,
@@ -153,6 +184,7 @@ export const initiateDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (reque
             // Store sessionId on the walletTransaction for later verification lookup.
             await db.collection("walletTransactions").doc(transactionId).update({
                 mopaySessionId: mopayResponse.sessionId,
+                mopayPaymentUrl: mopayResponse.paymentUrl ?? null,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
 
@@ -171,6 +203,7 @@ export const initiateDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (reque
         }
 
     } catch (error: any) {
+        if (error instanceof HttpsError) throw error;
         throw new HttpsError("failed-precondition", error.message);
     }
 });
@@ -255,13 +288,13 @@ export const confirmDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (reques
                 const now = admin.firestore.Timestamp.now();
                 const amountMinorUnits = freshTx.amountMinorUnits as number;
 
-                // Credit wallet: pending → available.
+                // Credit wallet. initiateDeposit never adds to pendingBalance, so confirmation must not
+                // subtract from it either: pendingBalance holds in-flight WITHDRAWALS, and eating into it
+                // would make confirmWithdrawal fail with an "integrity issue" for an unrelated withdrawal.
                 const newAvailable = (walletData.availableBalanceMinorUnits || 0) + amountMinorUnits;
-                const newPending = Math.max(0, (walletData.pendingBalanceMinorUnits || 0) - amountMinorUnits);
 
                 transaction.update(walletRef, {
                     availableBalanceMinorUnits: newAvailable,
-                    pendingBalanceMinorUnits: newPending,
                     updatedAt: now
                 });
 
@@ -297,18 +330,8 @@ export const confirmDeposit = onCall({ secrets: [MOPAY_API_KEY] }, async (reques
                 const freshTx = freshTxDoc.data()!;
                 if (freshTx.status !== "PENDING") return; // Already resolved.
 
-                const walletRef = db.collection("wallets").doc(uid);
-                const walletDoc = await transaction.get(walletRef);
                 const now = admin.firestore.Timestamp.now();
-
-                if (walletDoc.exists) {
-                    const walletData = walletDoc.data()!;
-                    transaction.update(walletRef, {
-                        pendingBalanceMinorUnits: Math.max(0,
-                            (walletData.pendingBalanceMinorUnits || 0) - (freshTx.amountMinorUnits as number)),
-                        updatedAt: now
-                    });
-                }
+                // No wallet change: a failed deposit never reserved any balance.
 
                 transaction.update(txDoc.ref, {
                     status: "FAILED",
@@ -338,12 +361,15 @@ export const initiateP2PTransfer = onCall(async (request) => {
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
     const fromUid = auth.uid;
-    const { toUserId, amount, idempotencyKey } = request.data;
+    let toUserId: string, amount: { minorUnits: number; currency: string }, idempotencyKey: string;
+    try {
+        toUserId = requireUid(request.data?.toUserId, "toUserId");
+        amount = parseAmount(request.data?.amount);
+        idempotencyKey = idempotencyDocId(fromUid, "p2p", request.data?.idempotencyKey);
+    } catch (e) { badInput(e); }
+    if (fromUid === toUserId) throw new HttpsError("invalid-argument", "Cannot transfer to yourself.");
 
-    if (!toUserId || fromUid === toUserId || !amount || typeof amount.minorUnits !== "number" || amount.minorUnits <= 0 || !idempotencyKey) {
-        throw new HttpsError("invalid-argument", "Invalid parameters.");
-    }
-
+    await assertAccountActive(fromUid);
     const db = admin.firestore();
 
     try {
@@ -380,7 +406,7 @@ export const initiateP2PTransfer = onCall(async (request) => {
             transaction.set(db.collection("walletTransactions").doc(transactionId), {
                 transactionId, userId: fromUid, recipientUserId: toUserId,
                 type: "TRANSFER_OUT", amountMinorUnits: amount.minorUnits,
-                feeMinorUnits, currency: amount.currency || "LSL",
+                feeMinorUnits, currency: amount.currency,
                 status: "COMPLETED", description: `Transfer to ${toUserId}`,
                 idempotencyKey, createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -390,7 +416,7 @@ export const initiateP2PTransfer = onCall(async (request) => {
             transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
                 id: ledgerId, transactionId, debitAccount: `user_${fromUid}`,
                 creditAccount: `user_${toUserId}`, amountMinorUnits: amount.minorUnits,
-                currency: amount.currency || "LSL", reference: `P2P_${transactionId}`,
+                currency: amount.currency, reference: `P2P_${transactionId}`,
                 timestamp: admin.firestore.FieldValue.serverTimestamp()
             });
 
@@ -399,7 +425,7 @@ export const initiateP2PTransfer = onCall(async (request) => {
                 transaction.set(db.collection("ledgerEntries").doc(feeLedgerId), {
                     id: feeLedgerId, transactionId, debitAccount: `user_${fromUid}`,
                     creditAccount: "system_fees", amountMinorUnits: feeMinorUnits,
-                    currency: amount.currency || "LSL", reference: `P2P_FEE_${transactionId}`,
+                    currency: amount.currency, reference: `P2P_FEE_${transactionId}`,
                     timestamp: admin.firestore.FieldValue.serverTimestamp()
                 });
             }

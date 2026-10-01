@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { pickShopFields, ShopValidationError } from "./shopFields";
+import { idempotencyDocId, MoneyValidationError } from "./moneyValidation";
 import { MopayClient, MOPAY_API_KEY } from "./mopay";
 import { resolveEntitlement } from "./entitlements";
 import {
@@ -165,9 +166,18 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { items, paymentMethod, provider, idempotencyKey, customerEmail, customerName } = request.data;
-    if (!items || !Array.isArray(items) || !idempotencyKey) {
+    const { items, paymentMethod, provider, customerEmail, customerName } = request.data;
+    if (!items || !Array.isArray(items) || !request.data.idempotencyKey) {
         throw new HttpsError("invalid-argument", "Missing items or idempotencyKey");
+    }
+    // Namespaced per user: one buyer can no longer collide with, pre-claim, or read back another
+    // buyer's order id by reusing their key.
+    let idempotencyKey: string;
+    try {
+        idempotencyKey = idempotencyDocId(auth.uid, "purchase", request.data.idempotencyKey);
+    } catch (e: any) {
+        if (e instanceof MoneyValidationError) throw new HttpsError("invalid-argument", e.message);
+        throw e;
     }
 
     const db = admin.firestore();
