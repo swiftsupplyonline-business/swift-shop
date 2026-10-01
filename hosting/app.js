@@ -308,8 +308,8 @@ async function renderCheckout(root) {
         <div class="total">Total: ${LSL(fees.totalMinorUnits || 0)}</div>
       </div>
       <div class="payment-methods">
-        <label><input type="radio" name="pm" value="SWIFT_WALLET" checked> Swift Wallet</label>
-        <label class="disabled"><input type="radio" name="pm" value="MOPAY" disabled> Card / Mobile Money (coming soon on web)</label>
+        <label><input type="radio" name="pm" value="MOPAY" checked> Card / Mobile Money</label>
+        <label class="disabled"><input type="radio" name="pm" value="SWIFT_WALLET" disabled> Swift Wallet (coming soon on web)</label>
       </div>
       <button class="btn primary" id="placeOrderBtn">Place Order</button>
       <div id="checkoutMsg"></div>`;
@@ -322,13 +322,19 @@ async function renderCheckout(root) {
         const idempotencyKey = `web_${Date.now()}_${Math.random().toString(36).slice(2)}`;
         const { data: result } = await createPurchaseOrder({
           items: items.map(i => ({ listingId: i.listingId, quantity: i.quantity, title: i.title })),
-          paymentMethod: "SWIFT_WALLET",
+          paymentMethod: "MOPAY",
           idempotencyKey
         });
         if (result.error) {
-          msg.textContent = `Order failed: ${result.error}`;
+          msg.textContent = `Payment setup failed: ${result.error}`;
           return;
         }
+        if (!result.paymentUrl) {
+          msg.textContent = "Payment setup failed: no payment URL was returned.";
+          return;
+        }
+        window.location.assign(result.paymentUrl);
+        return;
         localStorage.removeItem(CART_KEY);
         updateCartBadge();
         root.innerHTML = `
