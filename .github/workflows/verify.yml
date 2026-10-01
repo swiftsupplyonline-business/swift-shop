@@ -74,3 +74,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Strict canonical architecture audit
         run: bash scripts/canonical-audit.sh
+
+  web-static-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check Hosting JavaScript syntax
+        run: node --check hosting/app.js

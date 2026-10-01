@@ -30,7 +30,7 @@ export interface MopayVerifyResponse {
     sessionId: string;
     amount: number;
     reference: string;
-    transactionStatus: string; // e.g., "SUCCESS", "FAILED", "PENDING"
+    transactionStatus: string;
     status: string;
     selectedPaymentMethod?: string;
     transactionId?: string;
@@ -68,6 +68,10 @@ export class MopayClient {
 
     /**
      * Verifies a payment session with MoPay.
+     *
+     * Normalize transactionStatus because the gateway's documented response
+     * values are lowercase (for example: "success", "failed", "cancelled"),
+     * while the commerce authority compares canonical uppercase values.
      */
     static async verifyPaymentSession(
         sessionId: string
@@ -86,6 +90,10 @@ export class MopayClient {
             return null;
         }
 
-        return await response.json() as MopayVerifyResponse;
+        const session = await response.json() as MopayVerifyResponse;
+        return {
+            ...session,
+            transactionStatus: session.transactionStatus.toUpperCase(),
+        };
     }
 }

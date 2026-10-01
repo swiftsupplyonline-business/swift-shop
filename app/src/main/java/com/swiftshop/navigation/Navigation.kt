@@ -117,7 +117,7 @@ fun SwiftShopNavHost(
             arguments = listOf(navArgument("listingId") { type = NavType.StringType }),
             deepLinks = listOf(
                 navDeepLink { uriPattern = "swiftshop://listing/{listingId}" },
-                navDeepLink { uriPattern = "https://swift-dev-3d3ae.web.app/listing/{listingId}" }
+                navDeepLink { uriPattern = "https://${BuildConfig.APP_LINK_HOST/listing/{listingId}" }
             )
         ) { ListingDetailScreen(navController = navController) }
 
@@ -128,8 +128,8 @@ fun SwiftShopNavHost(
                 navArgument("productSlug") { type = NavType.StringType }
             ),
             deepLinks = listOf(
-                navDeepLink { uriPattern = "https://swift-dev-3d3ae.web.app/s/{shopSlug}/{productSlug}" },
-                navDeepLink { uriPattern = "https://swift-dev-3d3ae.web.app/d/{shopSlug}/{productSlug}" }
+                navDeepLink { uriPattern = "https://${BuildConfig.APP_LINK_HOST/s/{shopSlug}/{productSlug}" },
+                navDeepLink { uriPattern = "https://${BuildConfig.APP_LINK_HOST/d/{shopSlug}/{productSlug}" }
             )
         ) { ListingDetailScreen(navController = navController) }
 
@@ -142,7 +142,7 @@ fun SwiftShopNavHost(
             arguments = listOf(navArgument("shopId") { type = NavType.StringType }),
             deepLinks = listOf(
                 navDeepLink { uriPattern = "swiftshop://shop/{shopId}" },
-                navDeepLink { uriPattern = "https://swift-dev-3d3ae.web.app/shop/{shopId}" }
+                navDeepLink { uriPattern = "https://${BuildConfig.APP_LINK_HOST/shop/{shopId}" }
             )
         ) { ShopDetailScreen(navController = navController) }
 

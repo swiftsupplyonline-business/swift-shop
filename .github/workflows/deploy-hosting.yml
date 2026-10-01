@@ -1,0 +1,55 @@
+name: Deploy Web Hosting
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Firebase environment to deploy
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Resolve Firebase project
+        id: project
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ inputs.environment }}" in
+            dev) echo "project_id=swift-dev-3d3ae" >> "$GITHUB_OUTPUT" ;;
+            staging) echo "project_id=swift-staging-3bed1" >> "$GITHUB_OUTPUT" ;;
+            production) echo "project_id=swift-d1baa" >> "$GITHUB_OUTPUT" ;;
+            *) echo "Unknown environment" >&2; exit 1 ;;
+          esac
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+
+      - name: Install Firebase CLI
+        run: npm install --global firebase-tools
+
+      - name: Deploy Hosting
+        env:
+          PROJECT_ID: ${{ steps.project.outputs.project_id }}
+        run: firebase deploy --only hosting --project "$PROJECT_ID" --non-interactive
