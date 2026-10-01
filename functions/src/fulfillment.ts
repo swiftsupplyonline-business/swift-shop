@@ -207,15 +207,11 @@ export const createDeliveryJob = onCall(async (request) => {
             if (!orderSnap.exists) throw new Error("Purchase order not found");
             const order = orderSnap.data()!;
 
-            const existing = await db.collection("deliveryRoutes")
-                .where("orderId", "==", dr.relatedOrderId)
-                .limit(1)
-                .get();
-            if (!existing.empty) {
-                return { routeId: existing.docs[0].id, alreadyExists: true };
+            const routeRef = db.collection("deliveryRoutes").doc(dr.relatedOrderId);
+            const routeSnap = await tx.get(routeRef);
+            if (routeSnap.exists) {
+                return { routeId: routeRef.id, alreadyExists: true };
             }
-
-            const routeRef = db.collection("deliveryRoutes").doc();
             tx.set(routeRef, {
                 id: routeRef.id,
                 orderId: dr.relatedOrderId,

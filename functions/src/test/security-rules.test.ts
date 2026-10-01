@@ -52,4 +52,23 @@ describe("Firestore Security Rules", () => {
         authorized: true
     }));
   });
+
+  test("User can read their own ledger record formatted as user_{uid}", async () => {
+    const aliceDb = testEnv.authenticatedContext("alice").firestore();
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection("ledgerEntries").doc("entry_1").set({
+            debitAccount: "user_alice",
+            creditAccount: "platform_escrow",
+            amountMinorUnits: 5000
+        });
+    });
+
+    // Should succeed for Alice
+    const doc = await aliceDb.collection("ledgerEntries").doc("entry_1").get();
+    expect(doc.exists).toBe(true);
+
+    // Should fail for Bob
+    const bobDb = testEnv.authenticatedContext("bob").firestore();
+    await assertFails(bobDb.collection("ledgerEntries").doc("entry_1").get());
+  });
 });

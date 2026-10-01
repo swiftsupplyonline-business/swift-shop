@@ -154,7 +154,9 @@ service cloud.firestore {
     match /ledgerEntries/{entryId} {
       allow read: if isAdmin()
         || resource.data.debitAccount == request.auth.uid
-        || resource.data.creditAccount == request.auth.uid;
+        || resource.data.creditAccount == request.auth.uid
+        || resource.data.debitAccount == "user_" + request.auth.uid
+        || resource.data.creditAccount == "user_" + request.auth.uid;
       // Immutable — write only from admin SDK (Cloud Functions)
       allow write: if false;
     }
