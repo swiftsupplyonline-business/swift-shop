@@ -196,15 +196,18 @@ export const createDeliveryJob = onCall(async (request) => {
             if (!orderSnap.exists) throw new Error("Purchase order not found");
             const order = orderSnap.data()!;
 
-            const existing = await db.collection("deliveryRoutes")
-                .where("orderId", "==", dr.relatedOrderId)
-                .limit(1)
-                .get();
-            if (!existing.empty) {
-                return { routeId: existing.docs[0].id, alreadyExists: true };
+            // One deterministic route identity per purchase order. This avoids a
+            // query inside the transaction (which is not transaction-safe) and makes
+            // concurrent/retried calls converge on the same fulfillment route.
+            const routeRef = db.collection("deliveryRoutes").doc(dr.relatedOrderId);
+            const existingRoute = await tx.get(routeRef);
+            if (existingRoute.exists) {
+                const existing = existingRoute.data()!;
+                if (existing.orderId !== dr.relatedOrderId) {
+                    throw new Error("Existing fulfillment route has an invalid order identity");
+                }
+                return { routeId: routeRef.id, alreadyExists: true };
             }
-
-            const routeRef = db.collection("deliveryRoutes").doc();
             tx.set(routeRef, {
                 id: routeRef.id,
                 orderId: dr.relatedOrderId,
