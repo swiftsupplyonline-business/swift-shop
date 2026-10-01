@@ -439,7 +439,7 @@ data class FirestoreListing(
     val createdAt: Any? = null,
     val updatedAt: Any? = null
 ) {
-    fun toDomain(isLiked: Boolean = false, isBookmarked: Boolean = false) = Listing(id, shopId, sellerId, title, description, MoneyAmount(priceCurrency, priceMinorUnits), imageUrls, videoUrl, category, tags, runCatching { ListingType.valueOf(listingType) }.getOrDefault(ListingType.BUY), isAvailable, isSponsored, stockQuantity, commitmentCount, deliveryEstimateDays, emptyList(), tsToLong(createdAt), tsToLong(updatedAt), commentCount, bookmarkCount, isLiked, isBookmarked, likeCount)
+    fun toDomain(isLiked: Boolean = false, isBookmarked: Boolean = false) = Listing(id, shopId, sellerId, title, description, MoneyAmount(priceCurrency, priceMinorUnits), imageUrls, videoUrl, category, tags, runCatching { ListingType.valueOf(listingType) }.getOrDefault(ListingType.BUY), isAvailable, isSponsored, stockQuantity, commitmentCount, deliveryEstimateDays, driverShareBps, emptyList(), tsToLong(createdAt), tsToLong(updatedAt), commentCount, bookmarkCount, isLiked, isBookmarked, likeCount)
 }
 
 fun Listing.toFirestore() = mapOf(
