@@ -381,7 +381,8 @@ document.addEventListener("click", (e) => {
 window.addEventListener("popstate", route);
 document.addEventListener("DOMContentLoaded", () => {
   updateCartBadge();
-  if (location.pathname.startsWith("/s/") && document.body.dataset.sharePage === "true") return;
+  if ((location.pathname.startsWith("/s/") || location.pathname.startsWith("/d/"))
+      && document.body.dataset.sharePage === "true") return;
   route();
 });
 
