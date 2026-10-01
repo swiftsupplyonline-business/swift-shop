@@ -12,4 +12,4 @@
 | Web checkout | `calculatePurchaseTotal` + `createPurchaseOrder` | legacy callables | canonical |
 
 ## Finance/settlement note
-The canonical delivery request snapshots a provider listing fee after purchase. The purchase order's escrow total is created before that request and does not include the later delivery fee. Existing settlement code must not be interpreted as proof of provider payout for this later fee. No fee economics are changed by the legacy elimination migration; this remains a separate go-live blocker.
+The canonical delivery request snapshots a provider listing fee after purchase. The purchase order's escrow total is created before that request and does not include the later delivery fee. The current code therefore records/snapshots the fee but does not prove collection or provider settlement for it. No delivery platform fee, provider commission, driver commission, or settlement percentage is defined by this migration; this remains a separate go-live blocker.
