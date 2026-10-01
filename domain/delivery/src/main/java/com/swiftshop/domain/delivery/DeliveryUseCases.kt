@@ -5,18 +5,28 @@ import com.swiftshop.core.model.DeliveryRoute
 import com.swiftshop.core.model.GeoPoint
 import kotlinx.coroutines.flow.Flow
 
+class GetDeliveryOptionsUseCase(private val repository: DeliveryRepository) {
+    suspend operator fun invoke(): Result<List<DeliveryOption>> = repository.getDeliveryOptions()
+}
+
+class CreatePostPurchaseDeliveryRequestUseCase(private val repository: DeliveryRepository) {
+    suspend operator fun invoke(orderId: String, listingId: String, dropoff: GeoPoint): Result<String> =
+        repository.createPostPurchaseDeliveryRequest(orderId, listingId, dropoff)
+}
+
+class CreateDeliveryJobUseCase(private val repository: DeliveryRepository) {
+    suspend operator fun invoke(requestId: String): Result<String> = repository.createDeliveryJob(requestId)
+}
+
+package com.swiftshop.domain.delivery
+
+import com.swiftshop.core.model.DeliveryRequest
+import com.swiftshop.core.model.DeliveryRoute
+import com.swiftshop.core.model.GeoPoint
+import kotlinx.coroutines.flow.Flow
+
 class ObserveDeliveryRouteUseCase(private val repository: DeliveryRepository) {
     operator fun invoke(routeId: String): Flow<DeliveryRoute> = repository.observeDeliveryRoute(routeId)
-}
-
-class RequestDeliveryUseCase(private val repository: DeliveryRepository) {
-    suspend operator fun invoke(orderId: String, dropoff: GeoPoint): Result<String> =
-        repository.requestDelivery(orderId, dropoff)
-}
-
-class CreateDeliveryRequestUseCase(private val repository: DeliveryRepository) {
-    suspend operator fun invoke(listingId: String, dropoff: GeoPoint, merchandiseShopId: String): Result<String> =
-        repository.createDeliveryRequest(listingId, dropoff, merchandiseShopId)
 }
 
 class ObserveDeliveryRequestUseCase(private val repository: DeliveryRepository) {
@@ -31,9 +41,4 @@ class ObservePendingDeliveryRequestsForMerchantUseCase(private val repository: D
 class RespondToDeliveryRequestUseCase(private val repository: DeliveryRepository) {
     suspend operator fun invoke(requestId: String, accept: Boolean): Result<Unit> =
         repository.respondToDeliveryRequest(requestId, accept)
-}
-
-class CancelDeliveryRequestUseCase(private val repository: DeliveryRepository) {
-    suspend operator fun invoke(requestId: String): Result<Unit> =
-        repository.cancelDeliveryRequest(requestId)
 }

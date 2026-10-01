@@ -1,98 +1,101 @@
 import firebaseTest from 'firebase-functions-test';
 import * as admin from 'firebase-admin';
-import { updateDeliveryStatus } from '../logistics';
+import { createDeliveryJob, updateDeliveryStatus } from '../fulfillment';
 
-const testEnv = firebaseTest({
-  projectId: 'swift-shop-reconciled',
-});
+const testEnv = firebaseTest({ projectId: 'swift-shop-reconciled' });
+if (admin.apps.length === 0) admin.initializeApp({ projectId: 'swift-shop-reconciled' });
 
-if (admin.apps.length === 0) {
-  admin.initializeApp({ projectId: 'swift-shop-reconciled' });
-}
-
-describe('Logistics Authoritative Logic (SWIFT-019)', () => {
-  let wrapped: any;
+describe('Canonical Fulfillment Authority', () => {
   const db = admin.firestore();
 
-  beforeAll(async () => {
-    wrapped = testEnv.wrap(updateDeliveryStatus);
-  });
+  afterAll(() => testEnv.cleanup());
 
-  afterAll(() => {
-    testEnv.cleanup();
-  });
+  test('createDeliveryJob converges concurrent calls on one deterministic route', async () => {
+    const requestId = 'delivery_request_idempotent';
+    const orderId = 'order_delivery_idempotent';
+    const providerId = 'provider_delivery_idempotent';
 
-  test('Claim Route - Authorized driver succeeds and becomes driverId', async () => {
-    const providerId = 'merchant_123';
-    const driverId = 'driver_456';
-    const routeId = 'route_claim_success';
-
-    // 1. Setup provider-driver relationship
-    await db.collection('deliveryProviders').doc(providerId)
-      .collection('drivers').doc(driverId).set({ authorized: true });
-
-    // 2. Setup requested route
-    await db.collection('deliveryRoutes').doc(routeId).set({
-      id: routeId,
-      providerId: providerId,
-      driverId: '',
-      status: 'REQUESTED'
+    await db.collection('orders').doc(orderId).set({
+      id: orderId, buyerId: 'buyer_delivery_idempotent', sellerId: 'seller_delivery_idempotent',
+      status: 'CONFIRMED', paymentStatus: 'PAID'
+    });
+    await db.collection('deliveryRequests').doc(requestId).set({
+      id: requestId, requesterId: 'buyer_delivery_idempotent', relatedOrderId: orderId,
+      merchantId: providerId, listingId: 'delivery_listing_idempotent',
+      pickup: { lat: -29.31, lng: 27.48 }, dropoff: { lat: -29.32, lng: 27.49 },
+      deliveryFeeMinorUnits: 2500, status: 'ACCEPTED'
     });
 
-    // 3. Call as authorized driver
-    await wrapped({
-      data: { routeId, status: 'ASSIGNED' },
-      auth: { uid: driverId, token: { role: 'DRIVER' } as any as any }
-    });
+    const wrapped = testEnv.wrap(createDeliveryJob);
+    // Warm up container to avoid cold-start timeout in concurrency test
+    try { await wrapped({ data: { requestId: 'warmup' }, auth: { uid: 'buyer', token: {} } } as any); } catch (e) {}
 
-    // 4. Verify
-    const routeDoc = await db.collection('deliveryRoutes').doc(routeId).get();
-    expect(routeDoc.data()?.status).toBe('ASSIGNED');
-    expect(routeDoc.data()?.driverId).toBe(driverId);
-  });
+    const call = () => wrapped({
+      data: { requestId },
+      auth: { uid: 'buyer_delivery_idempotent', token: {} }
+    } as any);
 
-  test('Claim Route - Unauthorized driver is rejected', async () => {
-    const providerId = 'merchant_789';
-    const driverId = 'stranger_danger';
-    const routeId = 'route_claim_fail';
+    const [first, second] = await Promise.all([call(), call()]);
 
-    await db.collection('deliveryRoutes').doc(routeId).set({
-      id: routeId,
-      providerId: providerId,
-      driverId: '',
-      status: 'REQUESTED'
-    });
+    expect(first.routeId).toBe(second.routeId);
+    expect(first.routeId).toBe(orderId);
+    expect(first.alreadyExists || second.alreadyExists).toBe(true);
 
-    // Call as unauthorized driver
-    await expect(wrapped({
-      data: { routeId, status: 'ASSIGNED' },
-      auth: { uid: driverId, token: { role: 'DRIVER' } }
-    })).rejects.toThrow(/not an authorized driver/);
-  });
+    const routes = await db.collection('deliveryRoutes')
+      .where('orderId', '==', orderId)
+      .get();
+    expect(routes.size).toBe(1);
+    expect(routes.docs[0].id).toBe(orderId);
+  }, 15000);
 
-  test('Delivery route - normal claimed-to-delivered path', async () => {
-    const providerId = 'merchant_normal_path';
-    const driverId = 'driver_normal_path';
-    const routeId = 'route_normal_path';
+  test('authorized provider-scoped driver can claim a requested job', async () => {
+    const providerId = 'provider_canonical_claim';
+    const driverId = 'driver_canonical_claim';
+    const routeId = 'route_canonical_claim';
 
     await db.collection('deliveryProviders').doc(providerId).collection('drivers').doc(driverId).set({ authorized: true });
-    await db.collection('orders').doc('order_normal_path').set({
-      id: 'order_normal_path',
-      buyerId: 'buyer_normal_path',
-      sellerId: providerId,
-      status: 'CONFIRMED',
-      requiresDelivery: true
+    await db.collection('deliveryRoutes').doc(routeId).set({ id: routeId, providerId, driverId: '', status: 'REQUESTED' });
+
+    await testEnv.wrap(updateDeliveryStatus)({
+      data: { routeId, status: 'ASSIGNED' },
+      auth: { uid: driverId, token: { role: 'DRIVER' } }
+    } as any);
+
+    const route = (await db.collection('deliveryRoutes').doc(routeId).get()).data();
+    expect(route?.status).toBe('ASSIGNED');
+    expect(route?.driverId).toBe(driverId);
+  });
+
+  test('unauthorized driver cannot claim provider job', async () => {
+    const routeId = 'route_canonical_claim_denied';
+    await db.collection('deliveryRoutes').doc(routeId).set({
+      id: routeId, providerId: 'provider_only', driverId: '', status: 'REQUESTED'
     });
 
+    await expect(testEnv.wrap(updateDeliveryStatus)({
+      data: { routeId, status: 'ASSIGNED' },
+      auth: { uid: 'unauthorized_driver', token: { role: 'DRIVER' } }
+    } as any)).rejects.toThrow(/not authorized/i);
+  });
+
+  test('canonical lifecycle reaches delivered and rejects invalid transition', async () => {
+    const providerId = 'provider_canonical_path';
+    const driverId = 'driver_canonical_path';
+    const routeId = 'route_canonical_path';
+    const orderId = 'order_canonical_path';
+
+    await db.collection('deliveryProviders').doc(providerId).collection('drivers').doc(driverId).set({ authorized: true });
+    await db.collection('orders').doc(orderId).set({
+      id: orderId, buyerId: 'buyer_canonical', sellerId: 'seller_canonical', status: 'CONFIRMED'
+    });
     await db.collection('deliveryRoutes').doc(routeId).set({
-      id: routeId, orderId: 'order_normal_path', buyerId: 'buyer_normal_path',
-      sellerId: providerId, providerId, driverId: '', status: 'REQUESTED',
-      pickupLat: -29.31, pickupLng: 27.48, dropoffLat: -29.30, dropoffLng: 27.49
+      id: routeId, orderId, buyerId: 'buyer_canonical', sellerId: 'seller_canonical',
+      providerId, driverId: '', status: 'REQUESTED'
     });
 
     const call = (status: string) => testEnv.wrap(updateDeliveryStatus)({
       data: { routeId, status },
-      auth: { uid: driverId, token: { role: 'DRIVER' } as any }
+      auth: { uid: driverId, token: { role: 'DRIVER' } }
     } as any);
 
     await call('ASSIGNED');
@@ -103,6 +106,6 @@ describe('Logistics Authoritative Logic (SWIFT-019)', () => {
 
     const route = (await db.collection('deliveryRoutes').doc(routeId).get()).data();
     expect(route?.status).toBe('DELIVERED');
-    expect(route?.driverId).toBe(driverId);
+    await expect(call('IN_TRANSIT')).rejects.toThrow(/Cannot transition/i);
   });
 });

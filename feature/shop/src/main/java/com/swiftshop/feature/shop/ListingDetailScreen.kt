@@ -154,7 +154,8 @@ fun ListingDetailScreen(
                             IconButton(onClick = {
                                 val shopSlug = sharedShop?.name?.let(::normalizeShareSlug) ?: "shop"
                                 val productSlug = normalizeShareSlug(listing.title.ifBlank { listing.id })
-                                val shareUrl = "https://swift-dev-3d3ae.web.app/s/${Uri.encode(shopSlug)}/${Uri.encode(productSlug)}"
+                                val basePath = if (listing.listingType == ListingType.DELIVER) "/d/" else "/s/"
+                                val shareUrl = "https://swift-dev-3d3ae.web.app" + basePath + Uri.encode(shopSlug) + "/" + Uri.encode(productSlug)
                                 val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(android.content.Intent.EXTRA_TEXT, "Check out ${listing.title} on SwiftShop: $shareUrl")
@@ -244,8 +245,10 @@ fun ListingDetailScreen(
                                         ListingType.BUY, ListingType.PLACE_ORDER -> {
                                             viewModel.buyNow()
                                         }
+                                        // Delivery is a fulfillment service attached to a paid order:
+                                        // the buyer picks the order from "My orders" and chooses a provider there.
                                         ListingType.DELIVER ->
-                                            navController.navigate(Screen.RequestDelivery.createRoute(listing.id))
+                                            navController.navigate(Screen.Orders.route)
                                         else -> { activeSheet = listing.listingType }
                                     }
                                 },

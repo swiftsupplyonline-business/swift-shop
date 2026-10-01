@@ -42,15 +42,15 @@ sealed class Screen(val route: String) {
     data object DeliveryTracking : Screen("delivery/{routeId}") {
         fun createRoute(id: String) = "delivery/$id"
     }
+    data object DeliveryCheckout : Screen("delivery_checkout/{orderId}") {
+        fun createRoute(id: String) = "delivery_checkout/$id"
+    }
     data object Settings : Screen("settings")
     data object EditProfile : Screen("edit_profile")
     data object ManageShop : Screen("manage_shop/{shopId}") {
         fun createRoute(id: String) = "manage_shop/$id"
     }
     data object CreateShop : Screen("create_shop")
-    data object RequestDelivery : Screen("request_delivery/{listingId}") {
-        fun createRoute(id: String) = "request_delivery/$id"
-    }
     data object IncomingDeliveryRequests : Screen("incoming_delivery_requests")
 }
 
