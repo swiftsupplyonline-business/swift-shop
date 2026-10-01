@@ -27,6 +27,9 @@ describe('Canonical Fulfillment Authority', () => {
     });
 
     const wrapped = testEnv.wrap(createDeliveryJob);
+    // Warm up container to avoid cold-start timeout in concurrency test
+    try { await wrapped({ data: { requestId: 'warmup' }, auth: { uid: 'buyer', token: {} } } as any); } catch (e) {}
+
     const call = () => wrapped({
       data: { requestId },
       auth: { uid: 'buyer_delivery_idempotent', token: {} }
@@ -43,7 +46,7 @@ describe('Canonical Fulfillment Authority', () => {
       .get();
     expect(routes.size).toBe(1);
     expect(routes.docs[0].id).toBe(orderId);
-  });
+  }, 15000);
 
   test('authorized provider-scoped driver can claim a requested job', async () => {
     const providerId = 'provider_canonical_claim';

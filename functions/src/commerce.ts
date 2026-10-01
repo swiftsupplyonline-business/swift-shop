@@ -118,12 +118,7 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
             let shopId = "";
             let sellerId = "";
 
-            // ── Validate items and reserve inventory via engine ────────────────
-            const now = admin.firestore.FieldValue.serverTimestamp();
-            const nowTimestamp = admin.firestore.Timestamp.now();
-            const reservationExpiresAt = admin.firestore.Timestamp.fromMillis(
-                nowTimestamp.toMillis() + 15 * 60 * 1000
-            );
+            const listingDataMap = new Map<string, { ref: admin.firestore.DocumentReference, doc: any, requestedQty: number }>();
 
             for (const item of items) {
                 const listingRef = db.collection("listings").doc(item.listingId);
@@ -136,23 +131,7 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
                 const listing = listingDoc.data()!;
                 const requestedQty = item.quantity || 1;
 
-                // ENGINE: single authoritative gate — checks type, status, and quantity-aware stock
                 assertPurchasable(listing, requestedQty);
-
-                // ENGINE: reserve inventory and auto-transition to OUT_OF_STOCK if needed
-                reserveInventory(transaction, listingRef, listing, requestedQty, now);
-
-                // Create reservation record (unchanged)
-                const resId = db.collection("reservations").doc().id;
-                transaction.set(db.collection("reservations").doc(resId), {
-                    id: resId,
-                    orderId: newOrderId,
-                    listingId: item.listingId,
-                    quantity: requestedQty,
-                    status: "ACTIVE",
-                    expiresAt: reservationExpiresAt,
-                    createdAt: nowTimestamp
-                });
 
                 if (!shopId) {
                     shopId = listing.shopId;
@@ -171,24 +150,58 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
                     unitPriceMinorUnits: listing.priceMinorUnits,
                     unitPriceCurrency: listing.priceCurrency || "LSL"
                 });
+
+                listingDataMap.set(item.listingId, { ref: listingRef, doc: listing, requestedQty });
             }
 
             const platformFee = Math.floor((subtotal * 15) / 1000);
             const total = subtotal + platformFee;
             finalTotal = total;
 
-            let orderStatus = "RESERVED";
-
+            let walletDoc = null;
+            const walletRef = db.collection("wallets").doc(auth.uid);
             if (paymentMethod === "SWIFT_WALLET") {
-                const walletRef = db.collection("wallets").doc(auth.uid);
-                const walletDoc = await transaction.get(walletRef);
+                walletDoc = await transaction.get(walletRef);
                 if (!walletDoc.exists) throw new Error("Wallet not found");
-
                 const availableBalance = walletDoc.data()?.availableBalanceMinorUnits || 0;
                 if (availableBalance < total) {
                     throw new Error(`Insufficient wallet balance. Required: ${total}, Available: ${availableBalance}`);
                 }
+            }
 
+            let shopData = null;
+            if (shopId) {
+                const shopDoc = await transaction.get(db.collection("shops").doc(shopId));
+                if (shopDoc.exists) {
+                    shopData = shopDoc.data()!;
+                }
+            }
+
+            // ── ALL READS COMPLETE. NOW PERFORM ALL WRITES. ──────────────────
+            const now = admin.firestore.FieldValue.serverTimestamp();
+            const nowTimestamp = admin.firestore.Timestamp.now();
+            const reservationExpiresAt = admin.firestore.Timestamp.fromMillis(
+                nowTimestamp.toMillis() + 15 * 60 * 1000
+            );
+
+            for (const [listingId, data] of listingDataMap) {
+                reserveInventory(transaction, data.ref, data.doc, data.requestedQty, now);
+
+                const resId = db.collection("reservations").doc().id;
+                transaction.set(db.collection("reservations").doc(resId), {
+                    id: resId,
+                    orderId: newOrderId,
+                    listingId,
+                    quantity: data.requestedQty,
+                    status: "ACTIVE",
+                    expiresAt: reservationExpiresAt,
+                    createdAt: nowTimestamp
+                });
+            }
+
+            let orderStatus = "RESERVED";
+            if (paymentMethod === "SWIFT_WALLET" && walletDoc) {
+                const availableBalance = walletDoc.data()?.availableBalanceMinorUnits || 0;
                 transaction.update(walletRef, {
                     availableBalanceMinorUnits: availableBalance - total,
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -209,14 +222,8 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
             }
 
             let pickupSnapshot: { lat: number; lng: number; shopName: string } | null = null;
-            if (shopId) {
-                const shopDoc = await transaction.get(db.collection("shops").doc(shopId));
-                if (shopDoc.exists) {
-                    const shopData = shopDoc.data()!;
-                    if (typeof shopData.locationLat === "number" && typeof shopData.locationLng === "number") {
-                        pickupSnapshot = { lat: shopData.locationLat, lng: shopData.locationLng, shopName: shopData.name || "" };
-                    }
-                }
+            if (shopData && typeof shopData.locationLat === "number" && typeof shopData.locationLng === "number") {
+                pickupSnapshot = { lat: shopData.locationLat, lng: shopData.locationLng, shopName: shopData.name || "" };
             }
 
             const orderDoc = {

@@ -12,7 +12,7 @@ describe('Canonical Purchase Authority', () => {
     await db.collection('listings').doc(id).set({
       id, title: 'Canonical Item', sellerId: 'seller_canonical', shopId: 'shop_canonical',
       listingType: 'BUY', priceMinorUnits: 1000, priceCurrency: 'LSL',
-      stockQuantity: 5, reservedQuantity: 0, status: 'ACTIVE', ...overrides
+      stockQuantity: 5, reservedQuantity: 0, status: 'ACTIVE', inventoryMode: 'STOCKED', ...overrides
     });
   };
 

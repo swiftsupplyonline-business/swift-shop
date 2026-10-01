@@ -181,33 +181,33 @@ export const createDeliveryJob = onCall(async (request) => {
     const db = admin.firestore();
 
     try {
-        return await db.runTransaction(async tx => {
-            const requestRef = db.collection("deliveryRequests").doc(requestId);
-            const requestSnap = await tx.get(requestRef);
-            if (!requestSnap.exists) throw new Error("Delivery request not found");
-            const dr = requestSnap.data()!;
+        const requestSnap = await db.collection("deliveryRequests").doc(requestId).get();
+        if (!requestSnap.exists) throw new HttpsError("not-found", "Delivery request not found");
+        const dr = requestSnap.data()!;
 
-            if (dr.requesterId !== auth.uid) throw new Error("Only the buyer can create this fulfillment job");
-            if (dr.status !== "ACCEPTED") throw new Error("Delivery request must be accepted first");
-            if (!dr.relatedOrderId) throw new Error("Delivery request is not attached to a purchase order");
+        if (dr.requesterId !== auth.uid) throw new HttpsError("permission-denied", "Only the buyer can create this fulfillment job");
+        if (dr.status !== "ACCEPTED") throw new Error("Delivery request must be accepted first");
+        if (!dr.relatedOrderId) throw new Error("Delivery request is not attached to a purchase order");
+
+        const routeRef = db.collection("deliveryRoutes").doc(dr.relatedOrderId);
+        const existingSnap = await routeRef.get();
+        if (existingSnap.exists) {
+            return { routeId: routeRef.id, alreadyExists: true };
+        }
+
+        return await db.runTransaction(async tx => {
+            const rSnap = await tx.get(routeRef);
+            if (rSnap.exists) {
+                return { routeId: routeRef.id, alreadyExists: true };
+            }
 
             const orderRef = db.collection("orders").doc(dr.relatedOrderId);
             const orderSnap = await tx.get(orderRef);
             if (!orderSnap.exists) throw new Error("Purchase order not found");
             const order = orderSnap.data()!;
 
-            // One deterministic route identity per purchase order. This avoids a
-            // query inside the transaction (which is not transaction-safe) and makes
-            // concurrent/retried calls converge on the same fulfillment route.
-            const routeRef = db.collection("deliveryRoutes").doc(dr.relatedOrderId);
-            const existingRoute = await tx.get(routeRef);
-            if (existingRoute.exists) {
-                const existing = existingRoute.data()!;
-                if (existing.orderId !== dr.relatedOrderId) {
-                    throw new Error("Existing fulfillment route has an invalid order identity");
-                }
-                return { routeId: routeRef.id, alreadyExists: true };
-            }
+            const requestRef = db.collection("deliveryRequests").doc(requestId);
+
             tx.set(routeRef, {
                 id: routeRef.id,
                 orderId: dr.relatedOrderId,
@@ -243,6 +243,7 @@ export const createDeliveryJob = onCall(async (request) => {
             return { routeId: routeRef.id, alreadyExists: false };
         });
     } catch (e: any) {
+        if (e instanceof HttpsError) throw e;
         throw new HttpsError("failed-precondition", e.message);
     }
 });
