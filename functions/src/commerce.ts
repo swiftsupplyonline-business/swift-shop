@@ -3,6 +3,7 @@ import * as admin from "firebase-admin";
 import { pickShopFields, ShopValidationError } from "./shopFields";
 import { idempotencyDocId, parseOrderItems, requireUid, OrderLine, MoneyValidationError } from "./moneyValidation";
 import { assertAccountActive } from "./accountGuard";
+import { resolveStatusUpdate } from "./orderTransitions";
 import { MopayClient, MOPAY_API_KEY } from "./mopay";
 import { resolveEntitlement } from "./entitlements";
 import {
@@ -724,11 +725,49 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
         }
 
         if (mopaySession.transactionStatus === "SUCCESS") {
+            let lateRefund = false;
             await db.runTransaction(async (transaction) => {
                 const freshOrderDoc = await transaction.get(orderDoc.ref);
                 const freshOrder = freshOrderDoc.data()!;
 
                 if (freshOrder.status === "CONFIRMED") return; // Idempotency
+                if (freshOrder.status === "CANCELLED" || freshOrder.status === "FAILED") {
+                    // Paid after the order was cancelled/expired: the buyer's money has arrived but the order
+                    // cannot be fulfilled (stock was released). Record it for refund instead of throwing, so
+                    // the payment is never silently kept. No gateway refund exists yet: this is a manual queue.
+                    if (freshOrder.refundStatus) return; // already recorded (idempotent)
+                    const lateNow = admin.firestore.FieldValue.serverTimestamp();
+                    const lateLedgerId = db.collection("ledgerEntries").doc().id;
+                    transaction.set(db.collection("ledgerEntries").doc(lateLedgerId), {
+                        id: lateLedgerId,
+                        transactionId: mopaySession.transactionId || `MOPAY_${sessionId}`,
+                        debitAccount: "system_mopay_clearing",
+                        creditAccount: "system_refund_pending",
+                        amountMinorUnits: order.totalMinorUnits,
+                        currency: "LSL",
+                        reference: `ORDER_LATE_PAYMENT_${order.id}`,
+                        timestamp: lateNow
+                    });
+                    transaction.set(db.collection("paymentRefunds").doc(order.id), {
+                        orderId: order.id,
+                        buyerId: order.buyerId,
+                        amountMinorUnits: order.totalMinorUnits,
+                        currency: "LSL",
+                        mopaySessionId: sessionId,
+                        gatewayTransactionId: mopaySession.transactionId || null,
+                        reason: "PAID_AFTER_CANCEL",
+                        status: "REQUIRED",
+                        createdAt: lateNow
+                    });
+                    transaction.update(orderDoc.ref, {
+                        paymentStatus: "SUCCESS_AFTER_CANCEL",
+                        refundStatus: "REQUIRED",
+                        gatewayTransactionId: mopaySession.transactionId || null,
+                        updatedAt: lateNow
+                    });
+                    lateRefund = true;
+                    return;
+                }
                 if (freshOrder.status !== "RESERVED") {
                     throw new Error(`Order is in state ${freshOrder.status}, cannot confirm.`);
                 }
@@ -804,6 +843,7 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                 });
             });
 
+            if (lateRefund) return { status: "PAID_AFTER_CANCEL", orderId: order.id };
             return { status: "SUCCESS", orderId: order.id };
 
         } else if (
@@ -1419,17 +1459,14 @@ export const confirmDelivery = onCall(async (request) => {
     }
 });
 
-const SELLER_TRANSITIONS: Record<string, string[]> = {
-    CONFIRMED: ["PROCESSING"],
-    PROCESSING: ["READY"]
-};
-
 export const updateOrderStatus = onCall(async (request) => {
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
     const { orderId, status } = request.data;
-    if (!orderId || !status) throw new HttpsError("invalid-argument", "Missing orderId or status");
+    if (typeof orderId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(orderId) || typeof status !== "string") {
+        throw new HttpsError("invalid-argument", "Missing orderId or status");
+    }
 
     const db = admin.firestore();
 
@@ -1440,22 +1477,14 @@ export const updateOrderStatus = onCall(async (request) => {
             if (!orderDoc.exists) throw new Error("Order not found");
             const order = orderDoc.data()!;
 
-            const isAdmin  = auth.token.admin === true;
-            const isSeller = order.sellerId === auth.uid;
-            const isBuyer  = order.buyerId  === auth.uid;
-
-            if (isBuyer && status === "CANCELLED") {
-                if (!["PENDING", "RESERVED"].includes(order.status)) throw new Error("Buyer can only cancel pending or reserved orders");
-            } else if (isSeller) {
-                const allowedNext = SELLER_TRANSITIONS[order.status] || [];
-                if (!allowedNext.includes(status)) {
-                    throw new Error(`Seller cannot transition order from ${order.status} to ${status}`);
-                }
-            } else if (isAdmin) {
-                // Admin authority preserved
-            } else {
-                throw new Error("Unauthorized status update");
-            }
+            resolveStatusUpdate({
+                isAdmin: auth.token.admin === true,
+                isSeller: order.sellerId === auth.uid,
+                isBuyer: order.buyerId === auth.uid,
+                current: order.status,
+                next: status,
+                paymentStatus: order.paymentStatus,
+            });
 
             transaction.update(orderRef, {
                 status,
