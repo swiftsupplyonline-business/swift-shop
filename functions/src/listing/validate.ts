@@ -84,6 +84,7 @@ export const CLIENT_ALLOWED_KEYS: ReadonlyArray<string> = [
     "durationMinutes",
     "customFields",
     "fulfillmentOptions",
+    "driverShareBps",
     "isAvailable",
 ] as const;
 
@@ -153,6 +154,12 @@ export function validateCreateInput(input: ListingCreateInput): void {
     if (input.durationMinutes !== undefined) {
         if (typeof input.durationMinutes !== "number" || input.durationMinutes < 0) {
             throw new Error("durationMinutes must be a non-negative number");
+        }
+    }
+
+    if (input.driverShareBps !== undefined) {
+        if (!Number.isInteger(input.driverShareBps) || input.driverShareBps < 0 || input.driverShareBps > 10000) {
+            throw new Error("driverShareBps must be an integer from 0 to 10000 (0% to 100%)");
         }
     }
 
