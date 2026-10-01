@@ -2,6 +2,7 @@ package com.swiftshop.domain.commerce
 
 import com.swiftshop.core.model.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 
 // ─── Entitlement Rules (driven by data, not hard-coded) ──────────────────────
 
@@ -137,6 +138,23 @@ interface CommerceRepository {
     ): Result<OrderInitiation>
 
     // Orders
+    suspend fun calculateOrderFees(
+        items: List<OrderItem>,
+        requiresDelivery: Boolean,
+        address: DeliveryAddress?,
+        selectedDeliveryListingId: String? = null
+    ): Result<OrderSummary>
+    suspend fun placeOrder(
+        items: List<OrderItem>,
+        requiresDelivery: Boolean,
+        address: DeliveryAddress?,
+        paymentMethod: PaymentMethod,
+        provider: String?,
+        phoneNumber: String,
+        idempotencyKey: String,
+        selectedDeliveryListingId: String? = null,
+        deliveryRequestId: String? = null
+    ): Result<OrderInitiation>
     suspend fun verifyMopayPayment(sessionId: String): Result<Unit>
     suspend fun confirmDelivery(orderId: String): Result<Unit>
     fun observeUserOrders(userId: String): Flow<List<Order>>
@@ -245,6 +263,35 @@ class CreatePurchaseOrderUseCase(private val repository: CommerceRepository) {
     }
 }
 
+class CalculateOrderFeesUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(
+        items: List<OrderItem>,
+        requiresDelivery: Boolean,
+        address: DeliveryAddress?,
+        selectedDeliveryListingId: String? = null
+    ): Result<OrderSummary> = repository.calculateOrderFees(items, requiresDelivery, address, selectedDeliveryListingId)
+}
+
+class PlaceOrderUseCase(private val repository: CommerceRepository) {
+    suspend operator fun invoke(
+        items: List<OrderItem>,
+        requiresDelivery: Boolean,
+        address: DeliveryAddress?,
+        paymentMethod: PaymentMethod,
+        provider: String?,
+        phoneNumber: String,
+        idempotencyKey: String,
+        selectedDeliveryListingId: String? = null,
+        deliveryRequestId: String? = null
+    ): Result<OrderInitiation> {
+        if (items.isEmpty()) return Result.failure(IllegalArgumentException("Cart is empty"))
+        if (idempotencyKey.isBlank()) return Result.failure(IllegalArgumentException("Idempotency key required"))
+        if (requiresDelivery && address == null) return Result.failure(IllegalArgumentException("Delivery address required when delivery is requested"))
+        // Server-side will re-validate all prices and calculate authoritative fees
+        return repository.placeOrder(items, requiresDelivery, address, paymentMethod, provider, phoneNumber, idempotencyKey, selectedDeliveryListingId, deliveryRequestId)
+    }
+}
+
 class VerifyMopayPaymentUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(sessionId: String): Result<Unit> = repository.verifyMopayPayment(sessionId)
 }
@@ -270,4 +317,46 @@ class UpdateShopUseCase(private val repository: CommerceRepository) {
 
 class DeleteListingUseCase(private val repository: CommerceRepository) {
     suspend operator fun invoke(listingId: String): Result<Unit> = repository.deleteListing(listingId)
+}
+
+class CreateListingUseCase(
+    private val repository: CommerceRepository,
+    private val mediaUploader: com.swiftshop.core.media.MediaUploader
+) {
+    suspend operator fun invoke(
+        title: String,
+        description: String,
+        category: String,
+        price: MoneyAmount,
+        stockQuantity: Int,
+        imageUris: List<android.net.Uri>,
+        sellerId: String,
+        shopId: String
+    ): Result<String> {
+        val imageUrls = mutableListOf<String>()
+        for (uri in imageUris) {
+            val progress = mediaUploader.uploadImage(sellerId, uri).firstOrNull { it is com.swiftshop.core.media.MediaUploadProgress.Complete }
+            if (progress is com.swiftshop.core.media.MediaUploadProgress.Complete) {
+                imageUrls.add(progress.asset.url)
+            }
+        }
+        val listing = Listing(
+            title = title,
+            description = description,
+            category = category,
+            price = price,
+            stockQuantity = stockQuantity,
+            imageUrls = imageUrls,
+            sellerId = sellerId,
+            shopId = shopId
+        )
+        return repository.createListing(listing)
+    }
+}
+
+class CheckListingEligibilityUseCase {
+    sealed interface Result {
+        object Included : Result
+        object AdditionalFeeRequired : Result
+    }
 }

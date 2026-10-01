@@ -72,7 +72,7 @@ export const requestDelivery = onCall(async (request) => {
                 buyerId: order.buyerId,
                 sellerId: order.sellerId,
                 // Prefer the accepted cross-shop delivery provider captured on the
-                // order at createPurchaseOrder time; only fall back to the merchandise
+                // order at createOrder time; only fall back to the merchandise
                 // seller for orders that never went through a delivery request
                 // (e.g. self-fulfilment/pickup orders calling this legacy path).
                 providerId: order.deliveryProviderSellerId || shopData.ownerId,

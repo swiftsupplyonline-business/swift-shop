@@ -309,6 +309,62 @@ class FirebaseCommerceRepository @Inject constructor(
         )
     }
 
+    override suspend fun calculateOrderFees(
+        items: List<OrderItem>,
+        requiresDelivery: Boolean,
+        address: DeliveryAddress?,
+        selectedDeliveryListingId: String?
+    ): Result<OrderSummary> = runCatching {
+        val data = mapOf(
+            "items" to items.map { it.toFirestore() },
+            "requiresDelivery" to requiresDelivery,
+            "deliveryAddress" to address?.toFirestore(),
+            "selectedDeliveryListingId" to selectedDeliveryListingId
+        )
+        val result = functions.getHttpsCallable("calculateOrderFees").call(data).await()
+        val resMap = result.data as Map<String, Any>
+
+        val currency = resMap["currency"] as? String ?: "LSL"
+        OrderSummary(
+            subtotal = MoneyAmount(currency, (resMap["subtotalMinorUnits"] as Number).toLong()),
+            deliveryFee = MoneyAmount(currency, (resMap["deliveryFeeMinorUnits"] as Number).toLong()),
+            platformFee = MoneyAmount(currency, (resMap["platformFeeMinorUnits"] as Number).toLong()),
+            total = MoneyAmount(currency, (resMap["totalMinorUnits"] as Number).toLong())
+        )
+    }
+
+    override suspend fun placeOrder(
+        items: List<OrderItem>,
+        requiresDelivery: Boolean,
+        address: DeliveryAddress?,
+        paymentMethod: PaymentMethod,
+        provider: String?,
+        phoneNumber: String,
+        idempotencyKey: String,
+        selectedDeliveryListingId: String?,
+        deliveryRequestId: String?
+    ): Result<OrderInitiation> = runCatching {
+        val data = mapOf(
+            "items" to items.map { it.toFirestore() },
+            "requiresDelivery" to requiresDelivery,
+            "deliveryAddress" to address?.toFirestore(),
+            "paymentMethod" to paymentMethod.name,
+            "provider" to provider,
+            "phoneNumber" to phoneNumber,
+            "idempotencyKey" to idempotencyKey,
+            "selectedDeliveryListingId" to selectedDeliveryListingId,
+            "deliveryRequestId" to deliveryRequestId
+        )
+        val result = functions.getHttpsCallable("createOrder").call(data).await()
+        val resMap = result.data as Map<String, Any>
+
+        OrderInitiation(
+            orderId = resMap["orderId"] as String,
+            paymentUrl = resMap["paymentUrl"] as? String,
+            mopaySessionId = resMap["mopaySessionId"] as? String
+        )
+    }
+
     override suspend fun verifyMopayPayment(sessionId: String): Result<Unit> = runCatching {
         val data = mapOf("sessionId" to sessionId)
         functions.getHttpsCallable("verifyMopayPayment").call(data).await()

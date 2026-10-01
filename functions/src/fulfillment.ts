@@ -6,8 +6,9 @@ const VALID_DELIVERY_STATUSES = ["REQUESTED", "ASSIGNED", "AT_PICKUP", "PICKUP_C
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
     REQUESTED: ["ASSIGNED", "CANCELLED"],
-    ASSIGNED: ["PICKUP", "CANCELLED"],
-    PICKUP: ["IN_TRANSIT", "FAILED"],
+    ASSIGNED: ["AT_PICKUP", "CANCELLED"],
+    AT_PICKUP: ["PICKUP_CONFIRMED", "FAILED"],
+    PICKUP_CONFIRMED: ["IN_TRANSIT", "FAILED"],
     IN_TRANSIT: ["DELIVERED", "FAILED"],
     DELIVERED: [],
     FAILED: [],
@@ -303,7 +304,7 @@ export const updateDeliveryStatus = onCall(async (request) => {
             if (status === "CANCELLED") {
                 if (!isBuyer && !isDriver && !isAdmin) throw new Error("Unauthorized");
                 if (isBuyer && route.status !== "REQUESTED") throw new Error("Buyer can only cancel before assignment");
-            } else if (status === "PICKUP") {
+            } else if (status === "AT_PICKUP" || status === "PICKUP_CONFIRMED") {
                 if (!isDriver && !isSeller) throw new Error("Only driver or merchant can confirm pickup");
             } else if (!isDriver && !isAdmin) {
                 throw new Error("Only the assigned driver can update this delivery");

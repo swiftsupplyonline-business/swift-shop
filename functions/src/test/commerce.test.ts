@@ -1,6 +1,6 @@
 import firebaseTest from 'firebase-functions-test';
 import * as admin from 'firebase-admin';
-import { createPurchaseOrder, cancelOrder, confirmDelivery } from '../commerce';
+import { createOrder, cancelOrder, confirmDelivery } from '../commerce';
 import { MopayClient } from '../mopay';
 
 const testEnv = firebaseTest({
@@ -24,14 +24,14 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
   const db = admin.firestore();
 
   beforeAll(async () => {
-    wrapped = testEnv.wrap(createPurchaseOrder);
+    wrapped = testEnv.wrap(createOrder);
   });
 
   afterAll(() => {
     testEnv.cleanup();
   });
 
-  test('createPurchaseOrder - Concurrent request detects active lease', async () => {
+  test('createOrder - Concurrent request detects active lease', async () => {
     const orderId = 'order_concurrency_test';
     const idempotencyKey = 'key_123';
 
@@ -43,7 +43,7 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    await db.collection('purchaseIdempotencyKeys').doc(idempotencyKey).set({
+    await db.collection('idempotencyKeys').doc(idempotencyKey).set({
       orderId: orderId,
       userId: 'user_1'
     });
@@ -52,6 +52,7 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
     await expect(wrapped({
       data: {
         items: [{ listingId: 'l1', quantity: 1 }],
+        requiresDelivery: false,
         paymentMethod: 'MOPAY',
         idempotencyKey: idempotencyKey
       },
@@ -59,7 +60,7 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
     })).rejects.toThrow(/RETRY_TOO_SOON/);
   });
 
-  test('createPurchaseOrder - Recovery logic handles failed session', async () => {
+  test('createOrder - Recovery logic handles failed session', async () => {
     const orderId = 'order_recovery_test';
     const idempotencyKey = 'key_456';
 
@@ -71,7 +72,7 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    await db.collection('purchaseIdempotencyKeys').doc(idempotencyKey).set({
+    await db.collection('idempotencyKeys').doc(idempotencyKey).set({
       orderId: orderId,
       userId: 'user_1'
     });
@@ -87,6 +88,7 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
     const result = await wrapped({
       data: {
         items: [{ listingId: 'l1', quantity: 1 }],
+        requiresDelivery: false,
         paymentMethod: 'MOPAY',
         idempotencyKey: idempotencyKey
       },
@@ -99,7 +101,7 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
     expect(orderDoc.data()?.paymentSessionStatus).toBe('CREATED');
   });
 
-  test('createPurchaseOrder - Amount authority: uses order total, not client request', async () => {
+  test('createOrder - Amount authority: uses order total, not client request', async () => {
     const orderId = 'order_amount_authority';
     const idempotencyKey = 'key_amount_test';
 
@@ -110,7 +112,7 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    await db.collection('purchaseIdempotencyKeys').doc(idempotencyKey).set({
+    await db.collection('idempotencyKeys').doc(idempotencyKey).set({
       orderId: orderId,
       userId: 'user_1'
     });
@@ -125,6 +127,7 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
     await wrapped({
       data: {
         items: [{ listingId: 'l1', quantity: 1 }],
+        requiresDelivery: false,
         paymentMethod: 'MOPAY',
         idempotencyKey: idempotencyKey,
         totalMinorUnits: 1 // Malicious client attempt to pay M0.01
@@ -146,8 +149,7 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
     await db.collection('listings').doc(listingId).set({
       id: listingId, title: 'Normal Cancel Item', sellerId: 'seller_cancel',
       shopId: 'shop_cancel', priceMinorUnits: 1000, stockQuantity: 5,
-      reservedQuantity: 2, isAvailable: true,
-      inventoryMode: 'STOCKED', status: 'ACTIVE'
+      reservedQuantity: 2, isAvailable: true
     });
     await db.collection('reservations').doc(reservationId).set({
       id: reservationId, orderId, listingId, quantity: 2, status: 'ACTIVE'

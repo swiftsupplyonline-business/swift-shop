@@ -3,8 +3,8 @@
 // and, in "widget" mode, by the server-rendered /listing/{id} page for the
 // Add to Cart / Buy Now buttons.
 //
-// NOTE: this file only ever calls existing Cloud Functions (calculatePurchaseTotal,
-// createPurchaseOrder) – it does not implement any order/payment/inventory logic itself.
+// NOTE: this file only ever calls existing Cloud Functions (calculateOrderFees,
+// createOrder) – it does not implement any order/payment/inventory logic itself.
 // That authority stays server-side in functions/src/commerce.ts.
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";

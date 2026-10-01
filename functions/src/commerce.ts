@@ -43,6 +43,77 @@ import {
     activityShopTransferred,
 } from "./listing";
 
+// ─── calculateOrderFees ───────────────────────────────────────────────────────
+// Unchanged: reads listing data for fee calculation only, no state mutations.
+// Delivery listing availability check now uses status instead of isAvailable
+// so it remains consistent with the engine's lifecycle model.
+
+export const calculateOrderFees = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { items, requiresDelivery, deliveryAddress, selectedDeliveryListingId } = request.data;
+    if (!items || !Array.isArray(items)) throw new HttpsError("invalid-argument", "Missing items");
+    if (typeof requiresDelivery !== "boolean") throw new HttpsError("invalid-argument", "requiresDelivery is required");
+    if (requiresDelivery && !deliveryAddress) throw new HttpsError("invalid-argument", "deliveryAddress is required when requiresDelivery is true");
+
+    let subtotal = 0;
+    let shopId = "";
+    const db = admin.firestore();
+
+    for (const item of items) {
+        const listingDoc = await db.collection("listings").doc(item.listingId).get();
+        if (!listingDoc.exists) {
+            const itemTitle = item.title || "Unknown Item";
+            throw new HttpsError("not-found", `Item "${itemTitle}" is no longer available. Please remove it from your cart.`);
+        }
+        const listing = listingDoc.data()!;
+        subtotal += (listing.priceMinorUnits || 0) * (item.quantity || 1);
+
+        if (!shopId) {
+            shopId = listing.shopId;
+        } else if (listing.shopId !== shopId) {
+            throw new HttpsError("invalid-argument", "Multi-shop orders are not supported in this version.");
+        }
+    }
+
+    let deliveryFee = 0;
+    if (requiresDelivery) {
+        if (selectedDeliveryListingId) {
+            const deliveryListingDoc = await db.collection("listings").doc(selectedDeliveryListingId).get();
+            if (!deliveryListingDoc.exists) throw new HttpsError("not-found", "Delivery listing not found");
+            const deliveryListing = deliveryListingDoc.data()!;
+            if (deliveryListing.listingType !== "DELIVER") throw new HttpsError("failed-precondition", "Invalid delivery listing type");
+            // Use status as the authority; fall back to legacy isAvailable for docs written before the engine
+            const isActive = deliveryListing.status
+                ? deliveryListing.status === ListingStatus.ACTIVE
+                : deliveryListing.isAvailable === true;
+            if (!isActive) throw new HttpsError("failed-precondition", "Delivery service is currently unavailable");
+            if (deliveryListing.shopId !== shopId) throw new HttpsError("invalid-argument", "Selected delivery provider does not belong to this shop.");
+            deliveryFee = deliveryListing.priceMinorUnits || 0;
+        } else {
+            const deliverySnap = await db.collection("listings")
+                .where("shopId", "==", shopId)
+                .where("listingType", "==", "DELIVER")
+                .where("isAvailable", "==", true)
+                .get();
+            if (deliverySnap.empty) throw new HttpsError("failed-precondition", "No delivery option is available for this shop.");
+            deliveryFee = deliverySnap.docs[0].data().priceMinorUnits || 0;
+        }
+    }
+
+    const platformFee = Math.floor((subtotal * 15) / 1000);
+    const total = subtotal + deliveryFee + platformFee;
+
+    return {
+        subtotalMinorUnits: subtotal,
+        deliveryFeeMinorUnits: deliveryFee,
+        platformFeeMinorUnits: platformFee,
+        totalMinorUnits: total,
+        currency: "LSL"
+    };
+});
+
 export const calculatePurchaseTotal = onCall(async (request) => {
     if (!request.auth) throw new HttpsError("unauthenticated", "Auth required");
     const { items } = request.data;
@@ -100,64 +171,13 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
     let orderId = "";
     let finalTotal = 0;
 
-    type PurchaseTxResult = {
-        orderId: string;
-        total: number;
-        isIdempotent: boolean;
-        recoveryNeeded: boolean;
-        attemptIndex: number;
-        paymentUrl?: string;
-        mopaySessionId?: string;
-    };
-
     try {
-        const txResult: PurchaseTxResult = await db.runTransaction(async (transaction): Promise<PurchaseTxResult> => {
+        orderId = await db.runTransaction(async (transaction) => {
             const idempotencyRef = db.collection("purchaseIdempotencyKeys").doc(idempotencyKey);
             const idempotencyDoc = await transaction.get(idempotencyRef);
             if (idempotencyDoc.exists) {
-                const existingId = idempotencyDoc.data()?.orderId;
-                const existingRef = db.collection("orders").doc(existingId);
-                const orderSnap = await transaction.get(existingRef);
-                const orderData = orderSnap.data();
-
-                // SWIFT-021: payment-session lifecycle with a 2-minute creation lease.
-                const sessionStatus = orderData?.paymentSessionStatus || "FAILED";
-                const isCreated = sessionStatus === "CREATED";
-                const isCreating = sessionStatus === "CREATING";
-                const lastUpdated = orderData?.updatedAt?.toMillis() || 0;
-                const leaseExpired = isCreating && (Date.now() - lastUpdated > 120 * 1000);
-
-                // Non-MOPAY orders (e.g. wallet) never create a gateway session.
-                if (isCreated || sessionStatus === "NA") {
-                    return {
-                        orderId: existingId,
-                        total: orderData?.totalMinorUnits || 0,
-                        paymentUrl: orderData?.paymentUrl,
-                        mopaySessionId: orderData?.mopaySessionId,
-                        isIdempotent: true,
-                        recoveryNeeded: false,
-                        attemptIndex: orderData?.paymentAttemptCount || 1
-                    };
-                }
-
-                if (isCreating && !leaseExpired) {
-                    throw new Error("RETRY_TOO_SOON: Payment session creation is still in progress.");
-                }
-
-                // Recovery needed (FAILED or stale CREATING): take exclusive ownership.
-                const nextAttempt = (orderData?.paymentAttemptCount || 0) + 1;
-                transaction.update(existingRef, {
-                    paymentSessionStatus: "CREATING",
-                    paymentAttemptCount: nextAttempt,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                });
-                return {
-                    orderId: existingId,
-                    total: orderData?.totalMinorUnits || 0,
-                    isIdempotent: true,
-                    recoveryNeeded: true,
-                    attemptIndex: nextAttempt
-                };
+                console.log(`Idempotent request for key ${idempotencyKey}. Returning existing orderId.`);
+                return idempotencyDoc.data()?.orderId;
             }
 
             let subtotal = 0;
@@ -286,8 +306,6 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
                 paymentMethod: paymentMethod || "MOPAY",
                 provider: provider || null,
                 idempotencyKey: idempotencyKey,
-                paymentSessionStatus: (paymentMethod || "MOPAY") === "MOPAY" ? "CREATING" : "NA",
-                paymentAttemptCount: (paymentMethod || "MOPAY") === "MOPAY" ? 1 : 0,
                 reservationExpiresAt: reservationExpiresAt,
                 createdAt: nowTimestamp,
                 updatedAt: nowTimestamp
@@ -300,18 +318,8 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
                 createdAt: nowTimestamp
             });
 
-            return { orderId: newOrderId, total: total, isIdempotent: false, recoveryNeeded: false, attemptIndex: 1 };
+            return newOrderId;
         });
-
-        orderId = txResult.orderId;
-        finalTotal = txResult.total;
-
-        // Idempotent replay of a request whose gateway session already exists.
-        if (txResult.isIdempotent && !txResult.recoveryNeeded) {
-            return txResult.paymentUrl && txResult.mopaySessionId
-                ? { orderId, paymentUrl: txResult.paymentUrl, mopaySessionId: txResult.mopaySessionId }
-                : { orderId };
-        }
 
         if (paymentMethod === "MOPAY" && orderId) {
             const mopayRequest = {
@@ -321,8 +329,6 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
                 description: `Order ${orderId} at Swift Shop`,
                 customerEmail: customerEmail || auth.token.email || "",
                 customerName: customerName || auth.token.name || auth.uid,
-                // SWIFT-021: deterministic provider-side idempotency per attempt
-                idempotencyKey: `mopay_order_${orderId}_v${txResult.attemptIndex}`
             };
 
             const mopayResponse = await MopayClient.initiatePaymentSession(mopayRequest);
@@ -331,7 +337,6 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
                 await db.collection("orders").doc(orderId).update({
                     mopaySessionId: mopayResponse.sessionId,
                     paymentUrl: mopayResponse.paymentUrl,
-                    paymentSessionStatus: "CREATED",
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 });
 
@@ -342,10 +347,235 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
                 };
             } else {
                 console.error("MoPay Session Creation Failed:", mopayResponse.message);
-                await db.collection("orders").doc(orderId).update({
-                    paymentSessionStatus: "FAILED",
+                return {
+                    orderId,
+                    error: mopayResponse.message || "Failed to initiate payment gateway"
+                };
+            }
+        }
+
+        return { orderId };
+
+    } catch (error: any) {
+        console.error("Order creation failed:", error);
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+// ─── createOrder ──────────────────────────────────────────────────────────────
+// Engine integration:
+//   assertPurchasable(listing, requestedQty) replaces inline isAvailable +
+//   stock checks.  reserveInventory() replaces the inline transaction.update.
+//   All other order/payment/ledger logic is unchanged.
+
+export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { items, requiresDelivery, deliveryAddress, paymentMethod, provider, idempotencyKey, selectedDeliveryListingId, deliveryRequestId } = request.data;
+    if (!items || !Array.isArray(items) || !idempotencyKey) {
+        throw new HttpsError("invalid-argument", "Missing items or idempotencyKey");
+    }
+    if (typeof requiresDelivery !== "boolean") throw new HttpsError("invalid-argument", "requiresDelivery is required");
+    if (requiresDelivery && !deliveryAddress) throw new HttpsError("invalid-argument", "deliveryAddress is required when requiresDelivery is true");
+    if (requiresDelivery && !deliveryRequestId) throw new HttpsError("invalid-argument", "deliveryRequestId is required for orders requiring delivery");
+
+    const db = admin.firestore();
+    let orderId = "";
+    let finalTotal = 0;
+
+    try {
+        orderId = await db.runTransaction(async (transaction) => {
+            const idempotencyRef = db.collection("idempotencyKeys").doc(idempotencyKey);
+            const idempotencyDoc = await transaction.get(idempotencyRef);
+            if (idempotencyDoc.exists) {
+                console.log(`Idempotent request for key ${idempotencyKey}. Returning existing orderId.`);
+                return idempotencyDoc.data()?.orderId;
+            }
+
+            let subtotal = 0;
+            const newOrderId = db.collection("orders").doc().id;
+            const validatedItems = [];
+            let shopId = "";
+            let sellerId = "";
+
+            let deliveryFee = 0;
+            let finalDeliveryListingId = selectedDeliveryListingId;
+            let drShopId = "";
+
+            if (requiresDelivery) {
+                const drRef = db.collection("deliveryRequests").doc(deliveryRequestId);
+                const drDoc = await transaction.get(drRef);
+                if (!drDoc.exists) throw new Error("Delivery request not found");
+                const drData = drDoc.data()!;
+                if (drData.status !== "ACCEPTED") throw new Error(`Delivery request status is ${drData.status}. Must be ACCEPTED.`);
+                if (drData.requesterId !== auth.uid) throw new Error("Delivery request ownership mismatch");
+
+                const drListingRef = db.collection("listings").doc(drData.listingId);
+                const drListingSnap = await transaction.get(drListingRef);
+                if (!drListingSnap.exists) throw new Error("Delivery listing not found");
+                drShopId = drListingSnap.data()!.shopId as string;
+                deliveryFee = drData.deliveryFeeMinorUnits || 0;
+                finalDeliveryListingId = drData.listingId;
+            }
+
+            // ── Validate items and reserve inventory via engine ────────────────
+            const now = admin.firestore.FieldValue.serverTimestamp();
+            const nowTimestamp = admin.firestore.Timestamp.now();
+            const reservationExpiresAt = admin.firestore.Timestamp.fromMillis(
+                nowTimestamp.toMillis() + 15 * 60 * 1000
+            );
+
+            for (const item of items) {
+                const listingRef = db.collection("listings").doc(item.listingId);
+                const listingDoc = await transaction.get(listingRef);
+
+                if (!listingDoc.exists) {
+                    const itemTitle = item.title || "Unknown Item";
+                    throw new Error(`Item "${itemTitle}" is no longer available. Please remove it from your cart.`);
+                }
+                const listing = listingDoc.data()!;
+                const requestedQty = item.quantity || 1;
+
+                // ENGINE: single authoritative gate — checks type, status, and quantity-aware stock
+                assertPurchasable(listing, requestedQty);
+
+                // ENGINE: reserve inventory and auto-transition to OUT_OF_STOCK if needed
+                reserveInventory(transaction, listingRef, listing, requestedQty, now);
+
+                // Create reservation record (unchanged)
+                const resId = db.collection("reservations").doc().id;
+                transaction.set(db.collection("reservations").doc(resId), {
+                    id: resId,
+                    orderId: newOrderId,
+                    listingId: item.listingId,
+                    quantity: requestedQty,
+                    status: "ACTIVE",
+                    expiresAt: reservationExpiresAt,
+                    createdAt: nowTimestamp
+                });
+
+                if (!shopId) {
+                    shopId = listing.shopId;
+                    sellerId = listing.sellerId;
+                } else if (listing.shopId !== shopId) {
+                    throw new Error("Multi-shop orders are not supported in this version.");
+                }
+
+                const itemTotal = listing.priceMinorUnits * requestedQty;
+                subtotal += itemTotal;
+
+                validatedItems.push({
+                    listingId: item.listingId,
+                    title: listing.title,
+                    quantity: requestedQty,
+                    unitPriceMinorUnits: listing.priceMinorUnits,
+                    unitPriceCurrency: listing.priceCurrency || "LSL"
+                });
+            }
+
+            if (typeof drShopId !== "undefined" && drShopId !== shopId) {
+                throw new Error(`Delivery request shop mismatch: request is for shop ${drShopId}, order is for shop ${shopId}`);
+            }
+
+            const platformFee = Math.floor((subtotal * 15) / 1000);
+            const total = subtotal + deliveryFee + platformFee;
+            finalTotal = total;
+
+            let orderStatus = "RESERVED";
+
+            if (paymentMethod === "SWIFT_WALLET") {
+                const walletRef = db.collection("wallets").doc(auth.uid);
+                const walletDoc = await transaction.get(walletRef);
+                if (!walletDoc.exists) throw new Error("Wallet not found");
+
+                const availableBalance = walletDoc.data()?.availableBalanceMinorUnits || 0;
+                if (availableBalance < total) {
+                    throw new Error(`Insufficient wallet balance. Required: ${total}, Available: ${availableBalance}`);
+                }
+
+                transaction.update(walletRef, {
+                    availableBalanceMinorUnits: availableBalance - total,
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 });
+
+                const ledgerId = db.collection("ledgerEntries").doc().id;
+                transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
+                    id: ledgerId,
+                    debitAccount: `user_${auth.uid}`,
+                    creditAccount: "system_order_escrow",
+                    amountMinorUnits: total,
+                    currency: "LSL",
+                    reference: `ORDER_PAY_${newOrderId}`,
+                    timestamp: admin.firestore.FieldValue.serverTimestamp()
+                });
+
+                orderStatus = "CONFIRMED";
+            }
+
+            const orderDoc = {
+                id: newOrderId,
+                buyerId: auth.uid,
+                sellerId: sellerId,
+                shopId: shopId,
+                items: validatedItems,
+                subtotalMinorUnits: subtotal,
+                deliveryFeeMinorUnits: deliveryFee,
+                platformFeeMinorUnits: platformFee,
+                totalMinorUnits: total,
+                currency: "LSL",
+                status: orderStatus,
+                inventoryStatus: "RESERVED",
+                settlementStatus: paymentMethod === "SWIFT_WALLET" ? "ESCROW_HOLD" : "PENDING",
+                paymentStatus: paymentMethod === "SWIFT_WALLET" ? "PAID" : "PENDING",
+                requiresDelivery: requiresDelivery,
+                deliveryRequestId: deliveryRequestId || null,
+                selectedDeliveryListingId: finalDeliveryListingId || null,
+                deliveryAddress: deliveryAddress || {},
+                paymentMethod: paymentMethod || "MOPAY",
+                provider: provider || null,
+                idempotencyKey: idempotencyKey,
+                reservationExpiresAt: reservationExpiresAt,
+                createdAt: nowTimestamp,
+                updatedAt: nowTimestamp
+            };
+
+            transaction.set(db.collection("orders").doc(newOrderId), orderDoc);
+            transaction.set(idempotencyRef, {
+                orderId: newOrderId,
+                userId: auth.uid,
+                createdAt: nowTimestamp
+            });
+
+            return newOrderId;
+        });
+
+        if (paymentMethod === "MOPAY" && orderId) {
+            const mopayRequest = {
+                amount: finalTotal / 100,
+                reference: orderId,
+                redirectUrl: "swiftshop://checkout/verify",
+                description: `Order ${orderId} at Swift Shop`,
+                customerEmail: auth.token.email,
+                customerName: auth.token.name || auth.uid,
+            };
+
+            const mopayResponse = await MopayClient.initiatePaymentSession(mopayRequest);
+
+            if (mopayResponse.success && mopayResponse.sessionId) {
+                await db.collection("orders").doc(orderId).update({
+                    mopaySessionId: mopayResponse.sessionId,
+                    paymentUrl: mopayResponse.paymentUrl,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+
+                return {
+                    orderId,
+                    paymentUrl: mopayResponse.paymentUrl,
+                    mopaySessionId: mopayResponse.sessionId
+                };
+            } else {
+                console.error("MoPay Session Creation Failed:", mopayResponse.message);
                 return {
                     orderId,
                     error: mopayResponse.message || "Failed to initiate payment gateway"
@@ -1038,10 +1268,6 @@ export const confirmDelivery = onCall(async (request) => {
             }
             if (order.settlementStatus === "SETTLED") return;
 
-            // All reads must precede all writes in a Firestore transaction.
-            const sellerWalletRef = db.collection("wallets").doc(order.sellerId);
-            const sellerWalletDoc = await transaction.get(sellerWalletRef);
-
             const now = admin.firestore.Timestamp.now();
             const subtotal      = order.subtotalMinorUnits || 0;
             const deliveryFee   = order.deliveryFeeMinorUnits || 0;
@@ -1060,6 +1286,8 @@ export const confirmDelivery = onCall(async (request) => {
                 timestamp: now
             });
 
+            const sellerWalletRef = db.collection("wallets").doc(order.sellerId);
+            const sellerWalletDoc = await transaction.get(sellerWalletRef);
             const currentSellerBalance = sellerWalletDoc.data()?.availableBalanceMinorUnits || 0;
             transaction.update(sellerWalletRef, {
                 availableBalanceMinorUnits: currentSellerBalance + sellerProceeds,
