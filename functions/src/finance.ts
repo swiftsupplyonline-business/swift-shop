@@ -544,3 +544,101 @@ export const confirmWithdrawal = onCall(async (request) => {
     }
 });
 
+
+/**
+ * Admin-only: rejects a PENDING withdrawal and returns the money to the user's available balance.
+ *
+ *  - Transaction must be type WITHDRAWAL and status PENDING.
+ *  - Idempotent: a repeat call on an already-FAILED withdrawal returns without mutation.
+ *  - A COMPLETED withdrawal can never be rejected (the money has already left the platform).
+ *
+ * Reversal ledger entry:
+ *   debit : system_withdrawal_escrow
+ *   credit: user_${userId}
+ */
+export const rejectWithdrawal = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required.");
+    if (auth.token?.admin !== true) throw new HttpsError("permission-denied", "Admin access required.");
+
+    const { transactionId, reason } = request.data || {};
+    if (!transactionId || typeof transactionId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(transactionId)) {
+        throw new HttpsError("invalid-argument", "transactionId is required.");
+    }
+    if (reason !== undefined && (typeof reason !== "string" || reason.length > 300)) {
+        throw new HttpsError("invalid-argument", "Invalid reason.");
+    }
+    const rejectReason = (typeof reason === "string" && reason.trim()) || "Rejected by admin";
+
+    const db = admin.firestore();
+
+    try {
+        return await db.runTransaction(async (transaction) => {
+            const txRef = db.collection("walletTransactions").doc(transactionId);
+            const txDoc = await transaction.get(txRef);
+            if (!txDoc.exists) throw new HttpsError("not-found", `Transaction ${transactionId} not found.`);
+            const txData = txDoc.data()!;
+
+            if (txData.type !== "WITHDRAWAL") {
+                throw new HttpsError("failed-precondition", `Transaction ${transactionId} is not a WITHDRAWAL (got: ${txData.type}).`);
+            }
+            if (txData.status === "FAILED") {
+                return { transactionId, status: "FAILED", idempotent: true };
+            }
+            if (txData.status !== "PENDING") {
+                throw new HttpsError("failed-precondition", `Transaction ${transactionId} is not PENDING (got: ${txData.status}).`);
+            }
+
+            const userId = txData.userId as string;
+            const amount = txData.amountMinorUnits as number;
+            const currency = txData.currency || "LSL";
+            if (!Number.isSafeInteger(amount) || amount <= 0) {
+                throw new HttpsError("failed-precondition", "Withdrawal has an invalid amount.");
+            }
+
+            const walletRef = db.collection("wallets").doc(userId);
+            const walletDoc = await transaction.get(walletRef);
+            if (!walletDoc.exists) throw new HttpsError("not-found", `Wallet for user ${userId} not found.`);
+            const walletData = walletDoc.data()!;
+            const currentPending = (walletData.pendingBalanceMinorUnits as number) || 0;
+            const currentAvailable = (walletData.availableBalanceMinorUnits as number) || 0;
+
+            if (currentPending < amount) {
+                throw new HttpsError("failed-precondition",
+                    "Pending balance is less than withdrawal amount — data integrity issue.");
+            }
+
+            const ledgerEntryId = db.collection("ledgerEntries").doc().id;
+
+            transaction.update(txRef, {
+                status: "FAILED",
+                failureReason: rejectReason,
+                rejectedBy: auth.uid,
+                failedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            transaction.update(walletRef, {
+                availableBalanceMinorUnits: currentAvailable + amount,
+                pendingBalanceMinorUnits: currentPending - amount,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            transaction.set(db.collection("ledgerEntries").doc(ledgerEntryId), {
+                id: ledgerEntryId,
+                transactionId,
+                debitAccount: "system_withdrawal_escrow",
+                creditAccount: `user_${userId}`,
+                amountMinorUnits: amount,
+                currency,
+                reference: `WITHDRAW_REJECT_${transactionId}`,
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            return { transactionId, status: "FAILED", idempotent: false };
+        });
+    } catch (error: any) {
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", error.message);
+    }
+});

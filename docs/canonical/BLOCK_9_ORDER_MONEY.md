@@ -47,3 +47,9 @@ NOT run: Firestore emulator tests, any MoPay flow, any order transaction against
 - A delivery request is not consumed by the order that uses it (reusable).
 - `commitmentCount` is not decremented when committed stock is returned.
 - No emulator tests for order flows.
+
+## Block 9c — rejectWithdrawal
+New admin-only callable `rejectWithdrawal({ transactionId, reason? })` in `finance.ts`: PENDING withdrawal -> FAILED,
+amount moves pending -> available, reversal ledger entry `system_withdrawal_escrow` -> `user_<uid>`
+(`WITHDRAW_REJECT_<id>`). Idempotent; COMPLETED withdrawals cannot be rejected. Covered by an in-memory-Firestore
+unit test (not the emulator). There is no admin UI yet, and the client is not notified on rejection.
