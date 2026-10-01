@@ -294,6 +294,628 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
     }
 });
 
+// ─── verifyMopayPayment ───────────────────────────────────────────────────────
+// Engine integration:
+//   SUCCESS path: assertCommittable() then commitInventory() replace inline
+//   stockQuantity-- / reservedQuantity-- mutations. commitInventory also
+//   increments commitmentCount (first time this is wired).
+//   FAILED/CANCELLED path: releaseInventory() replaces inline reservedQuantity-- .
+//   All gateway verification, amount matching, ledger, and order status
+//   transitions are unchanged.
+
+export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { sessionId } = request.data;
+    if (!sessionId) throw new HttpsError("invalid-argument", "Missing sessionId");
+
+    const db = admin.firestore();
+
+    try {
+        const orderQuery = await db.collection("orders")
+            .where("mopaySessionId", "==", sessionId)
+            .where("buyerId", "==", auth.uid)
+            .limit(1)
+            .get();
+
+        if (orderQuery.empty) throw new Error("Order not found for this session.");
+
+        const orderDoc = orderQuery.docs[0];
+        const order = orderDoc.data();
+
+        const mopaySession = await MopayClient.verifyPaymentSession(sessionId);
+        if (!mopaySession) throw new Error("Could not verify session with MoPay.");
+
+        if (mopaySession.reference !== order.id) throw new Error("Session reference mismatch.");
+
+        const mopayAmountMinor = Math.round(mopaySession.amount * 100);
+        if (mopayAmountMinor !== order.totalMinorUnits) {
+            throw new Error(`Amount mismatch. Expected: ${order.totalMinorUnits}, Got: ${mopayAmountMinor}`);
+        }
+
+        if (mopaySession.transactionStatus === "SUCCESS") {
+            await db.runTransaction(async (transaction) => {
+                const freshOrderDoc = await transaction.get(orderDoc.ref);
+                const freshOrder = freshOrderDoc.data()!;
+
+                if (freshOrder.status === "CONFIRMED") return; // Idempotency
+                if (freshOrder.status !== "RESERVED") {
+                    throw new Error(`Order is in state ${freshOrder.status}, cannot confirm.`);
+                }
+
+                const now = admin.firestore.FieldValue.serverTimestamp();
+
+                const resQuery = db.collection("reservations").where("orderId", "==", order.id);
+                const resSnap = await transaction.get(resQuery);
+                if (resSnap.empty) throw new Error("No reservations found for this order.");
+
+                for (const resDoc of resSnap.docs) {
+                    const reservation = resDoc.data();
+                    if (reservation.status !== "ACTIVE") {
+                        throw new Error(`Reservation for ${reservation.listingId} is ${reservation.status}. Cannot commit.`);
+                    }
+
+                    const listingRef = db.collection("listings").doc(reservation.listingId);
+                    const listingSnap = await transaction.get(listingRef);
+
+                    if (listingSnap.exists) {
+                        const listing = listingSnap.data()!;
+                        // ENGINE: guard — listing must be committable even if now OUT_OF_STOCK
+                        assertCommittable(listing);
+                        // ENGINE: commit stock + increment commitmentCount atomically
+                        commitInventory(transaction, listingRef, listing, reservation.quantity, now);
+                    }
+
+                    transaction.update(resDoc.ref, { status: "COMMITTED", updatedAt: now });
+
+                    // ENGINE: activity — purchase confirmed per listing
+                    if (listingSnap.exists) {
+                        const listing = listingSnap.data()!;
+                        const { summary, metadata } = activityPurchaseConfirmed(
+                            listing.title,
+                            order.id,
+                            reservation.quantity,
+                            listing.priceMinorUnits * reservation.quantity,
+                            "LSL"
+                        );
+                        recordActivity(
+                            transaction, db,
+                            reservation.listingId,
+                            ListingActivityType.PURCHASE_CONFIRMED,
+                            auth.uid, "buyer",
+                            summary, metadata
+                        );
+                    }
+                }
+
+                // Ledger entry (unchanged)
+                const ledgerId = db.collection("ledgerEntries").doc().id;
+                transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
+                    id: ledgerId,
+                    transactionId: mopaySession.transactionId || `MOPAY_${sessionId}`,
+                    debitAccount: "system_mopay_clearing",
+                    creditAccount: "system_order_escrow",
+                    amountMinorUnits: order.totalMinorUnits,
+                    currency: "LSL",
+                    reference: `ORDER_CONFIRM_MOPAY_${order.id}`,
+                    timestamp: now
+                });
+
+                transaction.update(orderDoc.ref, {
+                    status: "CONFIRMED",
+                    paymentStatus: "SUCCESS",
+                    inventoryStatus: "COMMITTED",
+                    settlementStatus: "ESCROW_HOLD",
+                    gatewayTransactionId: mopaySession.transactionId,
+                    updatedAt: now
+                });
+            });
+
+            return { status: "SUCCESS", orderId: order.id };
+
+        } else if (
+            mopaySession.transactionStatus === "FAILED" ||
+            mopaySession.transactionStatus === "CANCELLED"
+        ) {
+            await db.runTransaction(async (transaction) => {
+                const freshOrderDoc = await transaction.get(orderDoc.ref);
+                const freshOrder = freshOrderDoc.data()!;
+                if (freshOrder.status !== "RESERVED") return;
+
+                const now = admin.firestore.FieldValue.serverTimestamp();
+                const resQuery = db.collection("reservations").where("orderId", "==", order.id);
+                const resSnap = await transaction.get(resQuery);
+
+                for (const resDoc of resSnap.docs) {
+                    const reservation = resDoc.data();
+                    if (reservation.status !== "ACTIVE") continue;
+
+                    const listingRef = db.collection("listings").doc(reservation.listingId);
+                    const listingSnap = await transaction.get(listingRef);
+
+                    if (listingSnap.exists) {
+                        // ENGINE: release reservation and auto-promote if stock returns
+                        releaseInventory(
+                            transaction, listingRef,
+                            listingSnap.data()!, reservation.quantity, now
+                        );
+
+                        // ENGINE: activity — purchase cancelled per listing
+                        const listing = listingSnap.data()!;
+                        const { summary, metadata } = activityPurchaseCancelled(
+                            listing.title, order.id,
+                            `Payment ${mopaySession.transactionStatus}`
+                        );
+                        recordActivity(
+                            transaction, db,
+                            reservation.listingId,
+                            ListingActivityType.PURCHASE_CANCELLED,
+                            auth.uid, "buyer",
+                            summary, metadata
+                        );
+                    }
+                    transaction.update(resDoc.ref, { status: "RELEASED", updatedAt: now });
+                }
+
+                transaction.update(orderDoc.ref, {
+                    status: mopaySession.transactionStatus,
+                    paymentStatus: mopaySession.transactionStatus,
+                    inventoryStatus: "RELEASED",
+                    updatedAt: now
+                });
+            });
+        } else {
+            await orderDoc.ref.update({
+                paymentStatus: mopaySession.transactionStatus,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        }
+
+        return { status: mopaySession.transactionStatus, orderId: order.id };
+
+    } catch (error: any) {
+        console.error("Payment verification failed:", error);
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+// ─── cancelOrder ──────────────────────────────────────────────────────────────
+// Engine integration:
+//   releaseInventory() replaces inline reservedQuantity-- .
+//   activityPurchaseCancelled recorded atomically.
+//   Wallet refund and ledger logic unchanged.
+
+export const cancelOrder = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { orderId, reason } = request.data;
+    const db = admin.firestore();
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const orderRef = db.collection("orders").doc(orderId);
+            const orderDoc = await transaction.get(orderRef);
+            if (!orderDoc.exists) throw new Error("Order not found");
+            const order = orderDoc.data()!;
+
+            if (order.buyerId !== auth.uid && order.sellerId !== auth.uid && !auth.token.admin) {
+                throw new Error("Unauthorized");
+            }
+
+            if (order.status === "CANCELLED" || order.status === "REFUNDED") return;
+
+            const cancelReason = reason || "User requested";
+            const now = admin.firestore.FieldValue.serverTimestamp();
+
+            // Wallet refund for confirmed wallet orders (unchanged)
+            if (order.paymentMethod === "SWIFT_WALLET" && order.status === "CONFIRMED") {
+                const walletRef = db.collection("wallets").doc(order.buyerId);
+                const walletDoc = await transaction.get(walletRef);
+                if (walletDoc.exists) {
+                    const currentBalance = walletDoc.data()?.availableBalanceMinorUnits || 0;
+                    transaction.update(walletRef, {
+                        availableBalanceMinorUnits: currentBalance + order.totalMinorUnits,
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    });
+                    const ledgerId = db.collection("ledgerEntries").doc().id;
+                    transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
+                        id: ledgerId,
+                        debitAccount: "system_order_escrow",
+                        creditAccount: `user_${order.buyerId}`,
+                        amountMinorUnits: order.totalMinorUnits,
+                        currency: "LSL",
+                        reference: `ORDER_REFUND_${orderId}`,
+                        timestamp: admin.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+            }
+
+            // ENGINE: release reservations
+            if (order.status === "RESERVED") {
+                const cancelResQuery = db.collection("reservations").where("orderId", "==", orderId);
+                const cancelResSnap = await transaction.get(cancelResQuery);
+
+                for (const resDoc of cancelResSnap.docs) {
+                    const reservation = resDoc.data();
+                    if (reservation.status !== "ACTIVE") continue;
+
+                    const listingRef = db.collection("listings").doc(reservation.listingId);
+                    const listingSnap = await transaction.get(listingRef);
+
+                    if (listingSnap.exists) {
+                        releaseInventory(
+                            transaction, listingRef,
+                            listingSnap.data()!, reservation.quantity, now
+                        );
+
+                        // ENGINE: activity
+                        const listing = listingSnap.data()!;
+                        const { summary, metadata } = activityPurchaseCancelled(
+                            listing.title, orderId, cancelReason
+                        );
+                        recordActivity(
+                            transaction, db,
+                            reservation.listingId,
+                            ListingActivityType.PURCHASE_CANCELLED,
+                            auth.uid,
+                            order.buyerId === auth.uid ? "buyer" : "seller",
+                            summary, metadata
+                        );
+                    }
+                    transaction.update(resDoc.ref, { status: "RELEASED", updatedAt: now });
+                }
+            }
+
+            transaction.update(orderRef, {
+                status: "CANCELLED",
+                cancelReason: cancelReason,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+// ─── createListing ────────────────────────────────────────────────────────────
+// Engine integration:
+//   validateCreateInput() + sanitiseClientPayload() replace ad-hoc key allowlist.
+//   validateCreateSemantic() replaces inline shop ownership check.
+//   resolveListingType() + inventoryModeForType() set server-authoritative type/mode.
+//   generateUniqueListingSlug() replaces any future naive slug attempt.
+//   applyCreationCounters() replaces inline listingCount / activeListingCount updates.
+//   recordActivity(CREATED + PUBLISHED) written atomically.
+//   Tier quota logic unchanged.
+
+export const createListing = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const uid = auth.uid;
+    const rawInput = request.data;
+
+    // ENGINE: fast-fail before any DB reads
+    try {
+        validateCreateInput(rawInput);
+    } catch (e: any) {
+        throw new HttpsError("invalid-argument", e.message);
+    }
+
+    const db = admin.firestore();
+
+    try {
+        return await db.runTransaction(async (transaction) => {
+            const shopRef = db.collection("shops").doc(rawInput.shopId);
+            const shopDoc = await transaction.get(shopRef);
+            if (!shopDoc.exists) throw new Error("Shop not found");
+            const shop = shopDoc.data()!;
+
+            // ENGINE: semantic ownership + shop-active check
+            validateCreateSemantic(rawInput, shop, uid);
+
+            const userDoc = await transaction.get(db.collection("users").doc(uid));
+            if (!userDoc.exists) throw new Error("User not found");
+            const tier = userDoc.data()!.tier || "BASIC";
+
+            const profileRef = db.collection("profiles").doc(uid);
+            const profileDoc = await transaction.get(profileRef);
+            if (!profileDoc.exists) throw new Error("Profile not found");
+
+            // Tier quota checks (unchanged)
+            const entitlement = resolveEntitlement(tier);
+            if (entitlement.includedListingsPerShop !== -1) {
+                const shopListingsQuery = db.collection("listings")
+                    .where("shopId", "==", rawInput.shopId)
+                    .where("sellerId", "==", uid);
+                const shopListingsSnapshot = await transaction.get(shopListingsQuery);
+                if (shopListingsSnapshot.size >= entitlement.includedListingsPerShop) {
+                    throw new Error("ADDITIONAL_FEE_REQUIRED");
+                }
+            }
+            if (entitlement.totalIncludedListings !== -1) {
+                const allListingsQuery = db.collection("listings").where("sellerId", "==", uid);
+                const allListingsSnapshot = await transaction.get(allListingsQuery);
+                if (allListingsSnapshot.size >= entitlement.totalIncludedListings) {
+                    throw new Error("ADDITIONAL_FEE_REQUIRED");
+                }
+            }
+
+            // ENGINE: sanitise + resolve type/mode
+            const clientFields = sanitiseClientPayload(rawInput as Record<string, unknown>);
+            const listingType  = resolveListingType(rawInput.listingType);
+            const inventoryMode = inventoryModeForType(listingType);
+            const stockQuantity = typeof rawInput.stockQuantity === "number"
+                ? rawInput.stockQuantity
+                : defaultStockForMode(inventoryMode);
+
+            // ENGINE: collision-safe slug (async, before transaction close)
+            const listingId = db.collection("listings").doc().id;
+            const shareSlug = await generateUniqueListingSlug(db, rawInput.shopId, rawInput.title, listingId);
+
+            const now = admin.firestore.FieldValue.serverTimestamp();
+            // ENGINE: sole assembler of the new listing document (server-owned fields)
+            const newListing = buildNewListingDoc({
+                clientFields, listingId, sellerId: uid, title: rawInput.title,
+                listingType, inventoryMode, stockQuantity, shareSlug, now,
+            });
+            const status = newListing.status as ListingStatus;
+
+            transaction.set(db.collection("listings").doc(listingId), newListing);
+
+            // ENGINE: counters
+            applyCreationCounters(
+                transaction, db,
+                rawInput.shopId, uid,
+                shop, profileDoc.data()!,
+                status, now
+            );
+
+            // ENGINE: activity — CREATED and PUBLISHED in same transaction
+            const { summary: cSummary, metadata: cMeta } = activityCreated(rawInput.title, listingType, rawInput.shopId);
+            recordActivity(transaction, db, listingId, ListingActivityType.CREATED, uid, "seller", cSummary, cMeta);
+
+            const { summary: pSummary, metadata: pMeta } = activityPublished(rawInput.title);
+            recordActivity(transaction, db, listingId, ListingActivityType.PUBLISHED, uid, "seller", pSummary, pMeta);
+
+            return listingId;
+        });
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+// ─── updateListing ────────────────────────────────────────────────────────────
+// Engine integration:
+//   validateUpdateInput() + sanitiseClientPayload() replace ad-hoc key allowlist.
+//   validateUpdateSemantic() replaces inline ownership + shop-transfer checks.
+//   buildSlugUpdatePayload() handles slug rotation + alias retention on title change.
+//   applyUpdateCounters() fixes the shop-transfer counter drift bug.
+//   Activity recorded for price change, shop transfer, and general update.
+
+export const updateListing = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { listingId, updates } = request.data;
+    const db = admin.firestore();
+
+    try {
+        validateUpdateInput(updates || {});
+    } catch (e: any) {
+        throw new HttpsError("invalid-argument", e.message);
+    }
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const listingRef = db.collection("listings").doc(listingId);
+            const listingDoc = await transaction.get(listingRef);
+            if (!listingDoc.exists) throw new Error("Listing not found");
+            const listing = listingDoc.data()!;
+
+            const isAdmin = auth.token.admin === true;
+
+            // Fetch new shop doc if a transfer is requested
+            let newShopData: FirebaseFirestore.DocumentData | undefined;
+            if (updates.shopId && updates.shopId !== listing.shopId) {
+                const newShopDoc = await transaction.get(db.collection("shops").doc(updates.shopId));
+                if (!newShopDoc.exists) throw new Error("Target shop not found");
+                newShopData = newShopDoc.data();
+            }
+
+            // ENGINE: semantic validation (ownership, status, shop transfer auth)
+            validateUpdateSemantic(updates, listing, auth.uid, isAdmin, newShopData);
+
+            // ENGINE: sanitise client payload
+            const filteredUpdates = sanitiseClientPayload(updates as Record<string, unknown>);
+
+            // ENGINE: slug rotation if title changed
+            const now = admin.firestore.FieldValue.serverTimestamp();
+            if (filteredUpdates.title && filteredUpdates.title !== listing.title) {
+                const slugPayload = await buildSlugUpdatePayload(
+                    db, listingId,
+                    updates.shopId || listing.shopId,
+                    filteredUpdates.title as string,
+                    listing.shareSlug || "",
+                    listing.slugAliases || []
+                );
+                Object.assign(filteredUpdates, slugPayload);
+            }
+
+            // ENGINE: legacy isAvailable flag -> PAUSED/ACTIVE toggle; status stays authoritative.
+            const oldStatus = listing.status as ListingStatus || (listing.isAvailable ? ListingStatus.ACTIVE : ListingStatus.PAUSED);
+            const newStatus = statusFromAvailabilityToggle(oldStatus, filteredUpdates.isAvailable);
+            if (newStatus !== oldStatus) {
+                filteredUpdates.status      = newStatus;
+                filteredUpdates.isAvailable = isAvailableFromStatus(newStatus);
+            }
+
+            transaction.update(listingRef, {
+                ...filteredUpdates,
+                updatedAt: now
+            });
+
+            // ENGINE: counter corrections
+            const oldShopId  = listing.shopId;
+            const newShopId  = (updates.shopId as string) || oldShopId;
+            let oldShopData: FirebaseFirestore.DocumentData | null = null;
+            let profileData: FirebaseFirestore.DocumentData | null = null;
+
+            if (newShopId !== oldShopId || newStatus !== oldStatus) {
+                const oldShopDoc    = await transaction.get(db.collection("shops").doc(oldShopId));
+                const profileDoc    = await transaction.get(db.collection("profiles").doc(listing.sellerId));
+                oldShopData = oldShopDoc.exists ? oldShopDoc.data()! : null;
+                profileData = profileDoc.exists ? profileDoc.data()! : null;
+            }
+
+            applyUpdateCounters(
+                transaction, db, listing,
+                oldStatus, newStatus,
+                oldShopId, newShopId,
+                oldShopData,
+                newShopData || null,
+                profileData,
+                now
+            );
+
+            // ENGINE: activities
+            if (
+                updates.priceMinorUnits !== undefined &&
+                updates.priceMinorUnits !== listing.priceMinorUnits
+            ) {
+                const { summary, metadata } = activityPriceChanged(
+                    listing.title,
+                    listing.priceMinorUnits || 0,
+                    updates.priceMinorUnits,
+                    "LSL"
+                );
+                recordActivity(transaction, db, listingId, ListingActivityType.PRICE_CHANGED, auth.uid, "seller", summary, metadata);
+            }
+
+            if (newShopId !== oldShopId) {
+                const { summary, metadata } = activityShopTransferred(listing.title, oldShopId, newShopId);
+                recordActivity(transaction, db, listingId, ListingActivityType.SHOP_TRANSFERRED, auth.uid, "seller", summary, metadata);
+            }
+
+            // General update activity (always)
+            recordActivity(transaction, db, listingId, ListingActivityType.UPDATED, auth.uid, isAdmin ? "admin" : "seller", `Listing "${listing.title}" updated`, { updatedFields: Object.keys(filteredUpdates) });
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+// ─── deleteListing ────────────────────────────────────────────────────────────
+// Engine integration:
+//   applyDeletionCounters() replaces inline listingCount / activeListingCount
+//   mutations. Activity uses ARCHIVED (soft delete) rather than hard delete
+//   semantics since the document is physically removed.
+
+export const deleteListing = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const { listingId } = request.data;
+    const db = admin.firestore();
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const listingRef = db.collection("listings").doc(listingId);
+            const listingDoc = await transaction.get(listingRef);
+            if (!listingDoc.exists) throw new Error("Listing not found");
+            const listing = listingDoc.data()!;
+
+            if (listing.sellerId !== auth.uid && !auth.token.admin) {
+                throw new Error("Unauthorized");
+            }
+
+            const shopDoc  = await transaction.get(db.collection("shops").doc(listing.shopId));
+            const profDoc  = await transaction.get(db.collection("profiles").doc(listing.sellerId));
+            const now      = admin.firestore.FieldValue.serverTimestamp();
+
+            // ENGINE: counter corrections before deleting the doc
+            applyDeletionCounters(
+                transaction, db, listing,
+                shopDoc.exists ? shopDoc.data()! : null,
+                profDoc.exists ? profDoc.data()! : null,
+                now
+            );
+
+            // ENGINE: activity before deletion (doc is gone after this)
+            recordActivity(
+                transaction, db, listingId,
+                ListingActivityType.ARCHIVED,
+                auth.uid,
+                auth.token.admin ? "admin" : "seller",
+                `Listing "${listing.title}" deleted`,
+                { shopId: listing.shopId }
+            );
+
+            transaction.delete(listingRef);
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
+// ─── restockListing (NEW) ─────────────────────────────────────────────────────
+// First implementation of the Seller Listing Action pattern.
+// Validates → restocks → records activity, all in one transaction.
+
+export const restockListing = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const input = request.data;
+    try {
+        validateRestockInput(input);
+    } catch (e: any) {
+        throw new HttpsError("invalid-argument", e.message);
+    }
+
+    const db = admin.firestore();
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const listingRef = db.collection("listings").doc(input.listingId);
+            const listingDoc = await transaction.get(listingRef);
+            if (!listingDoc.exists) throw new Error("Listing not found");
+            const listing = listingDoc.data()!;
+
+            const isAdmin = auth.token.admin === true;
+
+            // ENGINE: semantic guard
+            validateRestockSemantic(listing, auth.uid, isAdmin);
+
+            const now        = admin.firestore.FieldValue.serverTimestamp();
+            const currentStock = listing.stockQuantity || 0;
+
+            // ENGINE: restock (auto-promotes OUT_OF_STOCK → ACTIVE if stock > 0)
+            restockInventory(transaction, listingRef, listing, input.quantity, now);
+
+            // ENGINE: activity
+            const { summary, metadata } = activityRestocked(
+                listing.title,
+                input.quantity,
+                currentStock + input.quantity
+            );
+            recordActivity(
+                transaction, db, input.listingId,
+                ListingActivityType.RESTOCKED,
+                auth.uid, isAdmin ? "admin" : "seller",
+                summary, metadata
+            );
+        });
+        return { success: true };
+    } catch (error: any) {
+        throw new HttpsError("failed-precondition", error.message);
+    }
+});
+
 // ─── Unchanged functions ──────────────────────────────────────────────────────
 // confirmDelivery, updateOrderStatus, confirmMopayPayment, initiateSubscription,
 // createShop, createListingComment, deleteListingComment
