@@ -22,7 +22,7 @@ echo "Canonical Architecture Check"
 check "calculateOrderFees operational refs" '\bcalculateOrderFees\b'
 check "createOrder operational refs" '\bcreateOrder\b'
 check "requestDelivery operational refs" '\brequestDelivery\b'
-check "logistics module refs" 'from[[:space:]]+["'"']\./logistics["'"']|require\(["'"']\./logistics'
+check "logistics module refs" "from[[:space:]]+[\"']\\./logistics[\"']|require\\([\"']\\./logistics"
 check "obsolete exact PICKUP state refs" '(^|[^A-Za-z0-9_])PICKUP([^A-Za-z0-9_]|$)'
 
 if [ -e functions/src/logistics.ts ]; then
