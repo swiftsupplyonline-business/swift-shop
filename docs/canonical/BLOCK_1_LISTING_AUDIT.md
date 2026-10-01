@@ -36,3 +36,13 @@ restock. Remaining real gaps:
 - Stale `createOrder` wording in engine comments: FIXED.
 - Emulator-based test suites (commerce, logistics, notifications, security-rules) could not run in the
   review sandbox (Firestore emulator download blocked). They must be run locally or in CI before merge.
+
+## Firestore rules (block-1b-firestore-rules)
+- VULNERABILITY: `listings` update allowed the seller to write any field not on a denylist, so `status`, `reservedQuantity`,
+  `inventoryMode`, `isAvailable`, `shareSlug`, `slugAliases` were client-writable (e.g. un-suspend a moderated listing, switch to
+  unlimited stock, hijack another product's slug). FIXED: `allow update: if false` (all updates via callables). No Android, web or
+  admin code writes listings directly (searched `data/`, `hosting/`, `web/`).
+- Test added to `security-rules.test.ts` (needs the emulator; not run in authoring sandbox).
+- DEPLOY NOTE: rules deploy independently of functions; deploy only after the callables are live (already true on this branch).
+- Separate pre-existing issue: `FirebaseCommerceRepository.updateShop` writes `shops` directly (line ~55) but rules deny shop
+  updates, so that call fails. Needs an `updateShop` callable (not yet written).
