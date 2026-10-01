@@ -1,7 +1,8 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { pickShopFields, ShopValidationError } from "./shopFields";
-import { idempotencyDocId, MoneyValidationError } from "./moneyValidation";
+import { idempotencyDocId, parseOrderItems, requireUid, OrderLine, MoneyValidationError } from "./moneyValidation";
+import { assertAccountActive } from "./accountGuard";
 import { MopayClient, MOPAY_API_KEY } from "./mopay";
 import { resolveEntitlement } from "./entitlements";
 import {
@@ -20,6 +21,8 @@ import {
     reserveInventory,
     releaseInventory,
     commitInventory,
+    purchaseAndCommitInventory,
+    returnCommittedInventory,
     restockInventory,
     // Slug
     generateUniqueListingSlug,
@@ -170,6 +173,17 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
     if (!items || !Array.isArray(items) || !request.data.idempotencyKey) {
         throw new HttpsError("invalid-argument", "Missing items or idempotencyKey");
     }
+    if (paymentMethod !== "MOPAY" && paymentMethod !== "SWIFT_WALLET") {
+        throw new HttpsError("invalid-argument", "Unsupported paymentMethod");
+    }
+    let orderLines: OrderLine[];
+    try {
+        orderLines = parseOrderItems(items);
+    } catch (e: any) {
+        if (e instanceof MoneyValidationError) throw new HttpsError("invalid-argument", e.message);
+        throw e;
+    }
+    await assertAccountActive(auth.uid);
     // Namespaced per user: one buyer can no longer collide with, pre-claim, or read back another
     // buyer's order id by reusing their key.
     let idempotencyKey: string;
@@ -205,32 +219,51 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
             const reservationExpiresAt = admin.firestore.Timestamp.fromMillis(
                 nowTimestamp.toMillis() + 15 * 60 * 1000
             );
+            const isWallet = paymentMethod === "SWIFT_WALLET";
 
-            for (const item of items) {
-                const listingRef = db.collection("listings").doc(item.listingId);
-                const listingDoc = await transaction.get(listingRef);
+            // Phase 1: ALL reads. Firestore rejects any transaction read issued after a write.
+            const listingRefs = orderLines.map((l) => db.collection("listings").doc(l.listingId));
+            const listingSnaps = await transaction.getAll(...listingRefs);
+            const walletRef = db.collection("wallets").doc(auth.uid);
+            const walletDoc = isWallet ? await transaction.get(walletRef) : null;
+            const firstShopId = listingSnaps[0] && listingSnaps[0].exists ? listingSnaps[0].data()!.shopId : undefined;
+            const shopDoc = firstShopId ? await transaction.get(db.collection("shops").doc(firstShopId)) : null;
+
+            // Phase 2: validate and write.
+            for (let i = 0; i < orderLines.length; i++) {
+                const { listingId, quantity: requestedQty } = orderLines[i];
+                const listingRef = listingRefs[i];
+                const listingDoc = listingSnaps[i];
 
                 if (!listingDoc.exists) {
-                    const itemTitle = item.title || "Unknown Item";
-                    throw new Error(`Item "${itemTitle}" is no longer available. Please remove it from your cart.`);
+                    throw new Error("An item in your cart is no longer available. Please remove it from your cart.");
                 }
                 const listing = listingDoc.data()!;
-                const requestedQty = item.quantity || 1;
+
+                if (listing.sellerId === auth.uid) throw new Error("You cannot buy your own listing.");
+                if ((listing.priceCurrency || "LSL") !== "LSL") throw new Error(`Listing "${listing.title}" is not priced in LSL.`);
+                if (!Number.isSafeInteger(listing.priceMinorUnits) || listing.priceMinorUnits < 0) {
+                    throw new Error(`Listing "${listing.title}" has an invalid price.`);
+                }
 
                 // ENGINE: single authoritative gate — checks type, status, and quantity-aware stock
                 assertPurchasable(listing, requestedQty);
 
-                // ENGINE: reserve inventory and auto-transition to OUT_OF_STOCK if needed
-                reserveInventory(transaction, listingRef, listing, requestedQty, now);
+                // ENGINE: wallet orders are paid in this transaction, so stock is committed immediately
+                // (nothing left ACTIVE for the expiry sweep to release); other orders reserve until paid.
+                if (isWallet) {
+                    purchaseAndCommitInventory(transaction, listingRef, listing, requestedQty, now);
+                } else {
+                    reserveInventory(transaction, listingRef, listing, requestedQty, now);
+                }
 
-                // Create reservation record (unchanged)
                 const resId = db.collection("reservations").doc().id;
                 transaction.set(db.collection("reservations").doc(resId), {
                     id: resId,
                     orderId: newOrderId,
-                    listingId: item.listingId,
+                    listingId,
                     quantity: requestedQty,
-                    status: "ACTIVE",
+                    status: isWallet ? "COMMITTED" : "ACTIVE",
                     expiresAt: reservationExpiresAt,
                     createdAt: nowTimestamp
                 });
@@ -242,28 +275,26 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
                     throw new Error("Multi-shop orders are not supported in this version.");
                 }
 
-                const itemTotal = listing.priceMinorUnits * requestedQty;
-                subtotal += itemTotal;
+                subtotal += listing.priceMinorUnits * requestedQty;
 
                 validatedItems.push({
-                    listingId: item.listingId,
+                    listingId,
                     title: listing.title,
                     quantity: requestedQty,
                     unitPriceMinorUnits: listing.priceMinorUnits,
-                    unitPriceCurrency: listing.priceCurrency || "LSL"
+                    unitPriceCurrency: "LSL"
                 });
             }
 
             const platformFee = Math.floor((subtotal * 15) / 1000);
             const total = subtotal + platformFee;
+            if (!Number.isSafeInteger(total) || total < 0) throw new Error("Invalid order total.");
             finalTotal = total;
 
             let orderStatus = "RESERVED";
 
-            if (paymentMethod === "SWIFT_WALLET") {
-                const walletRef = db.collection("wallets").doc(auth.uid);
-                const walletDoc = await transaction.get(walletRef);
-                if (!walletDoc.exists) throw new Error("Wallet not found");
+            if (isWallet) {
+                if (!walletDoc || !walletDoc.exists) throw new Error("Wallet not found");
 
                 const availableBalance = walletDoc.data()?.availableBalanceMinorUnits || 0;
                 if (availableBalance < total) {
@@ -290,13 +321,10 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
             }
 
             let pickupSnapshot: { lat: number; lng: number; shopName: string } | null = null;
-            if (shopId) {
-                const shopDoc = await transaction.get(db.collection("shops").doc(shopId));
-                if (shopDoc.exists) {
-                    const shopData = shopDoc.data()!;
-                    if (typeof shopData.locationLat === "number" && typeof shopData.locationLng === "number") {
-                        pickupSnapshot = { lat: shopData.locationLat, lng: shopData.locationLng, shopName: shopData.name || "" };
-                    }
+            if (shopDoc && shopDoc.exists) {
+                const shopData = shopDoc.data()!;
+                if (typeof shopData.locationLat === "number" && typeof shopData.locationLng === "number") {
+                    pickupSnapshot = { lat: shopData.locationLat, lng: shopData.locationLng, shopName: shopData.name || "" };
                 }
             }
 
@@ -311,7 +339,7 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
                 totalMinorUnits: total,
                 currency: "LSL",
                 status: orderStatus,
-                inventoryStatus: "RESERVED",
+                inventoryStatus: paymentMethod === "SWIFT_WALLET" ? "COMMITTED" : "RESERVED",
                 settlementStatus: paymentMethod === "SWIFT_WALLET" ? "ESCROW_HOLD" : "PENDING",
                 paymentStatus: paymentMethod === "SWIFT_WALLET" ? "PAID" : "PENDING",
                 pickupSnapshot,
@@ -335,6 +363,16 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
         });
 
         if (paymentMethod === "MOPAY" && orderId) {
+            // A replayed key returns the existing order: reuse its payment session rather than opening
+            // a second payable one (which let a user pay twice and be credited once).
+            const existingSnap = await db.collection("orders").doc(orderId).get();
+            const existing = existingSnap.data() || {};
+            if (existing.buyerId !== auth.uid) throw new Error("Order not found");
+            if (existing.mopaySessionId && existing.paymentUrl) {
+                return { orderId, paymentUrl: existing.paymentUrl, mopaySessionId: existing.mopaySessionId };
+            }
+            if (existing.status !== "RESERVED") return { orderId };
+            finalTotal = existing.totalMinorUnits;
             const mopayRequest = {
                 amount: finalTotal / 100,
                 reference: orderId,
@@ -385,10 +423,25 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
     const auth = request.auth;
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
-    const { items, requiresDelivery, deliveryAddress, paymentMethod, provider, idempotencyKey, selectedDeliveryListingId, deliveryRequestId } = request.data;
-    if (!items || !Array.isArray(items) || !idempotencyKey) {
+    const { items, requiresDelivery, deliveryAddress, paymentMethod, provider, idempotencyKey: rawIdempotencyKey, selectedDeliveryListingId, deliveryRequestId } = request.data;
+    if (!items || !Array.isArray(items) || !rawIdempotencyKey) {
         throw new HttpsError("invalid-argument", "Missing items or idempotencyKey");
     }
+    if (paymentMethod !== "MOPAY" && paymentMethod !== "SWIFT_WALLET") {
+        throw new HttpsError("invalid-argument", "Unsupported paymentMethod");
+    }
+    // Namespaced per user: another buyer can no longer collide with, pre-claim, or read back this order id.
+    let idempotencyKey: string;
+    let orderLines: OrderLine[];
+    try {
+        idempotencyKey = idempotencyDocId(auth.uid, "order", rawIdempotencyKey);
+        orderLines = parseOrderItems(items);
+        if (deliveryRequestId !== undefined && deliveryRequestId !== null) requireUid(deliveryRequestId, "deliveryRequestId");
+    } catch (e: any) {
+        if (e instanceof MoneyValidationError) throw new HttpsError("invalid-argument", e.message);
+        throw e;
+    }
+    await assertAccountActive(auth.uid);
     if (typeof requiresDelivery !== "boolean") throw new HttpsError("invalid-argument", "requiresDelivery is required");
     if (requiresDelivery && !deliveryAddress) throw new HttpsError("invalid-argument", "deliveryAddress is required when requiresDelivery is true");
     if (requiresDelivery && !deliveryRequestId) throw new HttpsError("invalid-argument", "deliveryRequestId is required for orders requiring delivery");
@@ -429,6 +482,7 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 if (!drListingSnap.exists) throw new Error("Delivery listing not found");
                 drShopId = drListingSnap.data()!.shopId as string;
                 deliveryFee = drData.deliveryFeeMinorUnits || 0;
+                if (!Number.isSafeInteger(deliveryFee) || deliveryFee < 0) throw new Error("Invalid delivery fee on delivery request");
                 finalDeliveryListingId = drData.listingId;
             }
 
@@ -438,32 +492,49 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
             const reservationExpiresAt = admin.firestore.Timestamp.fromMillis(
                 nowTimestamp.toMillis() + 15 * 60 * 1000
             );
+            const isWallet = paymentMethod === "SWIFT_WALLET";
 
-            for (const item of items) {
-                const listingRef = db.collection("listings").doc(item.listingId);
-                const listingDoc = await transaction.get(listingRef);
+            // Phase 1: ALL reads. Firestore rejects any transaction read issued after a write.
+            const listingRefs = orderLines.map((l) => db.collection("listings").doc(l.listingId));
+            const listingSnaps = await transaction.getAll(...listingRefs);
+            const walletRef = db.collection("wallets").doc(auth.uid);
+            const walletDoc = isWallet ? await transaction.get(walletRef) : null;
+
+            // Phase 2: validate and write.
+            for (let i = 0; i < orderLines.length; i++) {
+                const { listingId, quantity: requestedQty } = orderLines[i];
+                const listingRef = listingRefs[i];
+                const listingDoc = listingSnaps[i];
 
                 if (!listingDoc.exists) {
-                    const itemTitle = item.title || "Unknown Item";
-                    throw new Error(`Item "${itemTitle}" is no longer available. Please remove it from your cart.`);
+                    throw new Error("An item in your cart is no longer available. Please remove it from your cart.");
                 }
                 const listing = listingDoc.data()!;
-                const requestedQty = item.quantity || 1;
+
+                if (listing.sellerId === auth.uid) throw new Error("You cannot buy your own listing.");
+                if ((listing.priceCurrency || "LSL") !== "LSL") throw new Error(`Listing "${listing.title}" is not priced in LSL.`);
+                if (!Number.isSafeInteger(listing.priceMinorUnits) || listing.priceMinorUnits < 0) {
+                    throw new Error(`Listing "${listing.title}" has an invalid price.`);
+                }
 
                 // ENGINE: single authoritative gate — checks type, status, and quantity-aware stock
                 assertPurchasable(listing, requestedQty);
 
-                // ENGINE: reserve inventory and auto-transition to OUT_OF_STOCK if needed
-                reserveInventory(transaction, listingRef, listing, requestedQty, now);
+                // ENGINE: wallet orders are paid in this transaction, so stock is committed immediately
+                // (nothing left ACTIVE for the expiry sweep to release); other orders reserve until paid.
+                if (isWallet) {
+                    purchaseAndCommitInventory(transaction, listingRef, listing, requestedQty, now);
+                } else {
+                    reserveInventory(transaction, listingRef, listing, requestedQty, now);
+                }
 
-                // Create reservation record (unchanged)
                 const resId = db.collection("reservations").doc().id;
                 transaction.set(db.collection("reservations").doc(resId), {
                     id: resId,
                     orderId: newOrderId,
-                    listingId: item.listingId,
+                    listingId,
                     quantity: requestedQty,
-                    status: "ACTIVE",
+                    status: isWallet ? "COMMITTED" : "ACTIVE",
                     expiresAt: reservationExpiresAt,
                     createdAt: nowTimestamp
                 });
@@ -475,15 +546,14 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                     throw new Error("Multi-shop orders are not supported in this version.");
                 }
 
-                const itemTotal = listing.priceMinorUnits * requestedQty;
-                subtotal += itemTotal;
+                subtotal += listing.priceMinorUnits * requestedQty;
 
                 validatedItems.push({
-                    listingId: item.listingId,
+                    listingId,
                     title: listing.title,
                     quantity: requestedQty,
                     unitPriceMinorUnits: listing.priceMinorUnits,
-                    unitPriceCurrency: listing.priceCurrency || "LSL"
+                    unitPriceCurrency: "LSL"
                 });
             }
 
@@ -493,14 +563,13 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
 
             const platformFee = Math.floor((subtotal * 15) / 1000);
             const total = subtotal + deliveryFee + platformFee;
+            if (!Number.isSafeInteger(total) || total < 0) throw new Error("Invalid order total.");
             finalTotal = total;
 
             let orderStatus = "RESERVED";
 
-            if (paymentMethod === "SWIFT_WALLET") {
-                const walletRef = db.collection("wallets").doc(auth.uid);
-                const walletDoc = await transaction.get(walletRef);
-                if (!walletDoc.exists) throw new Error("Wallet not found");
+            if (isWallet) {
+                if (!walletDoc || !walletDoc.exists) throw new Error("Wallet not found");
 
                 const availableBalance = walletDoc.data()?.availableBalanceMinorUnits || 0;
                 if (availableBalance < total) {
@@ -538,7 +607,7 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 totalMinorUnits: total,
                 currency: "LSL",
                 status: orderStatus,
-                inventoryStatus: "RESERVED",
+                inventoryStatus: paymentMethod === "SWIFT_WALLET" ? "COMMITTED" : "RESERVED",
                 settlementStatus: paymentMethod === "SWIFT_WALLET" ? "ESCROW_HOLD" : "PENDING",
                 paymentStatus: paymentMethod === "SWIFT_WALLET" ? "PAID" : "PENDING",
                 requiresDelivery: requiresDelivery,
@@ -564,6 +633,16 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
         });
 
         if (paymentMethod === "MOPAY" && orderId) {
+            // A replayed key returns the existing order: reuse its payment session rather than opening
+            // a second payable one (which let a user pay twice and be credited once).
+            const existingSnap = await db.collection("orders").doc(orderId).get();
+            const existing = existingSnap.data() || {};
+            if (existing.buyerId !== auth.uid) throw new Error("Order not found");
+            if (existing.mopaySessionId && existing.paymentUrl) {
+                return { orderId, paymentUrl: existing.paymentUrl, mopaySessionId: existing.mopaySessionId };
+            }
+            if (existing.status !== "RESERVED") return { orderId };
+            finalTotal = existing.totalMinorUnits;
             const mopayRequest = {
                 amount: finalTotal / 100,
                 reference: orderId,
@@ -660,14 +739,17 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                 const resSnap = await transaction.get(resQuery);
                 if (resSnap.empty) throw new Error("No reservations found for this order.");
 
-                for (const resDoc of resSnap.docs) {
+                const prefetchedListings = resSnap.docs.length ? await transaction.getAll(...resSnap.docs.map((d) => db.collection("listings").doc(d.data().listingId))) : [];
+
+                for (let ri = 0; ri < resSnap.docs.length; ri++) {
+                    const resDoc = resSnap.docs[ri];
                     const reservation = resDoc.data();
                     if (reservation.status !== "ACTIVE") {
                         throw new Error(`Reservation for ${reservation.listingId} is ${reservation.status}. Cannot commit.`);
                     }
 
                     const listingRef = db.collection("listings").doc(reservation.listingId);
-                    const listingSnap = await transaction.get(listingRef);
+                    const listingSnap = prefetchedListings[ri];
 
                     if (listingSnap.exists) {
                         const listing = listingSnap.data()!;
@@ -737,12 +819,15 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                 const resQuery = db.collection("reservations").where("orderId", "==", order.id);
                 const resSnap = await transaction.get(resQuery);
 
-                for (const resDoc of resSnap.docs) {
+                const prefetchedListings = resSnap.docs.length ? await transaction.getAll(...resSnap.docs.map((d) => db.collection("listings").doc(d.data().listingId))) : [];
+
+                for (let ri = 0; ri < resSnap.docs.length; ri++) {
+                    const resDoc = resSnap.docs[ri];
                     const reservation = resDoc.data();
                     if (reservation.status !== "ACTIVE") continue;
 
                     const listingRef = db.collection("listings").doc(reservation.listingId);
-                    const listingSnap = await transaction.get(listingRef);
+                    const listingSnap = prefetchedListings[ri];
 
                     if (listingSnap.exists) {
                         // ENGINE: release reservation and auto-promote if stock returns
@@ -801,6 +886,9 @@ export const cancelOrder = onCall(async (request) => {
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
     const { orderId, reason } = request.data;
+    if (typeof orderId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(orderId)) {
+        throw new HttpsError("invalid-argument", "Invalid orderId");
+    }
     const db = admin.firestore();
 
     try {
@@ -810,72 +898,86 @@ export const cancelOrder = onCall(async (request) => {
             if (!orderDoc.exists) throw new Error("Order not found");
             const order = orderDoc.data()!;
 
-            if (order.buyerId !== auth.uid && order.sellerId !== auth.uid && !auth.token.admin) {
-                throw new Error("Unauthorized");
-            }
+            const isAdmin = auth.token.admin === true;
+            const isBuyer = order.buyerId === auth.uid;
+            const isSeller = order.sellerId === auth.uid;
+            if (!isBuyer && !isSeller && !isAdmin) throw new Error("Unauthorized");
 
             if (order.status === "CANCELLED" || order.status === "REFUNDED") return;
 
+            // A settled order has already paid the seller: cancelling it would refund the buyer a
+            // second time. Completed/failed orders are never cancellable.
+            if (order.settlementStatus === "SETTLED" || ["DELIVERED", "COMPLETED", "FAILED"].includes(order.status)) {
+                throw new Error("Order is already completed and cannot be cancelled");
+            }
+            // The buyer can cancel until the seller has marked the order ready for pickup/dispatch.
+            if (isBuyer && !isSeller && !isAdmin &&
+                !["PENDING", "RESERVED", "CONFIRMED", "PROCESSING"].includes(order.status)) {
+                throw new Error("This order can no longer be cancelled by the buyer");
+            }
+            // Paid through MoPay: there is no automatic gateway refund yet, so cancelling would silently
+            // keep the buyer's money. Refuse until a refund path exists.
+            if (order.paymentStatus === "SUCCESS") {
+                throw new Error("This order was paid through MoPay and needs a manual refund. Please contact support.");
+            }
+
+            const refundWallet = order.paymentMethod === "SWIFT_WALLET" && order.paymentStatus === "PAID";
             const cancelReason = reason || "User requested";
             const now = admin.firestore.FieldValue.serverTimestamp();
 
-            // Wallet refund for confirmed wallet orders (unchanged)
-            if (order.paymentMethod === "SWIFT_WALLET" && order.status === "CONFIRMED") {
-                const walletRef = db.collection("wallets").doc(order.buyerId);
-                const walletDoc = await transaction.get(walletRef);
-                if (walletDoc.exists) {
-                    const currentBalance = walletDoc.data()?.availableBalanceMinorUnits || 0;
-                    transaction.update(walletRef, {
-                        availableBalanceMinorUnits: currentBalance + order.totalMinorUnits,
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                    });
-                    const ledgerId = db.collection("ledgerEntries").doc().id;
-                    transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
-                        id: ledgerId,
-                        debitAccount: "system_order_escrow",
-                        creditAccount: `user_${order.buyerId}`,
-                        amountMinorUnits: order.totalMinorUnits,
-                        currency: "LSL",
-                        reference: `ORDER_REFUND_${orderId}`,
-                        timestamp: admin.firestore.FieldValue.serverTimestamp()
-                    });
-                }
+            // Phase 1: ALL reads (Firestore rejects reads issued after a write).
+            const resSnap = await transaction.get(db.collection("reservations").where("orderId", "==", orderId));
+            const listingRefs = resSnap.docs.map((d) => db.collection("listings").doc(d.data().listingId));
+            const listingSnaps = listingRefs.length ? await transaction.getAll(...listingRefs) : [];
+            const walletRef = db.collection("wallets").doc(order.buyerId);
+            const walletDoc = refundWallet ? await transaction.get(walletRef) : null;
+
+            // Phase 2: writes.
+            if (refundWallet) {
+                const currentBalance = walletDoc && walletDoc.exists ? (walletDoc.data()?.availableBalanceMinorUnits || 0) : 0;
+                // set+merge so a refund can never be dropped because the wallet doc is missing
+                transaction.set(walletRef, {
+                    availableBalanceMinorUnits: currentBalance + order.totalMinorUnits,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+                const ledgerId = db.collection("ledgerEntries").doc().id;
+                transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
+                    id: ledgerId,
+                    debitAccount: "system_order_escrow",
+                    creditAccount: `user_${order.buyerId}`,
+                    amountMinorUnits: order.totalMinorUnits,
+                    currency: "LSL",
+                    reference: `ORDER_REFUND_${orderId}`,
+                    timestamp: admin.firestore.FieldValue.serverTimestamp()
+                });
             }
 
-            // ENGINE: release reservations
-            if (order.status === "RESERVED") {
-                const cancelResQuery = db.collection("reservations").where("orderId", "==", orderId);
-                const cancelResSnap = await transaction.get(cancelResQuery);
+            for (let i = 0; i < resSnap.docs.length; i++) {
+                const resDoc = resSnap.docs[i];
+                const reservation = resDoc.data();
+                if (reservation.status !== "ACTIVE" && reservation.status !== "COMMITTED") continue;
 
-                for (const resDoc of cancelResSnap.docs) {
-                    const reservation = resDoc.data();
-                    if (reservation.status !== "ACTIVE") continue;
-
-                    const listingRef = db.collection("listings").doc(reservation.listingId);
-                    const listingSnap = await transaction.get(listingRef);
-
-                    if (listingSnap.exists) {
-                        releaseInventory(
-                            transaction, listingRef,
-                            listingSnap.data()!, reservation.quantity, now
-                        );
-
-                        // ENGINE: activity
-                        const listing = listingSnap.data()!;
-                        const { summary, metadata } = activityPurchaseCancelled(
-                            listing.title, orderId, cancelReason
-                        );
-                        recordActivity(
-                            transaction, db,
-                            reservation.listingId,
-                            ListingActivityType.PURCHASE_CANCELLED,
-                            auth.uid,
-                            order.buyerId === auth.uid ? "buyer" : "seller",
-                            summary, metadata
-                        );
+                const listingSnap = listingSnaps[i];
+                if (listingSnap && listingSnap.exists) {
+                    const listing = listingSnap.data()!;
+                    if (reservation.status === "ACTIVE") {
+                        // ENGINE: unpaid hold goes back to the available pool
+                        releaseInventory(transaction, listingRefs[i], listing, reservation.quantity, now);
+                    } else {
+                        // ENGINE: paid stock goes back because the order is refunded
+                        returnCommittedInventory(transaction, listingRefs[i], listing, reservation.quantity, now);
                     }
-                    transaction.update(resDoc.ref, { status: "RELEASED", updatedAt: now });
+                    const { summary, metadata } = activityPurchaseCancelled(listing.title, orderId, cancelReason);
+                    recordActivity(
+                        transaction, db,
+                        reservation.listingId,
+                        ListingActivityType.PURCHASE_CANCELLED,
+                        auth.uid,
+                        isBuyer ? "buyer" : "seller",
+                        summary, metadata
+                    );
                 }
+                transaction.update(resDoc.ref, { status: "RELEASED", updatedAt: now });
             }
 
             transaction.update(orderRef, {

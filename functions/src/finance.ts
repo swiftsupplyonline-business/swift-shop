@@ -1,14 +1,8 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { MopayClient, MOPAY_API_KEY } from "./mopay";
+import { assertAccountActive } from "./accountGuard";
 import { parseAmount, idempotencyDocId, requireText, requireUid, MoneyValidationError } from "./moneyValidation";
-
-/** Rejects suspended/banned accounts from moving money (users/{uid}.accountStatus, default ACTIVE). */
-async function assertAccountActive(uid: string): Promise<void> {
-    const snap = await admin.firestore().collection("users").doc(uid).get();
-    const status = snap.exists ? (snap.data()!.accountStatus ?? "ACTIVE") : "ACTIVE";
-    if (status !== "ACTIVE") throw new HttpsError("permission-denied", "Account is not active.");
-}
 
 function badInput(e: unknown): never {
     if (e instanceof MoneyValidationError) throw new HttpsError("invalid-argument", e.message);
