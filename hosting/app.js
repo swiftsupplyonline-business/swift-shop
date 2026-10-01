@@ -357,14 +357,6 @@ async function renderCheckout(root) {
           return;
         }
         window.location.assign(result.paymentUrl);
-        return;
-        updateCartBadge();
-        root.innerHTML = `
-          <div class="success">
-            <h1>Order placed 🎉</h1>
-            <p>Order ID: ${escapeHtml(result.orderId)}</p>
-            <a href="/">Continue browsing</a>
-          </div>`;
       } catch (err) {
         msg.textContent = `Order failed: ${err.message}`;
       }
