@@ -11,7 +11,7 @@ describe('Canonical Purchase Authority', () => {
   const seedListing = async (id: string, overrides: Record<string, unknown> = {}) => {
     await db.collection('listings').doc(id).set({
       id, title: 'Canonical Item', sellerId: 'seller_canonical', shopId: 'shop_canonical',
-      listingType: 'PRODUCT', priceMinorUnits: 1000, priceCurrency: 'LSL',
+      listingType: 'BUY', priceMinorUnits: 1000, priceCurrency: 'LSL',
       stockQuantity: 5, reservedQuantity: 0, status: 'ACTIVE', ...overrides
     });
   };
@@ -79,7 +79,7 @@ describe('Canonical Purchase Authority', () => {
     await db.collection('listings').doc(listingId).set({
       id: listingId, title: 'Normal Cancel Item', sellerId: 'seller_cancel',
       shopId: 'shop_cancel', priceMinorUnits: 1000, stockQuantity: 5,
-      reservedQuantity: 2, isAvailable: true, status: 'ACTIVE', listingType: 'PRODUCT'
+      reservedQuantity: 2, isAvailable: true, status: 'ACTIVE', listingType: 'BUY'
     });
     await db.collection('reservations').doc(reservationId).set({
       id: reservationId, orderId, listingId, quantity: 2, status: 'ACTIVE'
