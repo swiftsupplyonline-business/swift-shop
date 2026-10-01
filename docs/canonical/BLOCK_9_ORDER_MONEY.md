@@ -36,8 +36,7 @@ NOT run: Firestore emulator tests, any MoPay flow, any order transaction against
   Needs a MoPay refund path.
 
 ## Still open
-- Nothing reads or acts on `paymentRefunds` yet (no admin screen/function to mark a refund done or credit the wallet).
-  The client does not know the `PAID_AFTER_CANCEL` status; it will show it as an unknown result.
+- MoPay-paid orders still cannot be cancelled by anyone before delivery (no refund path for them except the late-payment case).
 - `confirmMopayPayment` (admin) only accepts PENDING, which new orders never are; no gateway check, no commit.
 - A delivery request is not consumed by the order that uses it (reusable).
 - `commitmentCount` is not decremented when committed stock is returned.
