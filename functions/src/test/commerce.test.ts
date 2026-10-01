@@ -103,7 +103,7 @@ describe('Canonical Purchase Authority', () => {
     await db.collection('wallets').doc('seller_pickup').set({ availableBalanceMinorUnits: 0 });
     await db.collection('orders').doc(orderId).set({
       id: orderId, buyerId: 'buyer_pickup', sellerId: 'seller_pickup',
-      status: 'READY', requiresDelivery: false, subtotalMinorUnits: 1000,
+      status: 'READY', paymentStatus: 'PAID', requiresDelivery: false, subtotalMinorUnits: 1000,
       deliveryFeeMinorUnits: 0, platformFeeMinorUnits: 15, totalMinorUnits: 1015,
       settlementStatus: 'ESCROW_HOLD'
     });
@@ -114,5 +114,23 @@ describe('Canonical Purchase Authority', () => {
 
     expect(result.success).toBe(true);
     expect((await db.collection('orders').doc(orderId).get()).data()?.settlementStatus).toBe('SETTLED');
+  });
+
+  test('confirmDelivery refuses an unpaid order and pays nobody', async () => {
+    const orderId = 'order_unpaid_confirm';
+    await db.collection('wallets').doc('seller_unpaid').set({ availableBalanceMinorUnits: 0 });
+    await db.collection('orders').doc(orderId).set({
+      id: orderId, buyerId: 'buyer_unpaid', sellerId: 'seller_unpaid',
+      status: 'READY', paymentStatus: 'PENDING', requiresDelivery: false, subtotalMinorUnits: 1000,
+      deliveryFeeMinorUnits: 0, platformFeeMinorUnits: 15, totalMinorUnits: 1015,
+      settlementStatus: 'ESCROW_HOLD'
+    });
+
+    await expect(testEnv.wrap(confirmDelivery)({
+      data: { orderId }, auth: { uid: 'buyer_unpaid', token: {}, rawToken: '' }
+    } as any)).rejects.toThrow(/not been paid/i);
+
+    expect((await db.collection('wallets').doc('seller_unpaid').get()).data()?.availableBalanceMinorUnits).toBe(0);
+    expect((await db.collection('orders').doc(orderId).get()).data()?.settlementStatus).toBe('ESCROW_HOLD');
   });
 });

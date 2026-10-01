@@ -58,6 +58,7 @@ class CreateListingUseCase(
             listingType = listingType,
             customFields = customFields,
             deliveryEstimateDays = deliveryEstimateDays,
+            driverShareBps = driverShareBps,
             isAvailable = stockQuantity > 0,
             createdAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis()

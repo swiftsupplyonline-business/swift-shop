@@ -23,7 +23,7 @@ describe('Canonical Fulfillment Authority', () => {
       id: requestId, requesterId: 'buyer_delivery_idempotent', relatedOrderId: orderId,
       merchantId: providerId, listingId: 'delivery_listing_idempotent',
       pickup: { lat: -29.31, lng: 27.48 }, dropoff: { lat: -29.32, lng: 27.49 },
-      deliveryFeeMinorUnits: 2500, status: 'ACCEPTED'
+      deliveryFeeMinorUnits: 2500, escrowStatus: 'HELD', status: 'ACCEPTED' // a priced delivery must be escrowed before a job exists
     });
 
     const wrapped = testEnv.wrap(createDeliveryJob);
