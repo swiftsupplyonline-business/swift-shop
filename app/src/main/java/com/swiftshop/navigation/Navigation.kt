@@ -134,11 +134,6 @@ fun SwiftShopNavHost(
         ) { ListingDetailScreen(navController = navController) }
 
         composable(
-            route = Screen.RequestDelivery.route,
-            arguments = listOf(navArgument("listingId") { type = NavType.StringType })
-        ) { com.swiftshop.feature.delivery.RequestDeliveryScreen(navController = navController) }
-
-        composable(
             route = Screen.IncomingDeliveryRequests.route
         ) { com.swiftshop.feature.delivery.IncomingDeliveryRequestsScreen(navController = navController) }
 

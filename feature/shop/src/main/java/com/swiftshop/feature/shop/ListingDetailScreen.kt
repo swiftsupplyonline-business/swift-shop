@@ -245,8 +245,10 @@ fun ListingDetailScreen(
                                         ListingType.BUY, ListingType.PLACE_ORDER -> {
                                             viewModel.buyNow()
                                         }
+                                        // Delivery is a fulfillment service attached to a paid order:
+                                        // the buyer picks the order from "My orders" and chooses a provider there.
                                         ListingType.DELIVER ->
-                                            navController.navigate(Screen.RequestDelivery.createRoute(listing.id))
+                                            navController.navigate(Screen.Orders.route)
                                         else -> { activeSheet = listing.listingType }
                                     }
                                 },
