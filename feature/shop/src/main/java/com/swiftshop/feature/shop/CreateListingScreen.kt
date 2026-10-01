@@ -69,6 +69,7 @@ fun CreateListingScreen(
     val showFieldBuilder by viewModel.showCustomFieldBuilder.collectAsState()
     val showDelivery     by viewModel.showDeliveryEstimate.collectAsState()
     val deliveryDays     by viewModel.deliveryEstimateDays.collectAsState()
+    val driverSharePercent by viewModel.driverSharePercent.collectAsState()
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
@@ -247,6 +248,19 @@ fun CreateListingScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
                 }
+            }
+
+            // Delivery economics: the delivery listing author chooses the driver's share of the net fee.
+            if (listingType == ListingType.DELIVER) {
+                OutlinedTextField(
+                    value = driverSharePercent,
+                    onValueChange = viewModel::onDriverSharePercentChange,
+                    label = { Text("Driver share (%)") },
+                    supportingText = { Text("Choose the percentage of the net delivery fee paid to a separate driver. 0% means the provider keeps the full net fee.") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    suffix = { Text("%") }
+                )
             }
 
             // Delivery estimate
