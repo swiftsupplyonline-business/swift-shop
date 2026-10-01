@@ -46,3 +46,11 @@ restock. Remaining real gaps:
 - DEPLOY NOTE: rules deploy independently of functions; deploy only after the callables are live (already true on this branch).
 - Separate pre-existing issue: `FirebaseCommerceRepository.updateShop` writes `shops` directly (line ~55) but rules deny shop
   updates, so that call fails. Needs an `updateShop` callable (not yet written).
+
+## Shops (block-7-update-shop)
+- NEW callable `updateShop` (owner-only, allowlisted profile fields, validated; slug not regenerated on rename).
+  Android `FirebaseCommerceRepository.updateShop` now calls it (previously a denied direct write, so shop edits silently failed).
+- HARDENED `createShop`: it spread the whole client payload into the shop document, so a client could create a shop with
+  `isVerified: true`, a 5-star rating or inflated counters. Now allowlisted; server sets isVerified=false, rating=0, counters=0.
+- Pure validator `functions/src/shopFields.ts` with 3 unit tests (16 emulator-free tests pass in total).
+- Not compiled on Android (one-line change in FirebaseCommerceRepository).

@@ -1,5 +1,6 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
+import { pickShopFields, ShopValidationError } from "./shopFields";
 import { MopayClient, MOPAY_API_KEY } from "./mopay";
 import { resolveEntitlement } from "./entitlements";
 import {
@@ -1423,8 +1424,15 @@ export const createShop = onCall(async (request) => {
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
     const uid  = auth.uid;
-    const shop = request.data;
     const db   = admin.firestore();
+
+    // Allowlist: clients can no longer self-assign isVerified / rating / counters / ownerId.
+    let shop: Record<string, unknown>;
+    try {
+        shop = pickShopFields(request.data, { requireName: true });
+    } catch (e: any) {
+        throw new HttpsError("invalid-argument", e.message);
+    }
 
     try {
         return await db.runTransaction(async (transaction) => {
@@ -1447,9 +1455,15 @@ export const createShop = onCall(async (request) => {
 
             const shopId = db.collection("shops").doc().id;
             transaction.set(db.collection("shops").doc(shopId), {
+                isActive: true,
                 ...shop,
                 id: shopId,
                 ownerId: uid,
+                isVerified: false,
+                rating: 0,
+                reviewCount: 0,
+                followerCount: 0,
+                listingCount: 0,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
@@ -1463,6 +1477,37 @@ export const createShop = onCall(async (request) => {
     } catch (error: any) {
         throw new HttpsError("failed-precondition", error.message);
     }
+});
+
+/**
+ * Update a shop's profile. Replaces the client-side direct write that Firestore rules (correctly) deny.
+ * Only the owner may update, and only allowlisted profile fields are accepted. The public share slug
+ * is intentionally NOT regenerated on rename so already-shared /s/ and /d/ links keep working.
+ */
+export const updateShop = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const shopId = request.data?.shopId;
+    if (typeof shopId !== "string" || !shopId) throw new HttpsError("invalid-argument", "shopId required");
+
+    let updates: Record<string, unknown>;
+    try {
+        updates = pickShopFields(request.data?.updates, { requireName: false });
+    } catch (e: any) {
+        if (e instanceof ShopValidationError) throw new HttpsError("invalid-argument", e.message);
+        throw e;
+    }
+
+    const db = admin.firestore();
+    const ref = db.collection("shops").doc(shopId);
+    await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) throw new HttpsError("not-found", "Shop not found");
+        if (snap.data()!.ownerId !== auth.uid) throw new HttpsError("permission-denied", "Only the shop owner can update this shop");
+        tx.update(ref, { ...updates, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    });
+    return { success: true };
 });
 
 export const createListingComment = onCall(async (request) => {

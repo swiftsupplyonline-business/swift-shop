@@ -8,7 +8,7 @@ export { provisionNewUser } from "./auth";
 export {
     calculateOrderFees, calculatePurchaseTotal, createPurchaseOrder, createOrder, verifyMopayPayment, confirmDelivery,
     updateOrderStatus, cancelOrder, confirmMopayPayment, initiateSubscription,
-    createListing, deleteListing, createShop, updateListing,
+    createListing, deleteListing, createShop, updateShop, updateListing,
     createListingComment, deleteListingComment
 } from "./commerce";
 export {
