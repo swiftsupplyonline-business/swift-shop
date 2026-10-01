@@ -4,12 +4,26 @@ let idCounter = 0;
 jest.mock("firebase-admin", () => {
   const ref = (col: string, id: string) => ({ path: `${col}/${id}`, id });
   const db = {
-    collection: (col: string) => ({ doc: (id?: string) => ref(col, id || `auto${++idCounter}`) }),
+    collection: (col: string) => {
+      const query = (filters: Array<[string, any]>): any => ({
+        __query: true,
+        where: (f: string, _o: string, v: any) => query([...filters, [f, v]]),
+        limit: () => query(filters),
+        run: () => {
+          const docs = Object.entries(store)
+            .filter(([k, v]) => k.startsWith(col + "/") && filters.every(([f, val]) => v[f] === val))
+            .map(([k]) => ({ id: k.split("/")[1], ref: ref(col, k.split("/")[1]), data: () => store[k] }));
+          return { empty: docs.length === 0, docs };
+        },
+      });
+      return { doc: (id?: string) => ref(col, id || `auto${++idCounter}`), ...query([]) };
+    },
     runTransaction: async (fn: any) => {
       const writes: Array<() => void> = [];
       const tx = {
         get: async (r: any) => {
           if (writes.length) throw new Error("Firestore transactions require all reads to be executed before all writes.");
+          if (r.__query) return r.run();
           return { exists: r.path in store, data: () => store[r.path] };
         },
         update: (r: any, u: any) => writes.push(() => { store[r.path] = { ...store[r.path], ...u }; }),
