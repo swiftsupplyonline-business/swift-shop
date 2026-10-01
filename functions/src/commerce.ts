@@ -265,7 +265,7 @@ export const createPurchaseOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (r
                 amount: finalTotal / 100,
                 reference: orderId,
                 redirectUrl: redirectTarget === "WEB"
-                    ? `https://${JSON.parse(process.env.FIREBASE_CONFIG || "{}").projectId || "swift-d1baa"}.web.app/checkout?sessionId={SESSION_ID}`
+                    ? `https://${JSON.parse(process.env.FIREBASE_CONFIG || "{}").projectId || "swift-d1baa"}.web.app/checkout`
                     : "swiftshop://checkout/verify",
                 description: `Order ${orderId} at Swift Shop`,
                 customerEmail: customerEmail || auth.token.email || "",
