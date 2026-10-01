@@ -3,6 +3,7 @@ import * as admin from "firebase-admin";
 import { pickShopFields, ShopValidationError } from "./shopFields";
 import { idempotencyDocId, parseOrderItems, requireUid, OrderLine, MoneyValidationError } from "./moneyValidation";
 import { assertAccountActive } from "./accountGuard";
+import { writeRefund, isEscrowed, WalletRead } from "./deliveryFee";
 import { resolveStatusUpdate } from "./orderTransitions";
 import { MopayClient, MOPAY_API_KEY } from "./mopay";
 import { resolveEntitlement } from "./entitlements";
@@ -983,17 +984,42 @@ export const cancelOrder = onCall(async (request) => {
             const resSnap = await transaction.get(db.collection("reservations").where("orderId", "==", orderId));
             const listingRefs = resSnap.docs.map((d) => db.collection("listings").doc(d.data().listingId));
             const listingSnaps = listingRefs.length ? await transaction.getAll(...listingRefs) : [];
+            const openRequests = await transaction.get(db.collection("deliveryRequests")
+                .where("relatedOrderId", "==", orderId)
+                .where("status", "in", ["PENDING", "ACCEPTED"]));
+            const routeSnaps = await transaction.get(db.collection("deliveryRoutes").where("orderId", "==", orderId));
             const walletRef = db.collection("wallets").doc(order.buyerId);
-            const walletDoc = refundWallet ? await transaction.get(walletRef) : null;
+            const needsBuyerWallet = refundWallet || openRequests.docs.some((r) => isEscrowed(r.data()));
+            const walletDoc = needsBuyerWallet ? await transaction.get(walletRef) : null;
+            let buyerBalance = walletDoc && walletDoc.exists ? (walletDoc.data()?.availableBalanceMinorUnits || 0) : 0;
 
             // Phase 2: writes.
+            // Delivery requests: cancel them and give back any escrowed fee (balance tracked in one variable
+            // so the product refund and the fee refund are written to the wallet exactly once).
+            for (const rq of openRequests.docs) {
+                const dr = rq.data();
+                const walletForFee: WalletRead = { ref: walletRef, balance: buyerBalance };
+                const refunded = writeRefund(transaction, rq.ref, dr, walletForFee, "ORDER_CANCELLED",
+                    { status: "CANCELLED" });
+                if (refunded) buyerBalance += dr.deliveryFeeMinorUnits;
+                else transaction.update(rq.ref, { status: "CANCELLED", updatedAt: Date.now() });
+            }
+            for (const route of routeSnaps.docs) {
+                if (!["DELIVERED", "FAILED", "CANCELLED"].includes(route.data().status)) {
+                    transaction.update(route.ref, { status: "CANCELLED", updatedAt: now });
+                }
+            }
             if (refundWallet) {
-                const currentBalance = walletDoc && walletDoc.exists ? (walletDoc.data()?.availableBalanceMinorUnits || 0) : 0;
+                buyerBalance += order.totalMinorUnits;
+            }
+            if (refundWallet || buyerBalance !== (walletDoc && walletDoc.exists ? (walletDoc.data()?.availableBalanceMinorUnits || 0) : 0)) {
                 // set+merge so a refund can never be dropped because the wallet doc is missing
                 transaction.set(walletRef, {
-                    availableBalanceMinorUnits: currentBalance + order.totalMinorUnits,
+                    availableBalanceMinorUnits: buyerBalance,
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 }, { merge: true });
+            }
+            if (refundWallet) {
                 const ledgerId = db.collection("ledgerEntries").doc().id;
                 transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
                     id: ledgerId,
@@ -1427,6 +1453,21 @@ export const confirmDelivery = onCall(async (request) => {
             payouts.set(order.sellerId, (payouts.get(order.sellerId) || 0) + sellerProceeds);
             if (deliveryFee > 0) payouts.set(deliveryProviderId, (payouts.get(deliveryProviderId) || 0) + deliveryFee);
 
+            // Purchase-first flow: the buyer escrowed the delivery fee when requesting delivery. It is paid to
+            // the delivery listing's author only once the delivery has actually succeeded.
+            const escrowQuery = await transaction.get(db.collection("deliveryRequests")
+                .where("relatedOrderId", "==", orderId)
+                .where("feePaymentStatus", "==", "ESCROWED")
+                .limit(1));
+            const escrowDoc = escrowQuery.empty ? null : escrowQuery.docs[0];
+            const escrow = escrowDoc && isEscrowed(escrowDoc.data()) ? escrowDoc.data() : null;
+            if (escrow) {
+                if (order.fulfillmentStatus !== "DELIVERED") {
+                    throw new Error("Delivery is not complete yet. Cancel the delivery request first if you want to settle without it.");
+                }
+                payouts.set(escrow.merchantId, (payouts.get(escrow.merchantId) || 0) + escrow.deliveryFeeMinorUnits);
+            }
+
             // All reads first: Firestore rejects any transaction read issued after a write.
             const walletRefs = new Map(Array.from(payouts.keys()).map((uid) => [uid, db.collection("wallets").doc(uid)]));
             const balances = new Map<string, number>();
@@ -1476,6 +1517,20 @@ export const confirmDelivery = onCall(async (request) => {
                     reference: `DELIVERY_FEE_${orderId}`,
                     timestamp: now
                 });
+            }
+
+            if (escrow && escrowDoc) {
+                const escrowLedgerId = db.collection("ledgerEntries").doc().id;
+                transaction.set(db.collection("ledgerEntries").doc(escrowLedgerId), {
+                    id: escrowLedgerId,
+                    debitAccount: "system_delivery_escrow",
+                    creditAccount: `user_${escrow.merchantId}`,
+                    amountMinorUnits: escrow.deliveryFeeMinorUnits,
+                    currency: "LSL",
+                    reference: `DELIVERY_FEE_PAYOUT_${escrowDoc.id}`,
+                    timestamp: now
+                });
+                transaction.update(escrowDoc.ref, { feePaymentStatus: "RELEASED", updatedAt: Date.now() });
             }
 
             if (platformFee > 0) {

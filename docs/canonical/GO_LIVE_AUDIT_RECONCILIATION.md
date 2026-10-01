@@ -37,3 +37,22 @@ commits. Each finding re-checked against current code:
 | `docs/canonical/CANONICAL_PLATFORM_*.md`, `AUTHORITY_MATRIX.md` | Still missing, and `PROJECT_STATE.md` is stale. I have not drafted them: they should be written from the decisions you have made, not reverse-engineered by me. |
 | Functions tests 6/14 failing; Android JUnit; exports; CI triggers; confirmDelivery | See the table above (batch A / Block 9). |
 | Web MoPay "coming soon" | Product decision: Wallet-only web, or build MoPay on web? |
+
+## Batch B — delivery-fee escrow (purchase-first flow)
+Implements the decided economics, reusing wallets + ledgerEntries (no new payment architecture). `functions/src/deliveryFee.ts`.
+
+| Event | Money movement | `feePaymentStatus` |
+|---|---|---|
+| `createDeliveryRequest` | buyer wallet -> `system_delivery_escrow` (fails if balance too low; one active request per order) | ESCROWED |
+| provider declines / request expires (scheduler) / buyer cancels (PENDING, or ACCEPTED with no job yet) | escrow -> buyer wallet | REFUNDED |
+| delivery job FAILED or CANCELLED (`updateDeliveryStatus`) | escrow -> buyer wallet | REFUNDED |
+| order cancelled (`cancelOrder`) | escrow -> buyer wallet (together with the product refund, one wallet write); request + open job cancelled | REFUNDED |
+| buyer confirms a DELIVERED order (`confirmDelivery`) | escrow -> delivery listing's author (`merchantId`), same transaction as seller settlement | RELEASED |
+
+Rules: the fee is released only after the buyer confirms and only if the delivery is DELIVERED (confirming earlier is refused with
+"cancel the delivery request first"); every refund/release checks the escrowed state first so repeats and races cannot pay twice;
+the expiry job now runs one transaction per request so the refund is atomic with the status change.
+
+Not covered: MoPay for the fee (wallet only), no auto-settlement if the buyer never confirms delivery (the fee stays escrowed
+until they confirm or an admin acts), no emulator run. Android: `createDeliveryRequest` can now fail with an insufficient-balance
+message; the app shows the error string, but there is no "top up" prompt. Route docs now carry `requestId`.
