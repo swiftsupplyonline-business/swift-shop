@@ -306,12 +306,6 @@ object LogisticsModule {
     fun provideObserveDeliveryRouteUseCase(repo: DeliveryRepository) = ObserveDeliveryRouteUseCase(repo)
 
     @Provides
-    fun provideRequestDeliveryUseCase(repo: DeliveryRepository) = RequestDeliveryUseCase(repo)
-
-    @Provides
-    fun provideCreateDeliveryRequestUseCase(repo: DeliveryRepository) = CreateDeliveryRequestUseCase(repo)
-
-    @Provides
     fun provideGetDeliveryOptionsUseCase(repo: DeliveryRepository) = GetDeliveryOptionsUseCase(repo)
 
     @Provides

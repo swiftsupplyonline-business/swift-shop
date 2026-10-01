@@ -8,7 +8,7 @@ export { provisionNewUser } from "./auth";
 export {
     calculateOrderFees, calculatePurchaseTotal, createPurchaseOrder, createOrder, verifyMopayPayment, confirmDelivery,
     updateOrderStatus, cancelOrder, confirmMopayPayment, initiateSubscription,
-    createListing, deleteListing, createShop, updateListing,
+    createListing, deleteListing, createShop, updateShop, updateListing,
     createListingComment, deleteListingComment
 } from "./commerce";
 export {
@@ -23,7 +23,7 @@ export { syncProfileCounters } from "./maintenance";
 export * from "./finance";
 
 // Legacy logistics endpoints retained for compatibility.
-export { requestDelivery, expireDeliveryRequests } from "./logistics";
+export { requestDelivery } from "./logistics";
 
 // Canonical fulfillment boundary: delivery is independent of product purchase/payment.
 export {
@@ -34,7 +34,8 @@ export {
     cancelDeliveryRequest,
     createDeliveryJob,
     updateDeliveryStatus,
-    authorizeDriver
+    authorizeDriver,
+    expireDeliveryRequests
 } from "./fulfillment";
 
 // Reservation Functions

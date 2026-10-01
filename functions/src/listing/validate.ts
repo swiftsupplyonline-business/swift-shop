@@ -12,7 +12,7 @@
  * commerce.ts integration:
  *   createListing       → validateCreateInput() + validateCreateSemantic()
  *   updateListing       → validateUpdateInput() + validateUpdateSemantic()
- *   createOrder         → assertPurchasable()
+ *   createPurchaseOrder → assertPurchasable()
  *   createDeliveryRequest → assertDeliverable()
  *   verifyMopayPayment  → assertCommittable()
  */
@@ -299,14 +299,14 @@ export function validateRestockSemantic(
 // ─── Action gates ─────────────────────────────────────────────────────────────
 
 /**
- * Gate: can this listing be purchased via createOrder?
+ * Gate: can this listing be purchased via createPurchaseOrder?
  *
  * Checks:
  *  1. ListingType supports purchase
  *  2. Status is ACTIVE
  *  3. Stock is available (STOCKED mode)
  *
- * Replaces the inline Listing checks in commerce.ts createOrder.
+ * Replaces the inline Listing checks in commerce.ts createPurchaseOrder.
  * Throws a plain Error; caller wraps in HttpsError.
  */
 export function assertPurchasable(

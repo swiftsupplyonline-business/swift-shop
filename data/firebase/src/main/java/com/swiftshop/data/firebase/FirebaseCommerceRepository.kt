@@ -52,7 +52,10 @@ class FirebaseCommerceRepository @Inject constructor(
     }
 
     override suspend fun updateShop(shop: Shop): Result<Unit> = runCatching {
-        firestore.collection("shops").document(shop.id).update(shop.toUpdateMap()).await()
+        // Firestore rules deny direct shop writes; the callable enforces ownership + allowlisted fields.
+        functions.getHttpsCallable("updateShop")
+            .call(mapOf("shopId" to shop.id, "updates" to shop.toUpdateMap()))
+            .await()
         Unit
     }
 

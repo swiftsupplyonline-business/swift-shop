@@ -1,5 +1,6 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
+import { pickShopFields, ShopValidationError } from "./shopFields";
 import { MopayClient, MOPAY_API_KEY } from "./mopay";
 import { resolveEntitlement } from "./entitlements";
 import {
@@ -25,6 +26,8 @@ import {
     // Lifecycle
     ListingStatus,
     isAvailableFromStatus,
+    statusFromAvailabilityToggle,
+    buildNewListingDoc,
     inventoryModeForType,
     defaultStockForMode,
     // Ownership counters
@@ -952,37 +955,13 @@ export const createListing = onCall(async (request) => {
             const listingId = db.collection("listings").doc().id;
             const shareSlug = await generateUniqueListingSlug(db, rawInput.shopId, rawInput.title, listingId);
 
-            // Lifecycle: new listings start ACTIVE (published immediately)
-            // A future "save as draft" flow would pass status: DRAFT explicitly.
-            const status    = ListingStatus.ACTIVE;
-            const isAvailable = isAvailableFromStatus(status);
-            const now       = admin.firestore.FieldValue.serverTimestamp();
-
-            const newListing = {
-                ...clientFields,
-                id:               listingId,
-                sellerId:         uid,
-                listingType:      listingType,
-                inventoryMode:    inventoryMode,
-                stockQuantity:    stockQuantity,
-                reservedQuantity: 0,
-                status:           status,
-                isAvailable:      isAvailable,
-                isSponsored:      false,
-                shareSlug:        shareSlug,
-                slugAliases:      [],
-                title_lowercase:  rawInput.title.toLowerCase(),
-                commitmentCount:  0,
-                likeCount:        0,
-                bookmarkCount:    0,
-                commentCount:     0,
-                shareCount:       0,
-                viewCount:        0,
-                rankingScore:     0,
-                publishedAt:      now,  // set immediately since we publish on creation
-                createdAt:        now,
-                updatedAt:        now,
-            };
+            const now = admin.firestore.FieldValue.serverTimestamp();
+            // ENGINE: sole assembler of the new listing document (server-owned fields)
+            const newListing = buildNewListingDoc({
+                clientFields, listingId, sellerId: uid, title: rawInput.title,
+                listingType, inventoryMode, stockQuantity, shareSlug, now,
+            });
+            const status = newListing.status as ListingStatus;
 
             transaction.set(db.collection("listings").doc(listingId), newListing);
 
@@ -1065,13 +1044,9 @@ export const updateListing = onCall(async (request) => {
                 Object.assign(filteredUpdates, slugPayload);
             }
 
-            // Derive new status from isAvailable if client passed it (legacy compat)
-            // The engine's status is authoritative; isAvailable is derived from it.
-            // If the client passes isAvailable, interpret it as a PAUSED/ACTIVE toggle.
+            // ENGINE: legacy isAvailable flag -> PAUSED/ACTIVE toggle; status stays authoritative.
             const oldStatus = listing.status as ListingStatus || (listing.isAvailable ? ListingStatus.ACTIVE : ListingStatus.PAUSED);
-            let newStatus   = oldStatus;
-            if (filteredUpdates.isAvailable === true  && oldStatus === ListingStatus.PAUSED) newStatus = ListingStatus.ACTIVE;
-            if (filteredUpdates.isAvailable === false && oldStatus === ListingStatus.ACTIVE)  newStatus = ListingStatus.PAUSED;
+            const newStatus = statusFromAvailabilityToggle(oldStatus, filteredUpdates.isAvailable);
             if (newStatus !== oldStatus) {
                 filteredUpdates.status      = newStatus;
                 filteredUpdates.isAvailable = isAvailableFromStatus(newStatus);
@@ -1449,8 +1424,15 @@ export const createShop = onCall(async (request) => {
     if (!auth) throw new HttpsError("unauthenticated", "Auth required");
 
     const uid  = auth.uid;
-    const shop = request.data;
     const db   = admin.firestore();
+
+    // Allowlist: clients can no longer self-assign isVerified / rating / counters / ownerId.
+    let shop: Record<string, unknown>;
+    try {
+        shop = pickShopFields(request.data, { requireName: true });
+    } catch (e: any) {
+        throw new HttpsError("invalid-argument", e.message);
+    }
 
     try {
         return await db.runTransaction(async (transaction) => {
@@ -1473,9 +1455,15 @@ export const createShop = onCall(async (request) => {
 
             const shopId = db.collection("shops").doc().id;
             transaction.set(db.collection("shops").doc(shopId), {
+                isActive: true,
                 ...shop,
                 id: shopId,
                 ownerId: uid,
+                isVerified: false,
+                rating: 0,
+                reviewCount: 0,
+                followerCount: 0,
+                listingCount: 0,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
@@ -1489,6 +1477,37 @@ export const createShop = onCall(async (request) => {
     } catch (error: any) {
         throw new HttpsError("failed-precondition", error.message);
     }
+});
+
+/**
+ * Update a shop's profile. Replaces the client-side direct write that Firestore rules (correctly) deny.
+ * Only the owner may update, and only allowlisted profile fields are accepted. The public share slug
+ * is intentionally NOT regenerated on rename so already-shared /s/ and /d/ links keep working.
+ */
+export const updateShop = onCall(async (request) => {
+    const auth = request.auth;
+    if (!auth) throw new HttpsError("unauthenticated", "Auth required");
+
+    const shopId = request.data?.shopId;
+    if (typeof shopId !== "string" || !shopId) throw new HttpsError("invalid-argument", "shopId required");
+
+    let updates: Record<string, unknown>;
+    try {
+        updates = pickShopFields(request.data?.updates, { requireName: false });
+    } catch (e: any) {
+        if (e instanceof ShopValidationError) throw new HttpsError("invalid-argument", e.message);
+        throw e;
+    }
+
+    const db = admin.firestore();
+    const ref = db.collection("shops").doc(shopId);
+    await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) throw new HttpsError("not-found", "Shop not found");
+        if (snap.data()!.ownerId !== auth.uid) throw new HttpsError("permission-denied", "Only the shop owner can update this shop");
+        tx.update(ref, { ...updates, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    });
+    return { success: true };
 });
 
 export const createListingComment = onCall(async (request) => {

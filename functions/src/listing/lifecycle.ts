@@ -108,3 +108,17 @@ export function activeCountDelta(
     if (wasActive  && !isActive) return -1;
     return 0;
 }
+
+/**
+ * Legacy-client compatibility: interpret the old boolean `isAvailable` flag as a
+ * PAUSED <-> ACTIVE toggle. Returns the new status (or the old one if no change applies).
+ * The engine's `status` is authoritative; `isAvailable` is only ever derived from it.
+ */
+export function statusFromAvailabilityToggle(
+    currentStatus: ListingStatus,
+    isAvailable:   unknown,
+): ListingStatus {
+    if (isAvailable === true  && currentStatus === ListingStatus.PAUSED) return ListingStatus.ACTIVE;
+    if (isAvailable === false && currentStatus === ListingStatus.ACTIVE) return ListingStatus.PAUSED;
+    return currentStatus;
+}

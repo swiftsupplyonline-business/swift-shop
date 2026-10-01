@@ -52,4 +52,23 @@ describe("Firestore Security Rules", () => {
         authorized: true
     }));
   });
+
+  test("Seller cannot write engine-owned listing fields directly", async () => {
+    const aliceDb = testEnv.authenticatedContext("alice").firestore();
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection("listings").doc("listing_2").set({
+            sellerId: "alice", status: "SUSPENDED", inventoryMode: "STOCKED", stockQuantity: 1, reservedQuantity: 0
+        });
+    });
+    for (const patch of [
+        { status: "ACTIVE" },            // un-suspend self
+        { reservedQuantity: 0 },
+        { inventoryMode: "UNLIMITED" },  // infinite stock
+        { isAvailable: true },
+        { shareSlug: "hijacked" },
+        { title: "benign edit" },        // even benign edits must use the callable
+    ]) {
+        await assertFails(aliceDb.collection("listings").doc("listing_2").update(patch));
+    }
+  });
 });
