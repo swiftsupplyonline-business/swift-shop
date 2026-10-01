@@ -3,13 +3,13 @@ import { planDeliveryPayout, outcomeAtSettlement, refundsOnRouteStatus, sanitize
 const sum = (l: { amountMinorUnits: number }[]) => l.reduce((a, b) => a + b.amountMinorUnits, 0);
 
 describe("planDeliveryPayout", () => {
-  test("provider is also the driver: one earnings line, no platform cut by default", () => {
+  test("provider is also the driver: provider receives the net fee after the 1.5% platform cut", () => {
     const l = planDeliveryPayout({ feeMinorUnits: 5000, providerId: "p", driverId: "p", driverShareBps: 7000 });
-    expect(l).toEqual([{ kind: "PROVIDER_EARNINGS", uid: "p", amountMinorUnits: 5000 }]);
+    expect(l).toEqual([{ kind: "PLATFORM_FEE", uid: null, amountMinorUnits: 75 }, { kind: "PROVIDER_EARNINGS", uid: "p", amountMinorUnits: 4925 }]);
   });
   test("distinct driver: ledger distinguishes driver compensation from provider earnings", () => {
     const l = planDeliveryPayout({ feeMinorUnits: 5000, providerId: "p", driverId: "d", driverShareBps: 6000 });
-    expect(l.map((x) => [x.kind, x.uid, x.amountMinorUnits])).toEqual([["DRIVER_COMPENSATION", "d", 3000], ["PROVIDER_EARNINGS", "p", 2000]]);
+    expect(l.map((x) => [x.kind, x.uid, x.amountMinorUnits])).toEqual([["PLATFORM_FEE", null, 75], ["DRIVER_COMPENSATION", "d", 2955], ["PROVIDER_EARNINGS", "p", 1970]]);
   });
   test("platform fee is taken first and the split always conserves the fee", () => {
     for (const fee of [1, 7, 99, 5000, 12345]) for (const pm of [0, 15, 100]) for (const bps of [0, 3333, 10000]) {
