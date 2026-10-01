@@ -469,6 +469,7 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
             let deliveryFee = 0;
             let finalDeliveryListingId = selectedDeliveryListingId;
             let drShopId = "";
+            let deliveryProviderId: string | null = null;
 
             if (requiresDelivery) {
                 const drRef = db.collection("deliveryRequests").doc(deliveryRequestId);
@@ -482,6 +483,8 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 const drListingSnap = await transaction.get(drListingRef);
                 if (!drListingSnap.exists) throw new Error("Delivery listing not found");
                 drShopId = drListingSnap.data()!.shopId as string;
+                // The delivery fee is paid to the author of the delivery listing, snapshotted now.
+                deliveryProviderId = (drListingSnap.data()!.sellerId as string) || (drData.merchantId as string) || null;
                 deliveryFee = drData.deliveryFeeMinorUnits || 0;
                 if (!Number.isSafeInteger(deliveryFee) || deliveryFee < 0) throw new Error("Invalid delivery fee on delivery request");
                 finalDeliveryListingId = drData.listingId;
@@ -604,6 +607,7 @@ export const createOrder = onCall({ secrets: [MOPAY_API_KEY] }, async (request) 
                 items: validatedItems,
                 subtotalMinorUnits: subtotal,
                 deliveryFeeMinorUnits: deliveryFee,
+                deliveryProviderId,
                 platformFeeMinorUnits: platformFee,
                 totalMinorUnits: total,
                 currency: "LSL",
@@ -732,20 +736,26 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
 
                 if (freshOrder.status === "CONFIRMED") return; // Idempotency
                 if (freshOrder.status === "CANCELLED" || freshOrder.status === "FAILED") {
-                    // Paid after the order was cancelled/expired: the buyer's money has arrived but the order
-                    // cannot be fulfilled (stock was released). Record it for refund instead of throwing, so
-                    // the payment is never silently kept. No gateway refund exists yet: this is a manual queue.
-                    if (freshOrder.refundStatus) return; // already recorded (idempotent)
+                    // Paid after the order was cancelled/expired: the order cannot be fulfilled (stock was
+                    // released), so the money goes straight back to the buyer's Swift wallet.
+                    if (freshOrder.refundStatus) { lateRefund = true; return; } // already refunded: repeat calls get the same message, never "success"
+                    const buyerWalletRef = db.collection("wallets").doc(order.buyerId);
+                    const buyerWalletDoc = await transaction.get(buyerWalletRef); // read before any write
                     const lateNow = admin.firestore.FieldValue.serverTimestamp();
+                    const currentBalance = buyerWalletDoc.exists ? (buyerWalletDoc.data()?.availableBalanceMinorUnits || 0) : 0;
+                    transaction.set(buyerWalletRef, {
+                        availableBalanceMinorUnits: currentBalance + order.totalMinorUnits,
+                        updatedAt: lateNow
+                    }, { merge: true });
                     const lateLedgerId = db.collection("ledgerEntries").doc().id;
                     transaction.set(db.collection("ledgerEntries").doc(lateLedgerId), {
                         id: lateLedgerId,
                         transactionId: mopaySession.transactionId || `MOPAY_${sessionId}`,
                         debitAccount: "system_mopay_clearing",
-                        creditAccount: "system_refund_pending",
+                        creditAccount: `user_${order.buyerId}`,
                         amountMinorUnits: order.totalMinorUnits,
                         currency: "LSL",
-                        reference: `ORDER_LATE_PAYMENT_${order.id}`,
+                        reference: `ORDER_LATE_PAYMENT_REFUND_${order.id}`,
                         timestamp: lateNow
                     });
                     transaction.set(db.collection("paymentRefunds").doc(order.id), {
@@ -756,12 +766,12 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                         mopaySessionId: sessionId,
                         gatewayTransactionId: mopaySession.transactionId || null,
                         reason: "PAID_AFTER_CANCEL",
-                        status: "REQUIRED",
+                        status: "REFUNDED_TO_WALLET",
                         createdAt: lateNow
                     });
                     transaction.update(orderDoc.ref, {
                         paymentStatus: "SUCCESS_AFTER_CANCEL",
-                        refundStatus: "REQUIRED",
+                        refundStatus: "REFUNDED_TO_WALLET",
                         gatewayTransactionId: mopaySession.transactionId || null,
                         updatedAt: lateNow
                     });
@@ -843,7 +853,10 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                 });
             });
 
-            if (lateRefund) return { status: "PAID_AFTER_CANCEL", orderId: order.id };
+            if (lateRefund) {
+                // The app treats a non-throwing result as "order placed", so tell the buyer plainly instead.
+                throw new Error("Your payment arrived after the order expired, so the order was not placed. The full amount has been returned to your Swift wallet.");
+            }
             return { status: "SUCCESS", orderId: order.id };
 
         } else if (
@@ -900,14 +913,14 @@ export const verifyMopayPayment = onCall({ secrets: [MOPAY_API_KEY] }, async (re
                     updatedAt: now
                 });
             });
+            throw new Error(`Payment ${String(mopaySession.transactionStatus).toLowerCase()}. No money was taken for this order.`);
         } else {
             await orderDoc.ref.update({
                 paymentStatus: mopaySession.transactionStatus,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
+            throw new Error("Payment is still being processed. Please check again in a moment.");
         }
-
-        return { status: mopaySession.transactionStatus, orderId: order.id };
 
     } catch (error: any) {
         console.error("Payment verification failed:", error);
@@ -947,8 +960,9 @@ export const cancelOrder = onCall(async (request) => {
 
             // A settled order has already paid the seller: cancelling it would refund the buyer a
             // second time. Completed/failed orders are never cancellable.
-            if (order.settlementStatus === "SETTLED" || ["DELIVERED", "COMPLETED", "FAILED"].includes(order.status)) {
-                throw new Error("Order is already completed and cannot be cancelled");
+            if (order.settlementStatus === "SETTLED" || order.fulfillmentStatus === "DELIVERED" ||
+                ["DELIVERED", "COMPLETED", "FAILED"].includes(order.status)) {
+                throw new Error("Orders cannot be cancelled after delivery");
             }
             // The buyer can cancel until the seller has marked the order ready for pickup/dispatch.
             if (isBuyer && !isSeller && !isAdmin &&
@@ -1403,13 +1417,23 @@ export const confirmDelivery = onCall(async (request) => {
             const deliveryFee   = order.deliveryFeeMinorUnits || 0;
             const platformFee   = order.platformFeeMinorUnits || 0;
             const total         = order.totalMinorUnits || 0;
-            const sellerProceeds = subtotal + deliveryFee;
-            if (sellerProceeds + platformFee !== total) throw new Error("Order amounts are inconsistent; refusing to settle.");
+            const sellerProceeds = subtotal;
+            if (subtotal + deliveryFee + platformFee !== total) throw new Error("Order amounts are inconsistent; refusing to settle.");
+
+            // The delivery fee belongs to the author of the delivery listing (snapshotted on the order).
+            // Orders created before that snapshot existed fall back to paying the seller.
+            const deliveryProviderId: string = deliveryFee > 0 ? (order.deliveryProviderId || order.sellerId) : "";
+            const payouts = new Map<string, number>();
+            payouts.set(order.sellerId, (payouts.get(order.sellerId) || 0) + sellerProceeds);
+            if (deliveryFee > 0) payouts.set(deliveryProviderId, (payouts.get(deliveryProviderId) || 0) + deliveryFee);
 
             // All reads first: Firestore rejects any transaction read issued after a write.
-            const sellerWalletRef = db.collection("wallets").doc(order.sellerId);
-            const sellerWalletDoc = await transaction.get(sellerWalletRef);
-            const currentSellerBalance = sellerWalletDoc.exists ? (sellerWalletDoc.data()?.availableBalanceMinorUnits || 0) : 0;
+            const walletRefs = new Map(Array.from(payouts.keys()).map((uid) => [uid, db.collection("wallets").doc(uid)]));
+            const balances = new Map<string, number>();
+            for (const [uid, ref] of walletRefs) {
+                const snap = await transaction.get(ref);
+                balances.set(uid, snap.exists ? (snap.data()?.availableBalanceMinorUnits || 0) : 0);
+            }
 
             const ledgerId = db.collection("ledgerEntries").doc().id;
             transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
@@ -1422,12 +1446,13 @@ export const confirmDelivery = onCall(async (request) => {
                 timestamp: now
             });
 
-            // set+merge: a seller without a wallet doc yet must still get paid (update() would throw and
-            // leave the order stuck unsettled).
-            transaction.set(sellerWalletRef, {
-                availableBalanceMinorUnits: currentSellerBalance + sellerProceeds,
-                updatedAt: now
-            }, { merge: true });
+            // set+merge: a recipient without a wallet doc yet must still get paid.
+            for (const [uid, amount] of payouts) {
+                transaction.set(walletRefs.get(uid)!, {
+                    availableBalanceMinorUnits: (balances.get(uid) || 0) + amount,
+                    updatedAt: now
+                }, { merge: true });
+            }
 
             const sellerLedgerId = db.collection("ledgerEntries").doc().id;
             transaction.set(db.collection("ledgerEntries").doc(sellerLedgerId), {
@@ -1439,6 +1464,19 @@ export const confirmDelivery = onCall(async (request) => {
                 reference: `SALE_PROCEEDS_${orderId}`,
                 timestamp: now
             });
+
+            if (deliveryFee > 0) {
+                const deliveryLedgerId = db.collection("ledgerEntries").doc().id;
+                transaction.set(db.collection("ledgerEntries").doc(deliveryLedgerId), {
+                    id: deliveryLedgerId,
+                    debitAccount: "system_clearing",
+                    creditAccount: `user_${deliveryProviderId}`,
+                    amountMinorUnits: deliveryFee,
+                    currency: "LSL",
+                    reference: `DELIVERY_FEE_${orderId}`,
+                    timestamp: now
+                });
+            }
 
             if (platformFee > 0) {
                 const feeLedgerId = db.collection("ledgerEntries").doc().id;
@@ -1492,6 +1530,9 @@ export const updateOrderStatus = onCall(async (request) => {
                 current: order.status,
                 next: status,
                 paymentStatus: order.paymentStatus,
+                // Seller may hand the order over themselves for pickup orders or when they authored the
+                // delivery listing; otherwise the courier's route sets DISPATCHED.
+                sellerIsCourier: !order.requiresDelivery || order.deliveryProviderId === order.sellerId,
             });
 
             transaction.update(orderRef, {

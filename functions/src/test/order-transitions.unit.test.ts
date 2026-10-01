@@ -33,4 +33,13 @@ describe("resolveStatusUpdate", () => {
       expect(() => resolveStatusUpdate({ ...base, isAdmin: true, current, next })).toThrow();
     }
   });
+  test("seller self-delivery: READY -> DISPATCHED only when the seller is the courier", () => {
+    expect(() => resolveStatusUpdate({ ...base, isSeller: true, sellerIsCourier: true, current: "READY", next: "DISPATCHED" })).not.toThrow();
+    expect(() => resolveStatusUpdate({ ...base, isSeller: true, sellerIsCourier: false, current: "READY", next: "DISPATCHED" })).toThrow();
+    expect(() => resolveStatusUpdate({ ...base, isSeller: true, current: "READY", next: "DISPATCHED" })).toThrow();
+  });
+  test("seller self-delivery never lets the seller mark DELIVERED or skip READY", () => {
+    expect(() => resolveStatusUpdate({ ...base, isSeller: true, sellerIsCourier: true, current: "DISPATCHED", next: "DELIVERED" })).toThrow();
+    expect(() => resolveStatusUpdate({ ...base, isSeller: true, sellerIsCourier: true, current: "PROCESSING", next: "DISPATCHED" })).toThrow();
+  });
 });

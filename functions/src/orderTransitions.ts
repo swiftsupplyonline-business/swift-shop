@@ -23,6 +23,7 @@ const PAID = new Set(["SUCCESS", "PAID"]);
 export function resolveStatusUpdate(p: {
     isAdmin: boolean; isSeller: boolean; isBuyer: boolean;
     current: string; next: string; paymentStatus?: string;
+    sellerIsCourier?: boolean;
 }): void {
     const { current, next } = p;
     if (next === "CANCELLED" || next === "REFUNDED") {
@@ -30,7 +31,9 @@ export function resolveStatusUpdate(p: {
     }
     if (p.isSeller) {
         if (!PAID.has(p.paymentStatus || "")) throw new Error("Order has not been paid");
-        if (!(FULFILLMENT_STEPS[current] || []).includes(next)) {
+        const allowed = [...(FULFILLMENT_STEPS[current] || []),
+            ...(p.sellerIsCourier && current === "READY" ? ["DISPATCHED"] : [])];
+        if (!allowed.includes(next)) {
             throw new Error(`Seller cannot transition order from ${current} to ${next}`);
         }
         return;

@@ -1,6 +1,6 @@
 # Block 9 — Order money flows (commerce.ts)
 
-Branch `block-9-order-money`, based on `block-8-rules-money`. Not merged. Type-checks; 43 emulator-free unit tests pass.
+Branch `block-9-order-money`, based on `block-8-rules-money`. Not merged. Type-checks; 51 emulator-free unit tests pass.
 NOT run: Firestore emulator tests, any MoPay flow, any order transaction against a real/emulated Firestore.
 
 ## Fixed
@@ -38,10 +38,6 @@ NOT run: Firestore emulator tests, any MoPay flow, any order transaction against
 ## Still open
 - Nothing reads or acts on `paymentRefunds` yet (no admin screen/function to mark a refund done or credit the wallet).
   The client does not know the `PAID_AFTER_CANCEL` status; it will show it as an unknown result.
-- Buyer app calls `updateOrderStatus(DISPATCHED)` for READY orders (OrdersViewModel.fulfillOrder), which a seller is not
-  allowed to do (courier route sets DISPATCHED). Seller self-delivery therefore fails today; needs a product decision.
-- Cancelling an order that is DELIVERED but not yet settled is refused (buyer must confirm delivery or contact support).
-- Delivery fee is paid to the seller, not the delivery provider (product decision).
 - `confirmMopayPayment` (admin) only accepts PENDING, which new orders never are; no gateway check, no commit.
 - A delivery request is not consumed by the order that uses it (reusable).
 - `commitmentCount` is not decremented when committed stock is returned.
@@ -61,3 +57,20 @@ unit test (not the emulator). There is no admin UI yet, and the client is not no
   == total before paying out, and the already-SETTLED repeat check stays first (idempotent).
 - Test uses an in-memory Firestore fake that, like the real SDK, throws on read-after-write.
 - Unchanged: the delivery fee is still paid to the seller, not the courier (product decision).
+
+## Block 9e — your decisions
+- **Late MoPay payment is refunded.** Paid after the order was cancelled/expired: the buyer's Swift wallet is credited the
+  full amount in the same transaction (ledger `system_mopay_clearing` -> `user_<buyer>`, `paymentRefunds/{orderId}` status
+  REFUNDED_TO_WALLET, order `refundStatus`). It goes to the wallet, not back to the mobile-money number; the buyer can
+  withdraw it. Repeat calls never refund twice.
+- `verifyMopayPayment` now THROWS for anything that is not a confirmed order (late refund, FAILED/CANCELLED, still
+  PENDING). The Android client treated any non-throwing result as "order placed", so a failed or pending payment looked
+  like a success. No client change needed: it shows the message.
+- **Delivery fee goes to the author of the delivery listing.** `createOrder` snapshots `deliveryProviderId`; `confirmDelivery`
+  pays product money to the seller and the fee to that provider (one wallet if they are the same person, wallets created if
+  missing, separate `DELIVERY_FEE_<order>` ledger entry). Orders created before this change have no snapshot and still pay
+  the seller.
+- **Seller self-delivery:** a seller may move READY -> DISPATCHED for pickup orders, or when they authored the delivery
+  listing. Orders with another person's courier are still dispatched by that courier's route. The buyer still confirms delivery.
+- **Nobody can cancel after delivery** (status DELIVERED/COMPLETED, fulfillmentStatus DELIVERED, or settled): buyer, seller
+  and admin alike.

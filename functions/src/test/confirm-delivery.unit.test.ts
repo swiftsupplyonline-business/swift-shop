@@ -43,7 +43,26 @@ describe("confirmDelivery", () => {
     await expect(call()).resolves.toEqual({ success: true });
     expect(store["wallets/seller1"].availableBalanceMinorUnits).toBe(11500);
     expect(store["orders/o1"].settlementStatus).toBe("SETTLED");
-    expect(ledger().map((l) => l.amountMinorUnits).sort((a, b) => a - b)).toEqual([150, 10500, 10650]);
+    expect(ledger().map((l) => l.amountMinorUnits).sort((a, b) => a - b)).toEqual([150, 500, 10000, 10650]);
+  });
+  test("delivery fee goes to the delivery listing's author, product money to the seller", async () => {
+    store["orders/o1"].deliveryProviderId = "courier1";
+    store["wallets/courier1"] = { availableBalanceMinorUnits: 200 };
+    await call();
+    expect(store["wallets/seller1"].availableBalanceMinorUnits).toBe(11000);
+    expect(store["wallets/courier1"].availableBalanceMinorUnits).toBe(700);
+    expect(ledger().map((l) => l.reference).sort()).toEqual(
+      ["DELIVERY_FEE_o1", "PLATFORM_FEE_o1", "SALE_PROCEEDS_o1", "SETTLE_ORDER_o1"]);
+  });
+  test("seller who is also the courier receives both amounts in one wallet", async () => {
+    store["orders/o1"].deliveryProviderId = "seller1";
+    await call();
+    expect(store["wallets/seller1"].availableBalanceMinorUnits).toBe(11500);
+  });
+  test("a courier with no wallet doc still gets paid", async () => {
+    store["orders/o1"].deliveryProviderId = "courier2";
+    await call();
+    expect(store["wallets/courier2"].availableBalanceMinorUnits).toBe(500);
   });
   test("a seller with no wallet doc still gets paid", async () => {
     delete store["wallets/seller1"];
@@ -53,7 +72,7 @@ describe("confirmDelivery", () => {
   test("repeat confirmation does not pay twice", async () => {
     await call(); await call();
     expect(store["wallets/seller1"].availableBalanceMinorUnits).toBe(11500);
-    expect(ledger()).toHaveLength(3);
+    expect(ledger()).toHaveLength(4);
   });
   test("refuses unpaid orders, orders without escrow, other users, inconsistent amounts", async () => {
     store["orders/o1"].paymentStatus = "PENDING";
