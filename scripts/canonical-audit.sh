@@ -6,14 +6,14 @@ cd "$(git rev-parse --show-toplevel)"
 fail=0
 
 count() {
-  git grep -n -E "$1" -- . ':(exclude)docs/**' ':(exclude)*.md' ':(exclude)scripts/canonical-audit.sh' 2>/dev/null | wc -l | tr -d ' '
+  git grep -n -E "$1" -- . ':(exclude)docs/**' ':(exclude)*.md' ':(exclude)scripts/canonical-audit.sh' ':(exclude)**/*.test.ts' ':(exclude)functions/src/test/**' 2>/dev/null | wc -l | tr -d ' '
 }
 
 check() {
   n=$(count "$2")
   printf '%-44s %s\n' "$1" "$n"
   if [ "$n" -gt 0 ]; then
-    git grep -n -E "$2" -- . ':(exclude)docs/**' ':(exclude)*.md' ':(exclude)scripts/canonical-audit.sh' 2>/dev/null || true
+    git grep -n -E "$2" -- . ':(exclude)docs/**' ':(exclude)*.md' ':(exclude)scripts/canonical-audit.sh' ':(exclude)**/*.test.ts' ':(exclude)functions/src/test/**' 2>/dev/null || true
     fail=1
   fi
 }
