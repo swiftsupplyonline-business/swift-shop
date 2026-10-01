@@ -448,6 +448,7 @@ fun Listing.toFirestore() = mapOf(
     "imageUrls" to imageUrls, "videoUrl" to videoUrl, "category" to category, "tags" to tags,
     "listingType" to listingType.name, "isAvailable" to isAvailable, "isSponsored" to isSponsored,
     "stockQuantity" to stockQuantity,
+    "driverShareBps" to driverShareBps,
     "commitmentCount" to commitmentCount, "deliveryEstimateDays" to deliveryEstimateDays,
     "createdAt" to createdAt, "updatedAt" to updatedAt
 )
