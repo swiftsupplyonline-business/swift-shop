@@ -13,7 +13,9 @@ check() { # label pattern
 echo "Canonical Architecture Check"
 check "Legacy createOrder("            '\bcreateOrder\b'
 check "Legacy calculateOrderFees("     '\bcalculateOrderFees\b'
-check "Legacy /listing/ routes"        '"/listing/|/listing/\{|/listing/\*\*'
+# Inbound /listing/ routes (firebase.json rewrite, manifest, deep links) are INTENTIONAL permanent-redirect
+# compatibility for links already shared in the wild. Only OUTBOUND generation of /listing/ URLs is legacy.
+check "Outbound /listing/ share URLs"   '"https://[^"]*/listing/\$'
 check "Invalid fulfillment status PICKUP" '["'"'"']PICKUP["'"'"']'
 check "Legacy logistics module refs"   "from ['\"]\./logistics['\"]|require\(['\"]\./logistics"
 echo "TOTAL legacy references: $total"
