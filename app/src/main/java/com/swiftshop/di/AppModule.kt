@@ -219,16 +219,10 @@ object CommerceModule {
     fun provideClearCartUseCase(repo: CommerceRepository) = ClearCartUseCase(repo)
 
     @Provides
-    fun provideCalculateOrderFeesUseCase(repo: CommerceRepository) = CalculateOrderFeesUseCase(repo)
-
-    @Provides
     fun provideCalculatePurchaseTotalUseCase(repo: CommerceRepository) = CalculatePurchaseTotalUseCase(repo)
 
     @Provides
     fun provideCreatePurchaseOrderUseCase(repo: CommerceRepository) = CreatePurchaseOrderUseCase(repo)
-
-    @Provides
-    fun providePlaceOrderUseCase(repo: CommerceRepository) = PlaceOrderUseCase(repo)
 
     @Provides
     fun provideVerifyMopayPaymentUseCase(repo: CommerceRepository) = VerifyMopayPaymentUseCase(repo)
