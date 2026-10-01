@@ -35,3 +35,7 @@ Android: UI -> ViewModel -> UseCase -> Repository -> Callable -> Canonical Funct
 5 Android, 6 Web/Smart links, 7 Admin, 8 Social/Messaging/Notifications,
 9 Advertising/Entitlements/Profile upgrades, 10 Cross-platform, 11 Legacy elimination, 12 Canonical-main verification.
 Each block: AUDIT, IMPLEMENT, BUILD, UNIT, INTEGRATION, ADVERSARIAL, DIFF AUDIT, ACCEPT.
+
+
+## Delivery financial boundary
+A delivery listing price is snapshotted as `deliveryFeeMinorUnits` on the delivery request and fulfillment route after the purchase is paid. The current purchase escrow total is created before delivery is requested and therefore does not include this later fee. The repository currently does not establish a separate authoritative collection, escrow, provider payout, driver payout, or delivery platform-fee contract for that amount. Until Finance/Product defines one, code must treat the fee as recorded/snapshotted data only and must not represent it as collected or settled. No delivery commission or platform-fee percentage is implied by this contract.
