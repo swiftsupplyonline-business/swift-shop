@@ -286,6 +286,28 @@ function renderCart(root) {
 }
 
 async function renderCheckout(root) {
+  const sessionId = new URLSearchParams(location.search).get("sessionId");
+  if (sessionId) {
+    root.innerHTML = `<div class="loading">Verifying payment…</div>`;
+    try {
+      await ensureSignedIn();
+      const verifyMopayPayment = httpsCallable(functions, "verifyMopayPayment");
+      const { data: result } = await verifyMopayPayment({ sessionId });
+      if (result.status !== "SUCCESS") throw new Error("Payment was not confirmed.");
+      localStorage.removeItem(CART_KEY);
+      updateCartBadge();
+      root.innerHTML = `
+        <div class="success">
+          <h1>Payment confirmed 🎉</h1>
+          <p>Order ID: ${escapeHtml(result.orderId || "")}</p>
+          <a href="/">Continue browsing</a>
+        </div>`;
+    } catch (err) {
+      root.innerHTML = `<div class="error">Payment could not be confirmed. ${escapeHtml(err.message)}</div>`;
+    }
+    return;
+  }
+
   const items = getCart();
   if (!items.length) {
     root.innerHTML = `<div class="empty">Your cart is empty. <a href="/">Browse listings</a></div>`;
@@ -323,6 +345,7 @@ async function renderCheckout(root) {
         const { data: result } = await createPurchaseOrder({
           items: items.map(i => ({ listingId: i.listingId, quantity: i.quantity, title: i.title })),
           paymentMethod: "MOPAY",
+          redirectTarget: "WEB",
           idempotencyKey
         });
         if (result.error) {
@@ -335,7 +358,6 @@ async function renderCheckout(root) {
         }
         window.location.assign(result.paymentUrl);
         return;
-        localStorage.removeItem(CART_KEY);
         updateCartBadge();
         root.innerHTML = `
           <div class="success">
