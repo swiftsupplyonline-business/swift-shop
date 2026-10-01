@@ -1,23 +1,19 @@
 #!/usr/bin/env bash
-# Canonical architecture audit. Report-only by default; --strict exits 1 if any legacy reference remains.
+# Strict canonical-only architecture gate.
 set -u
 cd "$(git rev-parse --show-toplevel)"
-INC=(--include=*.ts --include=*.kt --include=*.js --include=*.html --include=*.json)
-EXC=(--exclude-dir=node_modules --exclude-dir=build --exclude-dir=.git --exclude-dir=test --exclude=package-lock.json)
-count() { grep -rEn "${INC[@]}" "${EXC[@]}" -e "$1" . 2>/dev/null | wc -l | tr -d ' '; }
-files() { grep -rEl "${INC[@]}" "${EXC[@]}" -e "$1" . 2>/dev/null | sed 's/^/    /'; }
-total=0
-check() { # label pattern
-  n=$(count "$2"); total=$((total+n)); printf '%-42s %s\n' "$1" "$n"; [ "$n" -gt 0 ] && files "$2"
-}
-echo "Canonical Architecture Check"
-check "Legacy createOrder("            '\bcreateOrder\b'
-check "Legacy calculateOrderFees("     '\bcalculateOrderFees\b'
-# Inbound /listing/ routes (firebase.json rewrite, manifest, deep links) are INTENTIONAL permanent-redirect
-# compatibility for links already shared in the wild. Only OUTBOUND generation of /listing/ URLs is legacy.
-check "Outbound /listing/ share URLs"   '"https://[^"]*/listing/\$'
-check "Invalid fulfillment status PICKUP" '["'"'"']PICKUP["'"'"']'
-check "Legacy logistics module refs"   "from ['\"]\./logistics['\"]|require\(['\"]\./logistics"
-echo "TOTAL legacy references: $total"
-[ "${1:-}" = "--strict" ] && [ "$total" -gt 0 ] && exit 1
-exit 0
+fail=0
+count(){ grep -REn --include='*.ts' --include='*.kt' --include='*.js' --include='*.json' --include='*.html' --include='*.sh' --exclude-dir=node_modules --exclude-dir=build --exclude-dir=.git --exclude=package-lock.json --exclude=canonical-audit.sh -e "$1" . 2>/dev/null | wc -l | tr -d ' '; }
+check(){ n=$(count "$2"); printf '%-44s %s\n' "$1" "$n"; if [ "$n" -gt 0 ]; then grep -REn --include='*.ts' --include='*.kt' --include='*.js' --include='*.json' --include='*.html' --include='*.sh' --exclude-dir=node_modules --exclude-dir=build --exclude-dir=.git --exclude=package-lock.json --exclude=canonical-audit.sh -e "$2" . 2>/dev/null; fail=1; fi; }
+echo 'Canonical Architecture Check'
+check 'calculateOrderFees operational refs' '\bcalculateOrderFees\b'
+check 'createOrder operational refs' '\bcreateOrder\b'
+check 'requestDelivery operational refs' '\brequestDelivery\b'
+check 'logistics module refs' 'from[[:space:]]+["'"']\./logistics["'"']|require\(["'"']\./logistics'
+check 'obsolete exact PICKUP state refs' '(^|[^A-Za-z0-9_])PICKUP([^A-Za-z0-9_]|$)'
+if [ -e functions/src/logistics.ts ]; then echo 'LEGACY FILE PRESENT: functions/src/logistics.ts'; fail=1; else echo 'functions/src/logistics.ts absent'; fi
+for sym in calculatePurchaseTotal createPurchaseOrder createDeliveryRequest createDeliveryJob; do
+  if ! grep -REn --include='*.ts' --exclude-dir=node_modules --exclude-dir=build --exclude-dir=.git -e "export const ${sym}[[:space:]]*=" functions/src >/dev/null 2>&1; then echo "MISSING CANONICAL AUTHORITY: ${sym}"; fail=1; else echo "Canonical authority present: ${sym}"; fi
+done
+if [ "$fail" -eq 0 ]; then echo 'STRICT RESULT: PASS'; else echo 'STRICT RESULT: FAIL'; fi
+exit "$fail"
