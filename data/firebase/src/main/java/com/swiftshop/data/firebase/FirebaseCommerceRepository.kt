@@ -433,6 +433,7 @@ data class FirestoreListing(
     val commitmentCount: Int = 0,
     val bookmarkCount: Int = 0,
     val deliveryEstimateDays: Int = 0,
+    val driverShareBps: Int = 0,
     val likeCount: Int = 0,
     val commentCount: Int = 0,
     val createdAt: Any? = null,
