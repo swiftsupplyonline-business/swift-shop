@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.swiftshop.core.model.ListingType
+import com.swiftshop.core.ui.LocalWebHost
 import com.swiftshop.core.ui.components.SwiftPrimaryButton
 import com.swiftshop.core.ui.components.SwiftGradientButton
 
@@ -77,6 +78,7 @@ fun CreateListingScreen(
     if (uiState is CreateListingUiState.Success) {
         val listingId = (uiState as CreateListingUiState.Success).listingId
         val context = androidx.compose.ui.platform.LocalContext.current
+        val webHost = LocalWebHost.current
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { onCreated() },
             icon = {
@@ -96,7 +98,7 @@ fun CreateListingScreen(
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
-                    val shareUrl = "https://swift-dev-3d3ae.web.app/listing/$listingId"
+                    val shareUrl = "https://$webHost/listing/$listingId"
                     val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                         type = "text/plain"
                         putExtra(android.content.Intent.EXTRA_TEXT, "Check out my hustle on Swift: $shareUrl")

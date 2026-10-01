@@ -45,7 +45,9 @@ const routes = () => Object.keys(store).filter((k) => k.startsWith("deliveryRout
 beforeEach(() => {
   for (const k of Object.keys(store)) delete store[k];
   store["deliveryRequests/r1"] = { requesterId: "buyer1", status: "ACCEPTED", relatedOrderId: "o1", merchantId: "prov1",
-    pickup: { lat: 1, lng: 2 }, dropoff: { lat: 3, lng: 4 }, listingId: "dl1", deliveryFeeMinorUnits: 500 };
+    pickup: { lat: 1, lng: 2 }, dropoff: { lat: 3, lng: 4 }, listingId: "dl1", deliveryFeeMinorUnits: 500,
+    // Requests now carry an escrowed fee (see delivery-escrow-flow.unit.test.ts); un-escrowed paid requests are refused.
+    escrowStatus: "HELD", escrowAmountMinorUnits: 500 };
   store["orders/o1"] = { buyerId: "buyer1", sellerId: "seller1", status: "CONFIRMED" };
 });
 

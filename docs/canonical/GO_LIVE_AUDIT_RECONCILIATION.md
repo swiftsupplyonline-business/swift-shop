@@ -1,39 +1,33 @@
-# Go-live audit reconciliation (audit baseline 33d711b vs current block-9 branch)
+# Go-live audit reconciliation (branch go-live-remediation-c, base 032bda0)
 
-The external audit was written against 33d711b. That commit is an ancestor of `block-9-order-money`, which has 19 further
-commits. Each finding re-checked against current code:
+Environment of the author of this document: Node/TypeScript only. No Android SDK, no Firestore emulator (download blocked),
+no browser. Every "PASS" below was actually run; everything else is marked NOT RUN.
 
-| # | Audit finding | Status on current code |
-|---|---|---|
-| 1 | Android unit tests fail (junit unresolved in :core:model) | REAL. Fixed in batch A: 5 modules (core:model, core:media, domain:wallet, domain:feed, domain:commerce) had tests but no test deps. domain:commerce also needs mockito-kotlin (added to catalog, 5.4.0). NOT compiled here (no Android SDK / Gradle network). |
-| 2 | Functions tests fail (6) | PARTLY. commerce/logistics/notifications suites need the Firestore emulator; cannot run here. Unit suites (51) pass. Old emulator suites still target `createOrder` behaviour and have not been re-run against Blocks 8-9. |
-| 3 | confirmDelivery read-after-write | REAL, fixed in Block 9d (verified with a fake that enforces SDK ordering). |
-| 4 | Fulfillment state machine uses PICKUP | STALE. `fulfillmentStates.ts` already has AT_PICKUP / PICKUP_CONFIRMED and `updateDeliveryStatus` uses it. |
-| 5 | Delivery fee is never paid to the provider | REAL for the purchase-first flow. Block 9e pays the fee only for orders made by the legacy `createOrder` (fee snapshotted at checkout). `createPurchaseOrder` orders have no delivery fee, and `createDeliveryRequest` only records one. Needs a design (see below). |
-| 6 | publicMarketplace / payPreview not exported | REAL. Fixed in batch A. |
-| 7 | Notification functions not exported | REAL. Fixed in batch A. The app calls `updateFcmToken`, so push registration was failing in any deployed build. |
-| 8 | No driver UI | Not verified here (Android UI). Backend path exists. |
-| 9 | Web has no MoPay | Not verified; out of scope for backend batch. |
-| 10 | CI does not cover canonical branches | REAL. Fixed in batch A (push: master, delivery-first-checkout, canonical-**, go-live-**; PRs to any base). |
-| 11 | Deploy workflow deploys DEV only | REAL, not fixed. Needs your decision (below). |
-| 12 | No signed production Android release pipeline | REAL, not fixed. Needs a keystore and Play setup from you. |
-| 13 | State docs behind code | REAL. This folder (`docs/canonical`) now holds Blocks 8-9 notes; PROJECT_STATE.md still needs a rewrite. |
+| # | Brief item | Status | Evidence / gap |
+|---|---|---|---|
+| 1 | Delivery fee economics | DONE (backend) | `createDeliveryRequest`/decline/cancel/expiry/FAILED/`confirmDelivery`; `deliveryEconomics.ts`; 26 unit tests in delivery-economics + delivery-escrow-flow. Business decisions listed in the CONTRACT. |
+| 2 | Transaction safety | DONE for delivery + settlement | all new paths read-then-write; the test fake THROWS on read-after-write. NOT audited: finance.ts P2P/withdraw (reviewed earlier, no read-after-write found), advertising.ts. |
+| 3 | Android App Links hosts | DONE (uncompiled) | `BuildConfig.WEB_HOST` per flavor; Navigation.kt + 3 share-URL sites use it (`LocalWebHost`, default = PRODUCTION). Remaining occurrences: google-services.json x3 and build.gradle flavor config (legitimate flavor config); docs/blueprint/PROJECT_STATE (documentation); `.github/workflows/deploy-firebase-hosting.yml` + `.firebaserc` (CI/config, review for prod deploy governance); `functions/*.js` and `functions/scripts/scratch/*` (dev-only scripts, hardcode the DEV project; accidental if run against prod). |
+| 4 | assetlinks.json | OPEN | file contains only the DEV debug package + one fingerprint. STAGING and PRODUCTION entries need real SHA-256 fingerprints (Play App Signing / release keystore). Not invented. |
+| 5 | Cross-shop delivery | VERIFIED IN CODE | server-side: provider listing must be DELIVER + available; any shop's provider is allowed; fee and provider come from the listing, not the client. Test: cross-shop request succeeds. Android `getDeliveryListings` filtering NOT reviewed. |
+| 6 | Android delivery UI states | NOT DONE | needs compiled app + device. |
+| 7 | Removed Android use cases | CHECKED | vs 33d711b the only providers removed are `RequestDeliveryUseCase` and `CreateDeliveryRequestUseCase` (Block 5); zero references remain; the replacement flow (DeliveryCheckout) is wired from Orders. FCM, user/shop/post search, messaging, notifications, social, advertising, wallet providers are unchanged. |
+| 8 | Search | PARTIAL | listing search now queries `title_lowercase` with a trimmed, lowercased input and limit 30. Listings created before the engine may lack `title_lowercase`: backfill required. User search already uses `displayName_lowercase`. Shop/post search not reviewed. |
+| 9 | Pagination | NOT DONE | not audited. |
+| 10 | Android build | NOT RUN | BLOCKED: no Android SDK in this environment. |
+| 11 | Functions tests | PARTIAL | `tsc` PASS. Emulator-free unit suites PASS (see below). Emulator suites NOT RUN (emulator download blocked). `commerce.test.ts`/`logistics.test.ts`/`security-rules.test.ts`/`notifications.test.ts` still need a run. No tests were deleted. One fixture updated: `create-delivery-job.unit.test.ts` now seeds an escrowed request (an un-escrowed paid request is now refused on purpose). |
+| 12 | Firebase exports | PASS | compiled `functions/lib` loaded: 65 exports; all 6 hosting-referenced functions (payPreview, publicMarketplace, renderSharedListing, renderSharedDelivery, renderListingPreview, renderShopPreview) are exported. |
+| 13 | Adversarial authorization | PARTIAL | unit-level: wrong buyer, wrong provider, non-driver status updates, mallory settlement, fee tampering, duplicate request/cancel/decline/expiry/settlement, insufficient balance, un-escrowed job. Firestore-rules attacks (wallet/ledger/escrow/settlement writes) are in `security-rules.test.ts` but NOT RUN. |
+| 14 | Web verification | NOT DONE | needs a browser/hosting emulator. `/s/` `/d/` handler logic is unit-tested (Block 6). |
+| 15 | Web payment | NOT DONE | MoPay availability on web not changed. |
+| 16 | Navigation/UX hardening | NOT DONE | needs compiled app. |
+| 17 | Documentation | PARTIAL | CONTRACT (delivery economics), MIGRATION, this file. AUTHORITY_MATRIX and PROJECT_STATE.md NOT updated. |
+| 18 | Deployment governance | NOT DONE | `.github/workflows/deploy-firebase-hosting.yml` targets the DEV project; no staging/prod approval gates exist yet. |
 
-## Needs a decision before it can be built
-- Delivery fee in the purchase-first flow: who pays and when? Proposed: buyer pays the fee from the Swift wallet when the
-  delivery request is created (held in `system_order_escrow`-style delivery escrow), refunded if the request is declined,
-  expires or is cancelled, and released to the delivery listing's author when the buyer confirms delivery. MoPay for the
-  fee would be a second phase.
-- Production deploy: manual approval + a separate workflow for `swift-d1baa`, using a service-account secret.
+## Known limitations of the delivery economics (decisions needed)
+- A buyer cannot request delivery again once a job exists for the order, even if that job was cancelled/failed (order.fulfillmentId is set).
+- Delivery fee is wallet-only. MoPay is not offered for delivery.
+- `getDeliveryOptions` is unchanged; `requestDelivery` and `logistics.ts` (legacy) still deployed for old app versions and still create requests WITHOUT escrow; `createDeliveryJob` refuses such requests when their fee is > 0.
 
-## Second audit (same baseline 33d711b) — checked against current code
-| Finding | Status |
-|---|---|
-| Delivery vocabulary: `PICKUP` still in transition table, auth check and Android `FirebaseDeliveryRepository` | STALE. No `PICKUP` remains anywhere in the tree (grep over .kt/.ts/.js/.html/.rules); a unit test asserts it is not a valid status. |
-| `createDeliveryJob` reads outside the transaction | REAL, fixed (batch A2): all reads go through the transaction, job id is deterministic (`job_<orderId>`) so concurrent calls cannot create two, jobs created earlier under random ids are still found, and buyer/active-order checks added. Unit-tested incl. read-after-write enforcement. |
-| Web `/s/...` product links intercepted by the JS router -> "Page not found" | REAL, fixed: links to `/s/`, `/d/`, `/pay/`, `/api/` are real browser navigations; modified/new-tab clicks are no longer hijacked either. Not run in a browser; regex checked in node. |
-| Android App Links hard-coded to the DEV host | REAL, fixed: host comes from a per-flavor manifest placeholder (dev / staging / production `*.web.app`). Not built here. |
-| Production App Links verification | NOT DONE. `hosting/.well-known/assetlinks.json` only lists the dev debug package + debug cert. Needs the staging/production package names and SHA-256 of the real release signing key. |
-| `docs/canonical/CANONICAL_PLATFORM_*.md`, `AUTHORITY_MATRIX.md` | Still missing, and `PROJECT_STATE.md` is stale. I have not drafted them: they should be written from the decisions you have made, not reverse-engineered by me. |
-| Functions tests 6/14 failing; Android JUnit; exports; CI triggers; confirmDelivery | See the table above (batch A / Block 9). |
-| Web MoPay "coming soon" | Product decision: Wallet-only web, or build MoPay on web? |
+## Final classification
+NOT READY (and BLOCKED for Android/emulator/browser evidence).

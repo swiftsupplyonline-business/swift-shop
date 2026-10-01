@@ -157,10 +157,14 @@ class FirebaseCommerceRepository @Inject constructor(
     }
 
     override suspend fun searchListings(query: String): Result<List<Listing>> = runCatching {
-        // Basic title prefix search (limited by Firestore capabilities without external index)
+        // Case-insensitive prefix search on the engine-derived `title_lowercase` field.
+        // Input is normalised exactly like the stored value (trim + lowercase); bounded to one page.
+        val normalized = query.trim().lowercase()
+        if (normalized.isEmpty()) return@runCatching emptyList<Listing>()
         firestore.collection("listings")
-            .whereGreaterThanOrEqualTo("title", query)
-            .whereLessThanOrEqualTo("title", query + "\uf8ff")
+            .whereGreaterThanOrEqualTo("title_lowercase", normalized)
+            .whereLessThanOrEqualTo("title_lowercase", normalized + "\uf8ff")
+            .limit(30)
             .get().await()
             .toObjects(FirestoreListing::class.java).map { it.toDomain() }
     }

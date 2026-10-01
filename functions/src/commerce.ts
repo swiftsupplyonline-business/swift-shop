@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { pickShopFields, ShopValidationError } from "./shopFields";
+import { planDeliveryPayout, outcomeAtSettlement, DELIVERY_ESCROW_ACCOUNT, PLATFORM_FEES_ACCOUNT } from "./deliveryEconomics";
 import { idempotencyDocId, parseOrderItems, requireUid, OrderLine, MoneyValidationError } from "./moneyValidation";
 import { assertAccountActive } from "./accountGuard";
 import { resolveStatusUpdate } from "./orderTransitions";
@@ -1427,6 +1428,41 @@ export const confirmDelivery = onCall(async (request) => {
             payouts.set(order.sellerId, (payouts.get(order.sellerId) || 0) + sellerProceeds);
             if (deliveryFee > 0) payouts.set(deliveryProviderId, (payouts.get(deliveryProviderId) || 0) + deliveryFee);
 
+            // ── Delivery-fee escrow (post-purchase delivery). READS ONLY in this block. ──────────
+            // Released to provider/driver/platform if the job was DELIVERED, otherwise refunded to the buyer.
+            let escrowRef: FirebaseFirestore.DocumentReference | null = null;
+            let escrowDr: FirebaseFirestore.DocumentData | null = null;
+            let escrowOutcome: "NONE" | "REFUND" | "RELEASE" = "NONE";
+            let deliveryLines: ReturnType<typeof planDeliveryPayout> = [];
+            if (order.deliveryRequestId) {
+                const drRef = db.collection("deliveryRequests").doc(order.deliveryRequestId);
+                const drSnap = await transaction.get(drRef);
+                if (drSnap.exists) {
+                    const routeSnap = order.fulfillmentId
+                        ? await transaction.get(db.collection("deliveryRoutes").doc(order.fulfillmentId))
+                        : null;
+                    const dr = drSnap.data()!;
+                    const route = routeSnap && routeSnap.exists ? routeSnap.data()! : null;
+                    escrowOutcome = outcomeAtSettlement(dr.escrowStatus, route?.status);
+                    if (escrowOutcome === "RELEASE") {
+                        deliveryLines = planDeliveryPayout({
+                            feeMinorUnits: dr.escrowAmountMinorUnits || 0,
+                            providerId: dr.providerId || dr.merchantId,
+                            driverId: route?.driverId || "",
+                            driverShareBps: dr.driverShareBps,
+                            platformFeePerMille: dr.platformFeePerMille,
+                        });
+                    }
+                    if (escrowOutcome !== "NONE") { escrowRef = drRef; escrowDr = dr; }
+                }
+            }
+            if (escrowOutcome === "REFUND" && escrowDr) {
+                payouts.set(escrowDr.requesterId, (payouts.get(escrowDr.requesterId) || 0) + (escrowDr.escrowAmountMinorUnits || 0));
+            }
+            for (const line of deliveryLines) {
+                if (line.uid) payouts.set(line.uid, (payouts.get(line.uid) || 0) + line.amountMinorUnits);
+            }
+
             // All reads first: Firestore rejects any transaction read issued after a write.
             const walletRefs = new Map(Array.from(payouts.keys()).map((uid) => [uid, db.collection("wallets").doc(uid)]));
             const balances = new Map<string, number>();
@@ -1489,6 +1525,30 @@ export const confirmDelivery = onCall(async (request) => {
                     reference: `PLATFORM_FEE_${orderId}`,
                     timestamp: now
                 });
+            }
+
+            if (escrowRef && escrowDr) {
+                const amount = escrowDr.escrowAmountMinorUnits || 0;
+                if (escrowOutcome === "REFUND") {
+                    const id = `delivery_refund_${escrowRef.id}`;
+                    transaction.set(db.collection("ledgerEntries").doc(id), {
+                        id, debitAccount: DELIVERY_ESCROW_ACCOUNT, creditAccount: `user_${escrowDr.requesterId}`,
+                        amountMinorUnits: amount, currency: "LSL",
+                        reference: `DELIVERY_REFUND_${escrowRef.id}`, reason: "DELIVERY_NOT_COMPLETED", timestamp: now
+                    });
+                    transaction.update(escrowRef, { escrowStatus: "REFUNDED", escrowRefundReason: "DELIVERY_NOT_COMPLETED", updatedAt: Date.now() });
+                } else {
+                    for (const line of deliveryLines) {
+                        const id = `delivery_${line.kind.toLowerCase()}_${escrowRef.id}`;
+                        transaction.set(db.collection("ledgerEntries").doc(id), {
+                            id, debitAccount: DELIVERY_ESCROW_ACCOUNT,
+                            creditAccount: line.uid ? `user_${line.uid}` : PLATFORM_FEES_ACCOUNT,
+                            amountMinorUnits: line.amountMinorUnits, currency: "LSL",
+                            reference: `${line.kind}_${escrowRef.id}`, timestamp: now
+                        });
+                    }
+                    transaction.update(escrowRef, { escrowStatus: "RELEASED", escrowReleasedAt: Date.now(), updatedAt: Date.now() });
+                }
             }
 
             transaction.update(orderRef, {

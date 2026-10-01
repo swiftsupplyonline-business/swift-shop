@@ -35,3 +35,24 @@ Android: UI -> ViewModel -> UseCase -> Repository -> Callable -> Canonical Funct
 5 Android, 6 Web/Smart links, 7 Admin, 8 Social/Messaging/Notifications,
 9 Advertising/Entitlements/Profile upgrades, 10 Cross-platform, 11 Legacy elimination, 12 Canonical-main verification.
 Each block: AUDIT, IMPLEMENT, BUILD, UNIT, INTEGRATION, ADVERSARIAL, DIFF AUDIT, ACCEPT.
+
+## Delivery fee economics (implemented in go-live-remediation-c)
+Delivery is paid from the buyer's Swift Wallet AFTER the purchase is paid. Same wallet, same `ledgerEntries`; the only new
+thing is a ledger account name, `system_delivery_escrow`. Financial authority stays in Cloud Functions.
+
+| Event | Function | Money movement |
+|---|---|---|
+| Buyer requests delivery | `createDeliveryRequest` (one transaction) | fee read from the delivery listing; buyer wallet -> `system_delivery_escrow`; request `escrowStatus=HELD`; order locked to one active request |
+| Provider declines | `declineDeliveryRequest` | full refund to buyer |
+| Request expires | `expireDeliveryRequests` (one transaction per request) | full refund |
+| Buyer cancels (before a job exists) | `cancelDeliveryRequest` | full refund |
+| Job cancelled / FAILED | `updateDeliveryStatus` | full refund (policy: a job that does not deliver earns nothing) |
+| Buyer confirms and job is DELIVERED | `confirmDelivery` | escrow -> platform fee, driver compensation, provider earnings (`planDeliveryPayout`) |
+| Buyer confirms but job never DELIVERED | `confirmDelivery` | escrow refunded to buyer |
+
+Actors are distinct: buyer; provider = author of the delivery listing (`merchantId`); driver = `driverId` on the job (may equal the
+provider); platform. If driver != provider, ledger lines `DRIVER_COMPENSATION_*` and `PROVIDER_EARNINGS_*` are separate.
+
+BUSINESS DECISIONS STILL REQUIRED (defaults chosen so nothing is invented): platform cut of the delivery fee =
+`DEFAULT_DELIVERY_PLATFORM_FEE_PER_MILLE` = 0; driver share = optional `driverShareBps` on the delivery listing, default 0
+(provider keeps the net fee and pays the driver off-platform); failed delivery = full refund.
