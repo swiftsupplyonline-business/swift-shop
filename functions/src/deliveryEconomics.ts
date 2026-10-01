@@ -15,8 +15,8 @@
 export const DELIVERY_ESCROW_ACCOUNT = "system_delivery_escrow";
 export const PLATFORM_FEES_ACCOUNT = "system_fees";
 
-/** Platform cut of the delivery fee, per mille. DECISION REQUIRED from the business; 0 = no cut. */
-export const DEFAULT_DELIVERY_PLATFORM_FEE_PER_MILLE = 0;
+/** Platform cut of the delivery fee, per mille. 15‰ = 1.5%. */
+export const DEFAULT_DELIVERY_PLATFORM_FEE_PER_MILLE = 15;
 
 export type EscrowStatus = "NONE" | "HELD" | "REFUNDED" | "RELEASED";
 
