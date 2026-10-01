@@ -1,6 +1,6 @@
 import firebaseTest from 'firebase-functions-test';
 import * as admin from 'firebase-admin';
-import { updateDeliveryStatus } from '../fulfillment';
+import { createDeliveryJob, updateDeliveryStatus } from '../fulfillment';
 
 const testEnv = firebaseTest({ projectId: 'swift-shop-reconciled' });
 if (admin.apps.length === 0) admin.initializeApp({ projectId: 'swift-shop-reconciled' });
@@ -9,6 +9,41 @@ describe('Canonical Fulfillment Authority', () => {
   const db = admin.firestore();
 
   afterAll(() => testEnv.cleanup());
+
+  test('createDeliveryJob converges concurrent calls on one deterministic route', async () => {
+    const requestId = 'delivery_request_idempotent';
+    const orderId = 'order_delivery_idempotent';
+    const providerId = 'provider_delivery_idempotent';
+
+    await db.collection('orders').doc(orderId).set({
+      id: orderId, buyerId: 'buyer_delivery_idempotent', sellerId: 'seller_delivery_idempotent',
+      status: 'CONFIRMED', paymentStatus: 'PAID'
+    });
+    await db.collection('deliveryRequests').doc(requestId).set({
+      id: requestId, requesterId: 'buyer_delivery_idempotent', relatedOrderId: orderId,
+      merchantId: providerId, listingId: 'delivery_listing_idempotent',
+      pickup: { lat: -29.31, lng: 27.48 }, dropoff: { lat: -29.32, lng: 27.49 },
+      deliveryFeeMinorUnits: 2500, status: 'ACCEPTED'
+    });
+
+    const wrapped = testEnv.wrap(createDeliveryJob);
+    const call = () => wrapped({
+      data: { requestId },
+      auth: { uid: 'buyer_delivery_idempotent', token: {} }
+    } as any);
+
+    const [first, second] = await Promise.all([call(), call()]);
+
+    expect(first.routeId).toBe(second.routeId);
+    expect(first.routeId).toBe(orderId);
+    expect(first.alreadyExists || second.alreadyExists).toBe(true);
+
+    const routes = await db.collection('deliveryRoutes')
+      .where('orderId', '==', orderId)
+      .get();
+    expect(routes.size).toBe(1);
+    expect(routes.docs[0].id).toBe(orderId);
+  });
 
   test('authorized provider-scoped driver can claim a requested job', async () => {
     const providerId = 'provider_canonical_claim';
