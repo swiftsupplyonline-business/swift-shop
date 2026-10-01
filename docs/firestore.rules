@@ -81,10 +81,12 @@ service cloud.firestore {
       allow read: if true;  // public
       // Created and deleted via Cloud Function only to enforce tier limits
       allow create: if false;
-      allow update: if isSignedIn()
-        && resource.data.sellerId == request.auth.uid
-        && !request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny(['id', 'sellerId', 'shopId', 'listingType', 'priceMinorUnits', 'priceCurrency', 'stockQuantity', 'isSponsored', 'commitmentCount', 'likeCount', 'commentCount', 'bookmarkCount', 'rankingScore', 'createdAt', 'updatedAt']);
+      // Listing Engine is the sole authority: every update (title, description, images, status,
+      // stock, reservations, slugs, availability) goes through the updateListing / restockListing /
+      // deleteListing callables. A field denylist here previously let sellers write status,
+      // reservedQuantity, inventoryMode, isAvailable and shareSlug directly (e.g. un-suspend
+      // themselves, switch to unlimited stock, hijack a slug).
+      allow update: if false;
       allow delete: if false;
 
       match /likes/{userId} {
@@ -152,9 +154,11 @@ service cloud.firestore {
 
     // ── Ledger Entries ─────────────────────────────────────────────────────
     match /ledgerEntries/{entryId} {
+      // Ledger accounts use the canonical `user_<uid>` namespace.
+      // Never compare a stored account identifier directly with request.auth.uid.
       allow read: if isAdmin()
-        || resource.data.debitAccount == request.auth.uid
-        || resource.data.creditAccount == request.auth.uid;
+        || resource.data.debitAccount == "user_" + request.auth.uid
+        || resource.data.creditAccount == "user_" + request.auth.uid;
       // Immutable — write only from admin SDK (Cloud Functions)
       allow write: if false;
     }

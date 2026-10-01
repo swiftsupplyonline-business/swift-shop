@@ -14,15 +14,6 @@ import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private fun normalizeShareSlug(value: String): String = value
-    .normalize(java.text.Normalizer.Form.NFKD)
-    .replace(Regex("\\p{M}+"), "")
-    .lowercase()
-    .replace(Regex("[^a-z0-9]+"), "-")
-    .trim('-')
-    .replace(Regex("-{2,}"), "-")
-
-
 
 @Singleton
 class FirebaseCommerceRepository @Inject constructor(
@@ -61,11 +52,10 @@ class FirebaseCommerceRepository @Inject constructor(
     }
 
     override suspend fun updateShop(shop: Shop): Result<Unit> = runCatching {
-        val data = mapOf(
-            "shopId" to shop.id,
-            "updates" to shop.toUpdateMap()
-        )
-        functions.getHttpsCallable("updateShop").call(data).await()
+        // Firestore rules deny direct shop writes; the callable enforces ownership + allowlisted fields.
+        functions.getHttpsCallable("updateShop")
+            .call(mapOf("shopId" to shop.id, "updates" to shop.toUpdateMap()))
+            .await()
         Unit
     }
 
@@ -103,44 +93,20 @@ class FirebaseCommerceRepository @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
-    // shopId parameter is kept for API compatibility but is no longer used as a filter.
-    // Delivery providers may belong to any shop — cross-shop delivery is valid.
-    // The Firestore index required: listingType ASC, isAvailable ASC, createdAt DESC.
     override fun getDeliveryListings(shopId: String): Flow<List<Listing>> = callbackFlow {
         val subscription = firestore.collection("listings")
             .whereEqualTo("listingType", "DELIVER")
+            .whereEqualTo("shopId", shopId)
             .whereEqualTo("isAvailable", true)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    android.util.Log.e("SwiftShopDelivery", "getDeliveryListings failed", error)
+                    android.util.Log.e("SwiftShopDelivery", "getDeliveryListings failed for shopId=$shopId", error)
                 }
                 val list = snapshot?.toObjects(FirestoreListing::class.java)?.map { it.toDomain() } ?: emptyList()
-                android.util.Log.d("SwiftShopDelivery", "getDeliveryListings returned ${list.size} results")
+                android.util.Log.d("SwiftShopDelivery", "getDeliveryListings shopId=$shopId returned ${list.size} results")
                 trySend(list)
             }
         awaitClose { subscription.remove() }
-    }
-
-    override suspend fun getListingByShareSlugs(shopSlug: String, productSlug: String): Result<Listing> = runCatching {
-        val normalizedShop = normalizeShareSlug(shopSlug)
-        val normalizedProduct = normalizeShareSlug(productSlug)
-        val candidates = firestore.collection("listings")
-            .whereEqualTo("shareSlug", normalizedProduct)
-            .limit(20)
-            .get().await()
-            .documents.toMutableList()
-        if (candidates.isEmpty()) {
-            candidates += firestore.collection("listings").limit(200).get().await().documents
-        }
-        for (doc in candidates) {
-            val item = doc.toObject(FirestoreListing::class.java) ?: continue
-            if (normalizeShareSlug(item.shareSlug.ifBlank { item.title }) != normalizedProduct || item.shopId.isBlank()) continue
-            val shop = firestore.collection("shops").document(item.shopId).get().await()
-            if (normalizeShareSlug(shop.getString("shareSlug") ?: shop.getString("name") ?: "") == normalizedShop) {
-                return@runCatching item.toDomain()
-            }
-        }
-        throw NoSuchElementException("Listing not found")
     }
 
     override suspend fun getListing(listingId: String): Result<Listing> = runCatching {
@@ -191,24 +157,12 @@ class FirebaseCommerceRepository @Inject constructor(
     }
 
     override suspend fun searchListings(query: String): Result<List<Listing>> = runCatching {
-        val normalized = query.trim().lowercase()
-        // Basic title prefix search using lowercase shadow field.
+        // Basic title prefix search (limited by Firestore capabilities without external index)
         firestore.collection("listings")
-            .whereEqualTo("isAvailable", true)
-            .whereGreaterThanOrEqualTo("title_lowercase", normalized)
-            .whereLessThanOrEqualTo("title_lowercase", normalized + "\uf8ff")
+            .whereGreaterThanOrEqualTo("title", query)
+            .whereLessThanOrEqualTo("title", query + "\uf8ff")
             .get().await()
             .toObjects(FirestoreListing::class.java).map { it.toDomain() }
-    }
-
-    override suspend fun searchShops(query: String): Result<List<Shop>> = runCatching {
-        val normalized = query.trim().lowercase()
-        firestore.collection("shops")
-            .whereEqualTo("isActive", true)
-            .whereGreaterThanOrEqualTo("name_lowercase", normalized)
-            .whereLessThanOrEqualTo("name_lowercase", normalized + "\uf8ff")
-            .get().await()
-            .toObjects(FirestoreShop::class.java).map { it.toDomain() }
     }
 
     override suspend fun createListing(listing: Listing): Result<String> = runCatching {
@@ -320,61 +274,45 @@ class FirebaseCommerceRepository @Inject constructor(
 
     // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Orders Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
-    override suspend fun calculateOrderFees(
-        items: List<OrderItem>,
-        requiresDelivery: Boolean,
-        address: DeliveryAddress?,
-        selectedDeliveryListingId: String?
+    override suspend fun calculatePurchaseTotal(
+        items: List<OrderItem>
     ): Result<OrderSummary> = runCatching {
-        val data = mapOf(
-            "items" to items.map { it.toFirestore() },
-            "requiresDelivery" to requiresDelivery,
-            "deliveryAddress" to address?.toFirestore(),
-            "selectedDeliveryListingId" to selectedDeliveryListingId
-        )
-        val result = functions.getHttpsCallable("calculateOrderFees").call(data).await()
+        val data = mapOf("items" to items.map { it.toFirestore() })
+        val result = functions.getHttpsCallable("calculatePurchaseTotal").call(data).await()
         val resMap = result.data as Map<String, Any>
-        
         val currency = resMap["currency"] as? String ?: "LSL"
         OrderSummary(
             subtotal = MoneyAmount(currency, (resMap["subtotalMinorUnits"] as Number).toLong()),
-            deliveryFee = MoneyAmount(currency, (resMap["deliveryFeeMinorUnits"] as Number).toLong()),
+            deliveryFee = MoneyAmount.ZERO,
             platformFee = MoneyAmount(currency, (resMap["platformFeeMinorUnits"] as Number).toLong()),
             total = MoneyAmount(currency, (resMap["totalMinorUnits"] as Number).toLong())
         )
     }
 
-    override suspend fun placeOrder(
+    override suspend fun placePurchase(
         items: List<OrderItem>,
-        requiresDelivery: Boolean,
-        address: DeliveryAddress?,
         paymentMethod: PaymentMethod,
         provider: String?,
         phoneNumber: String,
-        idempotencyKey: String,
-        selectedDeliveryListingId: String?,
-        deliveryRequestId: String?
+        idempotencyKey: String
     ): Result<OrderInitiation> = runCatching {
         val data = mapOf(
             "items" to items.map { it.toFirestore() },
-            "requiresDelivery" to requiresDelivery,
-            "deliveryAddress" to address?.toFirestore(),
             "paymentMethod" to paymentMethod.name,
             "provider" to provider,
             "phoneNumber" to phoneNumber,
-            "idempotencyKey" to idempotencyKey,
-            "selectedDeliveryListingId" to selectedDeliveryListingId,
-            "deliveryRequestId" to deliveryRequestId
+            "idempotencyKey" to idempotencyKey
         )
-        val result = functions.getHttpsCallable("createOrder").call(data).await()
+        val result = functions.getHttpsCallable("createPurchaseOrder").call(data).await()
         val resMap = result.data as Map<String, Any>
-        
         OrderInitiation(
             orderId = resMap["orderId"] as String,
             paymentUrl = resMap["paymentUrl"] as? String,
             mopaySessionId = resMap["mopaySessionId"] as? String
         )
     }
+
+
 
     override suspend fun verifyMopayPayment(sessionId: String): Result<Unit> = runCatching {
         val data = mapOf("sessionId" to sessionId)
@@ -474,7 +412,6 @@ fun Shop.toUpdateMap() = mapOf(
 
 data class FirestoreListing(
     val id: String = "",
-    val shareSlug: String = "",
     val shopId: String = "",
     val sellerId: String = "",
     val title: String = "",
@@ -501,7 +438,7 @@ data class FirestoreListing(
 }
 
 fun Listing.toFirestore() = mapOf(
-    "id" to id, "shareSlug" to normalizeShareSlug(title), "shopId" to shopId, "sellerId" to sellerId, "title" to title, "description" to description,
+    "id" to id, "shopId" to shopId, "sellerId" to sellerId, "title" to title, "description" to description,
     "priceMinorUnits" to price.minorUnits, "priceCurrency" to price.currency,
     "imageUrls" to imageUrls, "videoUrl" to videoUrl, "category" to category, "tags" to tags,
     "listingType" to listingType.name, "isAvailable" to isAvailable, "isSponsored" to isSponsored,
@@ -541,6 +478,8 @@ data class FirestoreOrder(
     val status: String = "PENDING",
     val inventoryStatus: String = "PENDING",
     val settlementStatus: String = "PENDING",
+    val fulfillmentId: String = "",
+    val fulfillmentStatus: String = "NOT_REQUESTED",
     val deliveryAddress: FirestoreDeliveryAddress? = null,
     @get:PropertyName("requiresDelivery") @set:PropertyName("requiresDelivery") var requiresDelivery: Boolean = false,
     val selectedDeliveryListingId: String = "",
@@ -560,6 +499,8 @@ data class FirestoreOrder(
         runCatching { OrderStatus.valueOf(status) }.getOrDefault(OrderStatus.PENDING),
         runCatching { InventoryStatus.valueOf(inventoryStatus) }.getOrDefault(InventoryStatus.PENDING),
         runCatching { SettlementStatus.valueOf(settlementStatus) }.getOrDefault(SettlementStatus.PENDING),
+        fulfillmentId,
+        runCatching { FulfillmentStatus.valueOf(fulfillmentStatus) }.getOrDefault(FulfillmentStatus.NOT_REQUESTED),
         deliveryAddress?.toDomain() ?: DeliveryAddress(),
         requiresDelivery, selectedDeliveryListingId, deliveryRequestId, paymentId, notes,
         tsToLong(reservationExpiresAt),

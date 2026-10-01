@@ -1,5 +1,6 @@
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as admin from "firebase-admin";
+import { releaseInventory } from "./listing";
 
 /**
  * Scheduled task to clean up expired inventory reservations.
@@ -29,11 +30,9 @@ export const cleanupExpiredReservations = onSchedule("every 5 minutes", async (e
                 const listingSnap = await transaction.get(listingRef);
 
                 if (listingSnap.exists) {
-                    const listing = listingSnap.data()!;
-                    transaction.update(listingRef, {
-                        reservedQuantity: Math.max(0, (listing.reservedQuantity || 0) - res.quantity),
-                        updatedAt: now
-                    });
+                    // Listing Engine is the sole authority for inventory changes. It also
+                    // re-derives status (e.g. OUT_OF_STOCK -> ACTIVE) when stock frees up.
+                    releaseInventory(transaction, listingRef, listingSnap.data()!, res.quantity, now);
                 }
 
                 transaction.update(resDoc.ref, {

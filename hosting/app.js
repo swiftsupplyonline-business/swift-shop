@@ -3,8 +3,8 @@
 // and, in "widget" mode, by the server-rendered /listing/{id} page for the
 // Add to Cart / Buy Now buttons.
 //
-// NOTE: this file only ever calls existing Cloud Functions (calculateOrderFees,
-// createOrder) – it does not implement any order/payment/inventory logic itself.
+// NOTE: this file only ever calls existing Cloud Functions (calculatePurchaseTotal,
+// createPurchaseOrder) – it does not implement any order/payment/inventory logic itself.
 // That authority stays server-side in functions/src/commerce.ts.
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
@@ -295,10 +295,9 @@ async function renderCheckout(root) {
 
   try {
     await ensureSignedIn();
-    const calculateOrderFees = httpsCallable(functions, "calculateOrderFees");
-    const { data: fees } = await calculateOrderFees({
-      items: items.map(i => ({ listingId: i.listingId, quantity: i.quantity, title: i.title })),
-      requiresDelivery: false
+    const calculatePurchaseTotal = httpsCallable(functions, "calculatePurchaseTotal");
+    const { data: fees } = await calculatePurchaseTotal({
+      items: items.map(i => ({ listingId: i.listingId, quantity: i.quantity, title: i.title }))
     });
 
     root.innerHTML = `
@@ -319,11 +318,10 @@ async function renderCheckout(root) {
       const msg = root.querySelector("#checkoutMsg");
       msg.textContent = "Placing order…";
       try {
-        const createOrder = httpsCallable(functions, "createOrder");
+        const createPurchaseOrder = httpsCallable(functions, "createPurchaseOrder");
         const idempotencyKey = `web_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        const { data: result } = await createOrder({
+        const { data: result } = await createPurchaseOrder({
           items: items.map(i => ({ listingId: i.listingId, quantity: i.quantity, title: i.title })),
-          requiresDelivery: false,
           paymentMethod: "SWIFT_WALLET",
           idempotencyKey
         });
@@ -383,7 +381,8 @@ document.addEventListener("click", (e) => {
 window.addEventListener("popstate", route);
 document.addEventListener("DOMContentLoaded", () => {
   updateCartBadge();
-  if (location.pathname.startsWith("/s/") && document.body.dataset.sharePage === "true") return;
+  if ((location.pathname.startsWith("/s/") || location.pathname.startsWith("/d/"))
+      && document.body.dataset.sharePage === "true") return;
   route();
 });
 

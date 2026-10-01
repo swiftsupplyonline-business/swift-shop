@@ -6,7 +6,7 @@ admin.initializeApp();
 // Hardened exports
 export { provisionNewUser } from "./auth";
 export {
-    calculateOrderFees, createOrder, verifyMopayPayment, confirmDelivery,
+    calculatePurchaseTotal, createPurchaseOrder, verifyMopayPayment, confirmDelivery,
     updateOrderStatus, cancelOrder, confirmMopayPayment, initiateSubscription,
     createListing, deleteListing, createShop, updateShop, updateListing,
     createListingComment, deleteListingComment
@@ -18,13 +18,22 @@ export {
     createPostComment, deletePostComment
 } from "./social";
 export { syncProfileCounters } from "./maintenance";
-export { publicMarketplace } from "./publicMarketplace";
 
 // Financial Functions
 export * from "./finance";
 
-// Logistics Functions
-export { requestDelivery, updateDeliveryStatus, createDeliveryRequest, respondToDeliveryRequest, cancelDeliveryRequest, expireDeliveryRequests, onOrderConfirmed, authorizeDriver } from "./logistics";
+// Canonical fulfillment boundary: delivery is independent of product purchase/payment.
+export {
+    getDeliveryOptions,
+    createDeliveryRequest,
+    acceptDeliveryRequest,
+    declineDeliveryRequest,
+    cancelDeliveryRequest,
+    createDeliveryJob,
+    updateDeliveryStatus,
+    authorizeDriver,
+    expireDeliveryRequests
+} from "./fulfillment";
 
 // Reservation Functions
 export * from "./reservations";
@@ -34,12 +43,4 @@ export * from "./advertising";
 
 // Share Preview Functions
 export * from "./sharePreview";
-export { payPreview } from "./payPreview";
-
-// Notification Functions
-export {
-    updateFcmToken, notifyOnMessage, notifyOnOrderStatusChange,
-    notifyOnDeliveryRequestCreated, notifyOnDeliveryRequestResponded,
-    notifyOnDeliveryStatusChange
-} from "./notifications";
 
