@@ -118,6 +118,12 @@ object ProfileModule {
 
     @Provides @Singleton
     fun provideIsFollowingUseCase(repo: ProfileRepository) = IsFollowingUseCase(repo)
+
+    @Provides @Singleton
+    fun provideSearchUsersUseCase(repo: ProfileRepository) = SearchUsersUseCase(repo)
+
+    @Provides @Singleton
+    fun provideUpdateFcmTokenUseCase(repo: ProfileRepository) = UpdateFcmTokenUseCase(repo)
 }
 
 @Module
@@ -207,6 +213,9 @@ object CommerceModule {
     fun provideSearchListingsUseCase(repo: CommerceRepository) = SearchListingsUseCase(repo)
 
     @Provides
+    fun provideSearchShopsUseCase(repo: CommerceRepository) = SearchShopsUseCase(repo)
+
+    @Provides
     fun provideObserveCartUseCase(repo: CommerceRepository) = ObserveCartUseCase(repo)
 
     @Provides
@@ -259,6 +268,9 @@ object SocialModule {
     fun provideGetReelFeedUseCase(repo: FeedRepository) = GetReelFeedUseCase(repo)
 
     @Provides
+    fun provideSearchPostsUseCase(repo: FeedRepository) = SearchPostsUseCase(repo)
+
+    @Provides
     fun provideGetUserPostsUseCase(repo: FeedRepository) = GetUserPostsUseCase(repo)
 
     @Provides
@@ -269,11 +281,11 @@ object SocialModule {
     fun provideLikePostUseCase(repo: FeedRepository) = LikePostUseCase(repo)
 
     @Provides
-    fun provideBookmarkListingUseCase(repo: FeedRepository) =
+    fun provideFeedBookmarkListingUseCase(repo: FeedRepository) =
         com.swiftshop.domain.feed.BookmarkListingUseCase(repo)
 
     @Provides
-    fun provideUnbookmarkListingUseCase(repo: FeedRepository) =
+    fun provideFeedUnbookmarkListingUseCase(repo: FeedRepository) =
         com.swiftshop.domain.feed.UnbookmarkListingUseCase(repo)
 
     @Provides

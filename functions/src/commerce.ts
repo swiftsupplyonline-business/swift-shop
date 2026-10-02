@@ -1353,6 +1353,7 @@ export const createShop = onCall(async (request) => {
             transaction.set(db.collection("shops").doc(shopId), {
                 isActive: true,
                 ...shop,
+                name_lowercase: String(shop.name ?? "").trim().toLowerCase(), // [DERIVED] shop search (Android searchShops)
                 id: shopId,
                 ownerId: uid,
                 isVerified: false,
@@ -1401,7 +1402,8 @@ export const updateShop = onCall(async (request) => {
         const snap = await tx.get(ref);
         if (!snap.exists) throw new HttpsError("not-found", "Shop not found");
         if (snap.data()!.ownerId !== auth.uid) throw new HttpsError("permission-denied", "Only the shop owner can update this shop");
-        tx.update(ref, { ...updates, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+        const derived = typeof updates.name === "string" ? { name_lowercase: updates.name.trim().toLowerCase() } : {};
+        tx.update(ref, { ...updates, ...derived, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
     });
     return { success: true };
 });

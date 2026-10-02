@@ -169,6 +169,19 @@ class FirebaseCommerceRepository @Inject constructor(
             .toObjects(FirestoreListing::class.java).map { it.toDomain() }
     }
 
+    override suspend fun searchShops(query: String): Result<List<Shop>> = runCatching {
+        // Case-insensitive prefix search on `name_lowercase` (indexed with isActive); bounded to one page.
+        val normalized = query.trim().lowercase()
+        if (normalized.isEmpty()) return@runCatching emptyList<Shop>()
+        firestore.collection("shops")
+            .whereEqualTo("isActive", true)
+            .whereGreaterThanOrEqualTo("name_lowercase", normalized)
+            .whereLessThanOrEqualTo("name_lowercase", normalized + "\uf8ff")
+            .limit(30)
+            .get().await()
+            .toObjects(FirestoreShop::class.java).map { it.toDomain() }
+    }
+
     override suspend fun createListing(listing: Listing): Result<String> = runCatching {
         val data = listing.toFirestore()
         val result = functions.getHttpsCallable("createListing").call(data).await()
