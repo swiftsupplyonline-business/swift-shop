@@ -46,7 +46,7 @@ class CheckoutViewModel @Inject constructor(
 
     private var currentCartItems: List<CartItem> = emptyList()
     private val _hasCartItems = MutableStateFlow(false)
-    val hasCartItems: StateFlow<Boolean> = _hasCartItems
+    val hasCartItems: StateFlow<Boolean> = _hasCartItems.asStateFlow()
     private val _cartItems = MutableStateFlow<List<CartItem>>(emptyList())
     val cartItems: StateFlow<List<CartItem>> = _cartItems.asStateFlow()
     
