@@ -46,7 +46,7 @@ class CheckoutViewModel @Inject constructor(
 
     private var currentCartItems: List<CartItem> = emptyList()
     private val _hasCartItems = MutableStateFlow(false)
-    val hasCartItems: StateFlow<Boolean> = _hasCartItems.asStateFlow()
+    val hasCartItems: StateFlow<Boolean> = _hasCartItems
     private val _cartItems = MutableStateFlow<List<CartItem>>(emptyList())
     val cartItems: StateFlow<List<CartItem>> = _cartItems.asStateFlow()
     
@@ -161,11 +161,13 @@ class CheckoutViewModel @Inject constructor(
             ).fold(
                 onSuccess = { initiation ->
                     clearCartUseCase(currentUserId)
-                    if (initiation.paymentUrl != null && initiation.mopaySessionId != null) {
+                    val paymentUrl = initiation.paymentUrl
+                    val mopaySessionId = initiation.mopaySessionId
+                    if (paymentUrl != null && mopaySessionId != null) {
                         _uiState.value = CheckoutUiState.AwaitingPayment(
                             initiation.orderId,
-                            initiation.paymentUrl,
-                            initiation.mopaySessionId
+                            paymentUrl,
+                            mopaySessionId
                         )
                     } else {
                         _uiState.value = CheckoutUiState.OrderPlaced(initiation.orderId)
@@ -197,4 +199,3 @@ class CheckoutViewModel @Inject constructor(
         }
     }
 }
-
