@@ -46,7 +46,7 @@ describe('Canonical Fulfillment Authority', () => {
       .get();
     expect(routes.size).toBe(1);
     expect(routes.docs[0].id).toBe(orderId);
-  }, 15000);
+  }, 60000); // two transactions contend for the same docs; the Firestore emulator resolves that by lock timeout/retry, which can take far longer than production
 
   test('authorized provider-scoped driver can claim a requested job', async () => {
     const providerId = 'provider_canonical_claim';
