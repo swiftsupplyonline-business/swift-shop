@@ -47,7 +47,7 @@ jobs:
         run: npm run build
 
       - name: Deploy Swift Dev Hosting and Marketplace API
-        run: firebase deploy --only hosting,functions:publicMarketplace,functions:payPreview --project swift-dev-3d3ae --non-interactive
+        run: firebase deploy --only hosting,functions:publicMarketplace,functions:payPreview,functions:renderSharedListing,functions:renderSharedDelivery,functions:renderListingPreview,functions:renderShopPreview --project swift-dev-3d3ae --non-interactive
 
       - name: Deployment summary
         run: |
