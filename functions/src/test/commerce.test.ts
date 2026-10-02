@@ -44,7 +44,7 @@ describe('Canonical Purchase Authority', () => {
     } as any)).rejects.toThrow();
   });
 
-  test('createPurchaseOrder reserves inventory, confirms wallet payment, and is idempotent', async () => {
+  test('createPurchaseOrder commits wallet inventory atomically and is idempotent', async () => {
     await db.collection('shops').doc('shop_canonical').set({
       ownerId: 'seller_canonical', name: 'Canonical Shop', locationLat: -29.31, locationLng: 27.48
     });
@@ -66,9 +66,21 @@ describe('Canonical Purchase Authority', () => {
     expect(order?.status).toBe('CONFIRMED');
     expect(order?.paymentStatus).toBe('PAID');
     expect(order?.settlementStatus).toBe('ESCROW_HOLD');
+    expect(order?.inventoryStatus).toBe('COMMITTED');
 
     const listing = (await db.collection('listings').doc('purchase_create_valid').get()).data();
-    expect(listing?.reservedQuantity).toBe(2);
+    expect(listing?.stockQuantity).toBe(3);
+    expect(listing?.reservedQuantity).toBe(0);
+
+    const reservations = await db.collection('reservations')
+      .where('orderId', '==', first.orderId)
+      .get();
+    expect(reservations.docs).toHaveLength(1);
+    expect(reservations.docs[0].data()?.status).toBe('COMMITTED');
+    expect(reservations.docs[0].data()?.quantity).toBe(2);
+
+    const wallet = (await db.collection('wallets').doc('buyer_create').get()).data();
+    expect(wallet?.availableBalanceMinorUnits).toBe(2970);
   });
 
   test('cancelOrder releases a reservation', async () => {
