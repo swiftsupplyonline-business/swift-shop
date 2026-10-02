@@ -3,7 +3,8 @@ name: Deploy Swift Dev Web
 on:
   push:
     branches:
-      - delivery-first-checkout
+      - canonical-reconcile-d
+      - canonical-platform-tree-2026-09-29
   workflow_dispatch:
 
 concurrency:
