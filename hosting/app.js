@@ -363,7 +363,7 @@ function route() {
   const path = location.pathname;
   updateCartBadge();
 
-  if (path === "/" || path === "") return renderBrowse(root);
+  if (path === "/" || path === "" || path === "/market") return renderBrowse(root);
   if (path === "/cart") return renderCart(root);
   if (path === "/checkout") return renderCheckout(root);
 
