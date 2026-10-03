@@ -171,9 +171,12 @@ function listingCard(l, shopById = new Map()) {
 
 function shopCard(s) {
   return `
-    <a class="shop-card" href="/shop/${s.id}">
-      <div class="shop-logo" style="background-image:url('${s.logoUrl || ""}')"></div>
-      <div class="shop-name">${escapeHtml(s.name || "Shop")}</div>
+    <a class="shop-card" href="/shop/${s.id}" style="background-image:url('${s.coverUrl || ""}')">
+      <div class="shop-card-scrim"></div>
+      <div class="shop-card-content">
+        <div class="shop-logo" style="background-image:url('${s.logoUrl || ""}')"></div>
+        <div class="shop-name">${escapeHtml(s.name || "Shop")}</div>
+      </div>
     </a>`;
 }
 
