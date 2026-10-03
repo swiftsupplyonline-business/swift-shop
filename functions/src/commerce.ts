@@ -1283,6 +1283,27 @@ export const confirmDelivery = onCall(async (request) => {
             const platformFee   = order.platformFeeMinorUnits || 0;
             const orderTotal    = order.totalMinorUnits || 0; // Product purchase total = subtotal + platformFee
 
+            // --- READ ALL REQUIRED DOCUMENTS BEFORE WRITING ---
+            const sellerWalletRef = db.collection("wallets").doc(order.sellerId);
+            const sellerWalletDoc = await transaction.get(sellerWalletRef);
+
+            const drQuery = db.collection("deliveryRequests").where("relatedOrderId", "==", orderId).where("status", "==", "ACCEPTED").limit(1);
+            const drSnap = await transaction.get(drQuery);
+
+            let drData: FirebaseFirestore.DocumentData | null = null;
+            let providerWalletRef: FirebaseFirestore.DocumentReference | null = null;
+            let providerWalletDoc: FirebaseFirestore.DocumentSnapshot | null = null;
+
+            if (!drSnap.empty) {
+                drData = drSnap.docs[0].data();
+                if (drData && drData.merchantId) {
+                    providerWalletRef = db.collection("wallets").doc(drData.merchantId);
+                    providerWalletDoc = await transaction.get(providerWalletRef);
+                }
+            }
+
+            // --- ALL READS COMPLETE: NOW PERFORM TRANSACTION WRITES ---
+
             // 1. Settle Product Order Escrow
             const ledgerId = db.collection("ledgerEntries").doc().id;
             transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
@@ -1296,9 +1317,7 @@ export const confirmDelivery = onCall(async (request) => {
             });
 
             // Seller proceeds = subtotal (product cost)
-            const sellerWalletRef = db.collection("wallets").doc(order.sellerId);
-            const sellerWalletDoc = await transaction.get(sellerWalletRef);
-            const currentSellerBalance = sellerWalletDoc.data()?.availableBalanceMinorUnits || 0;
+            const currentSellerBalance = sellerWalletDoc.exists ? (sellerWalletDoc.data()?.availableBalanceMinorUnits || 0) : 0;
             transaction.update(sellerWalletRef, {
                 availableBalanceMinorUnits: currentSellerBalance + subtotal,
                 updatedAt: now
@@ -1316,29 +1335,21 @@ export const confirmDelivery = onCall(async (request) => {
             });
 
             // 2. Settle Delivery Escrow (if a fulfillment request exists)
-            const drQuery = db.collection("deliveryRequests").where("relatedOrderId", "==", orderId).where("status", "==", "ACCEPTED").limit(1);
-            const drSnap = await transaction.get(drQuery);
-            if (!drSnap.empty) {
-                const drDoc = drSnap.docs[0];
-                const dr = drDoc.data();
-                const deliveryFee = dr.deliveryFeeMinorUnits || 0;
-
-                if (deliveryFee > 0 && dr.merchantId) {
-                    // Release delivery fee from system_delivery_escrow to delivery provider
+            if (drData) {
+                const deliveryFee = drData.deliveryFeeMinorUnits || 0;
+                if (deliveryFee > 0 && drData.merchantId) {
                     const deliveryLedgerId = db.collection("ledgerEntries").doc().id;
                     transaction.set(db.collection("ledgerEntries").doc(deliveryLedgerId), {
                         id: deliveryLedgerId,
                         debitAccount: "system_delivery_escrow",
-                        creditAccount: `user_${dr.merchantId}`,
+                        creditAccount: `user_${drData.merchantId}`,
                         amountMinorUnits: deliveryFee,
-                        currency: dr.deliveryFeeCurrency || "LSL",
+                        currency: drData.deliveryFeeCurrency || "LSL",
                         reference: `DELIVERY_PAYOUT_${orderId}`,
                         timestamp: now
                     });
 
-                    const providerWalletRef = db.collection("wallets").doc(dr.merchantId);
-                    const providerWalletDoc = await transaction.get(providerWalletRef);
-                    if (providerWalletDoc.exists) {
+                    if (providerWalletRef && providerWalletDoc && providerWalletDoc.exists) {
                         const currentProviderBalance = providerWalletDoc.data()?.availableBalanceMinorUnits || 0;
                         transaction.update(providerWalletRef, {
                             availableBalanceMinorUnits: currentProviderBalance + deliveryFee,

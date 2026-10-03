@@ -37,37 +37,11 @@ main{max-width:1180px;margin:auto;padding:26px 22px 100px}.hero{min-height:390px
 </section>
 <section class="section"><div class="section-head"><div><h2>Shop by category</h2><div class="sub">Everything you need, from shops near you.</div></div></div>
 <div class="categories"><button class="cat" onclick="filterProducts('Beauty')"><b>✦</b><span>Beauty</span></button><button class="cat" onclick="filterProducts('Fashion')"><b>◈</b><span>Fashion</span></button><button class="cat" onclick="filterProducts('Gadgets')"><b>⌁</b><span>Gadgets</span></button><button class="cat" onclick="filterProducts('Home')"><b>⌂</b><span>Home</span></button><button class="cat" onclick="filterProducts('Baby')"><b>♡</b><span>Baby</span></button><button class="cat" onclick="filterProducts('Food')"><b>◉</b><span>Food</span></button></div></section>
-<section class="section" id="products"><div class="section-head"><div><h2>Trending on Swift</h2><div class="sub">A visual preview of the customer marketplace.</div></div><button class="link" onclick="filterProducts('')">See all →</button></div><div class="grid" id="grid"></div></section>
-<section class="section"><div class="section-head"><div><h2>Local shops</h2><div class="sub">Meet the people behind the products.</div></div></div><div class="shops">
-<div class="shop-card"><div class="shop-avatar">S</div><h3>Swift Beauty</h3><p>Beauty · Hair · Skincare</p></div>
-<div class="shop-card"><div class="shop-avatar">K</div><h3>Khubetsoana Finds</h3><p>Fashion · Accessories · Gifts</p></div>
-<div class="shop-card"><div class="shop-avatar">M</div><h3>Maseru Tech</h3><p>Gadgets · Mobile · Electronics</p></div>
-</div></section>
+<div id="app"></div>
 </main>
 </div>
 <div class="drawer" id="drawer" onclick="if(event.target===this)closeCart()"><aside class="panel"><div class="panel-head"><h2>Your bag</h2><button class="close" onclick="closeCart()">×</button></div><div id="cart"></div><div class="summary"><div class="row"><span>Subtotal</span><b id="subtotal">M0</b></div><div class="row"><span>Delivery</span><span>Calculated at checkout</span></div><button class="checkout" onclick="checkout()">Continue to checkout</button></div></aside></div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="modal-card" id="modalContent"></div></div>
 <div class="toast" id="toast"></div>
-<script>
-const products=[
-{id:1,name:"Glow Essentials Set",shop:"Swift Beauty",category:"Beauty",price:250},
-{id:2,name:"Everyday Tote",shop:"Khubetsoana Finds",category:"Fashion",price:200},
-{id:3,name:"Pocket Speaker",shop:"Maseru Tech",category:"Gadgets",price:350},
-{id:4,name:"Skin Care Duo",shop:"Swift Beauty",category:"Beauty",price:175},
-{id:5,name:"Minimal Watch",shop:"Khubetsoana Finds",category:"Fashion",price:450},
-{id:6,name:"USB-C Power Hub",shop:"Maseru Tech",category:"Gadgets",price:290},
-{id:7,name:"Home Fragrance",shop:"Swift Beauty",category:"Home",price:160},
-{id:8,name:"Baby Care Pack",shop:"Swift Beauty",category:"Baby",price:220}
-];
-let cart=[];
-function money(n){return "M"+n.toLocaleString("en-ZA")}
-function render(list=products){document.getElementById("grid").innerHTML=list.map(p=>`<article class="product" onclick="openProduct(${p.id})"><div class="photo"><span class="tag">${p.category}</span><button class="heart" onclick="event.stopPropagation();toast('Saved to favourites')">♡</button><div class="orb"></div></div><div class="info"><div class="shop">${p.shop}</div><div class="name">${p.name}</div><div class="product-foot"><span class="price">${money(p.price)}</span><button class="add" onclick="event.stopPropagation();add(${p.id})">+</button></div></div></article>`).join("")}
-function filterProducts(q){q=q.toLowerCase();render(products.filter(p=>(p.name+" "+p.shop+" "+p.category).toLowerCase().includes(q)));document.getElementById("products").scrollIntoView({behavior:"smooth"})}
-function add(id){const p=products.find(x=>x.id===id),x=cart.find(x=>x.id===id);if(x)x.qty++;else cart.push({...p,qty:1});updateCart();toast(p.name+" added to your bag")}
-function updateCart(){let n=cart.reduce((s,x)=>s+x.qty,0);document.getElementById("count").textContent=n;document.getElementById("cart").innerHTML=cart.length?cart.map(x=>`<div class="cart-item"><div class="mini"><div class="orb" style="width:42px;height:42px;border-radius:13px;background:linear-gradient(145deg,#fff,#bbb)"></div></div><div style="flex:1"><b>${x.name}</b><div class="sub">${x.shop}</div><div class="row"><span>${money(x.price)}</span><span>× ${x.qty}</span></div></div></div>`).join(""):"<p class='sub'>Your bag is empty. Add something beautiful.</p>";document.getElementById("subtotal").textContent=money(cart.reduce((s,x)=>s+x.price*x.qty,0))}
-function openCart(){document.getElementById("drawer").classList.add("open");updateCart()}function closeCart(){document.getElementById("drawer").classList.remove("open")}
-function openProduct(id){const p=products.find(x=>x.id===id);document.getElementById("modalContent").innerHTML=`<div class="panel-head"><span class="eyebrow">${p.shop}</span><button class="close" onclick="closeModal()">×</button></div><div class="detail"><div class="detail-photo"><div class="orb"></div></div><div><div class="eyebrow">${p.category}</div><h2>${p.name}</h2><div class="detail-price">${money(p.price)}</div><p class="sub">Available from ${p.shop}. Order online and choose delivery at checkout.</p><div class="qty"><button>−</button><b>1</b><button>+</button></div><button class="checkout full" onclick="add(${p.id});closeModal();openCart()">Add to bag · ${money(p.price)}</button><button class="pill full" style="margin-top:10px" onclick="toast('Smart link copied')">↗ Share smart link</button></div></div>`;document.getElementById("modal").classList.add("open")}
-function closeModal(){document.getElementById("modal").classList.remove("open")}function checkout(){if(!cart.length){toast("Your bag is empty");return}toast("Checkout flow ready for Firebase integration")}function goHome(){scrollTo(0,0)}function toast(t){const e=document.getElementById("toast");e.textContent=t;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),2200)}
-render();updateCart();
-</script>
+<script type="module" src="/app.js"></script>
 </body></html>
