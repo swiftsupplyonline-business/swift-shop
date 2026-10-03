@@ -72,6 +72,9 @@ class OfflineFirstCommerceRepository @Inject constructor(
         result.getOrNull()?.let { local.cacheListing(it) }
     }
 
+    override suspend fun getListingByShareSlugs(shopSlug: String, productSlug: String): Result<Listing> =
+        remote.getListingByShareSlugs(shopSlug, productSlug)
+
     override suspend fun getUserListings(userId: String): Result<List<Listing>> = 
         remote.getUserListings(userId)
 
