@@ -827,7 +827,7 @@ private fun CustomFieldRenderer(field: CustomField) {
 
 
 private fun normalizeShareSlug(value: String): String = value
-    .normalize(java.text.Normalizer.Form.NFKD)
+    .let { java.text.Normalizer.normalize(it, java.text.Normalizer.Form.NFKD) }
     .replace(Regex("\\p{M}+"), "")
     .lowercase()
     .replace(Regex("[^a-z0-9]+"), "-")
