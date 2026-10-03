@@ -110,6 +110,38 @@ describe('Canonical Purchase Authority', () => {
     expect((await db.collection('reservations').doc(reservationId).get()).data()?.status).toBe('RELEASED');
   });
 
+  test('cancelOrder rejects a paid CONFIRMED order at the payment boundary', async () => {
+    const orderId = 'order_paid_confirmed_no_cancel';
+    await db.collection('orders').doc(orderId).set({
+      id: orderId, buyerId: 'buyer_paid_confirmed', sellerId: 'seller_paid_confirmed',
+      status: 'CONFIRMED', paymentStatus: 'PAID', paymentMethod: 'SWIFT_WALLET',
+      totalMinorUnits: 1000, settlementStatus: 'ESCROW_HOLD'
+    });
+
+    await expect(testEnv.wrap(cancelOrder)({
+      data: { orderId, reason: 'Customer changed mind' },
+      auth: { uid: 'buyer_paid_confirmed', token: {}, rawToken: '' }
+    } as any)).rejects.toThrow(/Paid orders cannot be cancelled/i);
+
+    expect((await db.collection('orders').doc(orderId).get()).data()?.status).toBe('CONFIRMED');
+  });
+
+  test('cancelOrder rejects a paid PROCESSING order at the payment boundary', async () => {
+    const orderId = 'order_paid_processing_no_cancel';
+    await db.collection('orders').doc(orderId).set({
+      id: orderId, buyerId: 'buyer_paid_processing', sellerId: 'seller_paid_processing',
+      status: 'PROCESSING', paymentStatus: 'PAID', paymentMethod: 'SWIFT_WALLET',
+      totalMinorUnits: 1000, settlementStatus: 'ESCROW_HOLD'
+    });
+
+    await expect(testEnv.wrap(cancelOrder)({
+      data: { orderId, reason: 'Customer changed mind' },
+      auth: { uid: 'buyer_paid_processing', token: {}, rawToken: '' }
+    } as any)).rejects.toThrow(/Paid orders cannot be cancelled/i);
+
+    expect((await db.collection('orders').doc(orderId).get()).data()?.status).toBe('PROCESSING');
+  });
+
   test('confirmDelivery self-pickup path settles escrow', async () => {
     const orderId = 'order_self_pickup_normal';
     await db.collection('wallets').doc('seller_pickup').set({ availableBalanceMinorUnits: 0 });
