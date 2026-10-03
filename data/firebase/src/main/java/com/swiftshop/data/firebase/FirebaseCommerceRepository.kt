@@ -109,6 +109,28 @@ class FirebaseCommerceRepository @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
+    override suspend fun getListingByShareSlugs(shopSlug: String, productSlug: String): Result<Listing> = runCatching {
+        val normalizedShopSlug = shopSlug.trim().lowercase()
+        val normalizedProductSlug = productSlug.trim().lowercase()
+        require(normalizedShopSlug.isNotBlank() && normalizedProductSlug.isNotBlank()) { "Invalid listing share link" }
+
+        val shopSnapshot = firestore.collection("shops")
+            .whereEqualTo("shareSlug", normalizedShopSlug)
+            .limit(2)
+            .get().await()
+        if (shopSnapshot.size() != 1) throw NoSuchElementException("Shop not found")
+
+        val shopId = shopSnapshot.documents.single().id
+        val listingSnapshot = firestore.collection("listings")
+            .whereEqualTo("shopId", shopId)
+            .whereEqualTo("shareSlug", normalizedProductSlug)
+            .limit(2)
+            .get().await()
+        if (listingSnapshot.size() != 1) throw NoSuchElementException("Listing not found")
+
+        getListing(listingSnapshot.documents.single().id).getOrThrow()
+    }
+
     override suspend fun getListing(listingId: String): Result<Listing> = runCatching {
         val doc = firestore.collection("listings").document(listingId).get().await()
         val firestoreListing = doc.toObject(FirestoreListing::class.java) ?: throw NoSuchElementException("Listing not found")
@@ -440,6 +462,7 @@ data class FirestoreListing(
     val category: String = "",
     val tags: List<String> = emptyList(),
     val listingType: String = "BUY",
+    val shareSlug: String = "",
     @get:PropertyName("isAvailable") @set:PropertyName("isAvailable") var isAvailable: Boolean = true,
     @get:PropertyName("isSponsored") @set:PropertyName("isSponsored") var isSponsored: Boolean = false,
     val stockQuantity: Int = 1,
