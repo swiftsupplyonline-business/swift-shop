@@ -611,18 +611,18 @@ export const cancelOrder = onCall(async (request) => {
                 ["DELIVERED", "COMPLETED", "FAILED"].includes(order.status)) {
                 throw new Error("Orders cannot be cancelled after delivery");
             }
-            // The buyer can cancel until the seller has marked the order ready for pickup/dispatch.
-            if (isBuyer && !isSeller && !isAdmin &&
-                !["PENDING", "RESERVED", "CONFIRMED", "PROCESSING"].includes(order.status)) {
-                throw new Error("This order can no longer be cancelled by the buyer");
-            }
-            // Paid through MoPay: there is no automatic gateway refund yet, so cancelling would silently
-            // keep the buyer's money. Refuse until a refund path exists.
-            if (order.paymentStatus === "SUCCESS") {
-                throw new Error("This order was paid through MoPay and needs a manual refund. Please contact support.");
+            // Successful payment ends normal cancellation. Post-payment problems use the complaint/dispute
+            // mechanism rather than cancelOrder. This applies regardless of whether the order has settled.
+            if (order.paymentStatus === "PAID" || order.paymentStatus === "SUCCESS") {
+                throw new Error("Paid orders cannot be cancelled. Please use the complaint/dispute mechanism for post-payment problems.");
             }
 
-            const refundWallet = order.paymentMethod === "SWIFT_WALLET" && order.paymentStatus === "PAID";
+            // Only unpaid orders in the normal pre-payment states may be cancelled by the buyer.
+            if (isBuyer && !isSeller && !isAdmin && !["PENDING", "RESERVED"].includes(order.status)) {
+                throw new Error("This order can no longer be cancelled by the buyer");
+            }
+
+            const refundWallet = false;
             const cancelReason = reason || "User requested";
             const now = admin.firestore.FieldValue.serverTimestamp();
 
