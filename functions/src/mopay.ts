@@ -55,6 +55,7 @@ export class MopayClient {
                 ...(request.idempotencyKey ? { "X-Idempotency-Key": request.idempotencyKey } : {})
             },
             body: JSON.stringify(request),
+            signal: AbortSignal.timeout(15000),
         });
 
         if (!response.ok) {
@@ -74,11 +75,12 @@ export class MopayClient {
     ): Promise<MopayVerifyResponse | null> {
         const apiKey = MOPAY_API_KEY.value();
 
-        const response = await fetch(`${MOPAY_BASE_URL}/api/external/session/v1/${sessionId}`, {
+        const response = await fetch(`${MOPAY_BASE_URL}/api/external/session/v1/${encodeURIComponent(sessionId)}`, {
             method: "GET",
             headers: {
                 "Authorization": `Bearer ${apiKey}`,
             },
+            signal: AbortSignal.timeout(15000),
         });
 
         if (!response.ok) {

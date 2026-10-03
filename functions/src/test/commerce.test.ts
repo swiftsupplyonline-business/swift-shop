@@ -44,7 +44,7 @@ describe('Canonical Purchase Authority', () => {
     } as any)).rejects.toThrow();
   });
 
-  test('createPurchaseOrder reserves inventory, confirms wallet payment, and is idempotent', async () => {
+  test('createPurchaseOrder commits wallet inventory atomically and is idempotent', async () => {
     await db.collection('shops').doc('shop_canonical').set({
       ownerId: 'seller_canonical', name: 'Canonical Shop', locationLat: -29.31, locationLng: 27.48
     });
@@ -66,9 +66,21 @@ describe('Canonical Purchase Authority', () => {
     expect(order?.status).toBe('CONFIRMED');
     expect(order?.paymentStatus).toBe('PAID');
     expect(order?.settlementStatus).toBe('ESCROW_HOLD');
+    expect(order?.inventoryStatus).toBe('COMMITTED');
 
     const listing = (await db.collection('listings').doc('purchase_create_valid').get()).data();
-    expect(listing?.reservedQuantity).toBe(2);
+    expect(listing?.stockQuantity).toBe(3);
+    expect(listing?.reservedQuantity).toBe(0);
+
+    const reservations = await db.collection('reservations')
+      .where('orderId', '==', first.orderId)
+      .get();
+    expect(reservations.docs).toHaveLength(1);
+    expect(reservations.docs[0].data()?.status).toBe('COMMITTED');
+    expect(reservations.docs[0].data()?.quantity).toBe(2);
+
+    const wallet = (await db.collection('wallets').doc('buyer_create').get()).data();
+    expect(wallet?.availableBalanceMinorUnits).toBe(2970);
   });
 
   test('cancelOrder releases a reservation', async () => {
@@ -98,12 +110,44 @@ describe('Canonical Purchase Authority', () => {
     expect((await db.collection('reservations').doc(reservationId).get()).data()?.status).toBe('RELEASED');
   });
 
+  test('cancelOrder rejects a paid CONFIRMED order at the payment boundary', async () => {
+    const orderId = 'order_paid_confirmed_no_cancel';
+    await db.collection('orders').doc(orderId).set({
+      id: orderId, buyerId: 'buyer_paid_confirmed', sellerId: 'seller_paid_confirmed',
+      status: 'CONFIRMED', paymentStatus: 'PAID', paymentMethod: 'SWIFT_WALLET',
+      totalMinorUnits: 1000, settlementStatus: 'ESCROW_HOLD'
+    });
+
+    await expect(testEnv.wrap(cancelOrder)({
+      data: { orderId, reason: 'Customer changed mind' },
+      auth: { uid: 'buyer_paid_confirmed', token: {}, rawToken: '' }
+    } as any)).rejects.toThrow(/Paid orders cannot be cancelled/i);
+
+    expect((await db.collection('orders').doc(orderId).get()).data()?.status).toBe('CONFIRMED');
+  });
+
+  test('cancelOrder rejects a paid PROCESSING order at the payment boundary', async () => {
+    const orderId = 'order_paid_processing_no_cancel';
+    await db.collection('orders').doc(orderId).set({
+      id: orderId, buyerId: 'buyer_paid_processing', sellerId: 'seller_paid_processing',
+      status: 'PROCESSING', paymentStatus: 'PAID', paymentMethod: 'SWIFT_WALLET',
+      totalMinorUnits: 1000, settlementStatus: 'ESCROW_HOLD'
+    });
+
+    await expect(testEnv.wrap(cancelOrder)({
+      data: { orderId, reason: 'Customer changed mind' },
+      auth: { uid: 'buyer_paid_processing', token: {}, rawToken: '' }
+    } as any)).rejects.toThrow(/Paid orders cannot be cancelled/i);
+
+    expect((await db.collection('orders').doc(orderId).get()).data()?.status).toBe('PROCESSING');
+  });
+
   test('confirmDelivery self-pickup path settles escrow', async () => {
     const orderId = 'order_self_pickup_normal';
     await db.collection('wallets').doc('seller_pickup').set({ availableBalanceMinorUnits: 0 });
     await db.collection('orders').doc(orderId).set({
       id: orderId, buyerId: 'buyer_pickup', sellerId: 'seller_pickup',
-      status: 'READY', requiresDelivery: false, subtotalMinorUnits: 1000,
+      status: 'READY', paymentStatus: 'PAID', requiresDelivery: false, subtotalMinorUnits: 1000,
       deliveryFeeMinorUnits: 0, platformFeeMinorUnits: 15, totalMinorUnits: 1015,
       settlementStatus: 'ESCROW_HOLD'
     });
@@ -114,5 +158,23 @@ describe('Canonical Purchase Authority', () => {
 
     expect(result.success).toBe(true);
     expect((await db.collection('orders').doc(orderId).get()).data()?.settlementStatus).toBe('SETTLED');
+  });
+
+  test('confirmDelivery refuses an unpaid order and pays nobody', async () => {
+    const orderId = 'order_unpaid_confirm';
+    await db.collection('wallets').doc('seller_unpaid').set({ availableBalanceMinorUnits: 0 });
+    await db.collection('orders').doc(orderId).set({
+      id: orderId, buyerId: 'buyer_unpaid', sellerId: 'seller_unpaid',
+      status: 'READY', paymentStatus: 'PENDING', requiresDelivery: false, subtotalMinorUnits: 1000,
+      deliveryFeeMinorUnits: 0, platformFeeMinorUnits: 15, totalMinorUnits: 1015,
+      settlementStatus: 'ESCROW_HOLD'
+    });
+
+    await expect(testEnv.wrap(confirmDelivery)({
+      data: { orderId }, auth: { uid: 'buyer_unpaid', token: {}, rawToken: '' }
+    } as any)).rejects.toThrow(/not been paid/i);
+
+    expect((await db.collection('wallets').doc('seller_unpaid').get()).data()?.availableBalanceMinorUnits).toBe(0);
+    expect((await db.collection('orders').doc(orderId).get()).data()?.settlementStatus).toBe('ESCROW_HOLD');
   });
 });

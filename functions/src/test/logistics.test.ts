@@ -23,7 +23,7 @@ describe('Canonical Fulfillment Authority', () => {
       id: requestId, requesterId: 'buyer_delivery_idempotent', relatedOrderId: orderId,
       merchantId: providerId, listingId: 'delivery_listing_idempotent',
       pickup: { lat: -29.31, lng: 27.48 }, dropoff: { lat: -29.32, lng: 27.49 },
-      deliveryFeeMinorUnits: 2500, status: 'ACCEPTED'
+      deliveryFeeMinorUnits: 2500, escrowStatus: 'HELD', status: 'ACCEPTED' // a priced delivery must be escrowed before a job exists
     });
 
     const wrapped = testEnv.wrap(createDeliveryJob);
@@ -46,7 +46,7 @@ describe('Canonical Fulfillment Authority', () => {
       .get();
     expect(routes.size).toBe(1);
     expect(routes.docs[0].id).toBe(orderId);
-  }, 15000);
+  }, 60000); // two transactions contend for the same docs; the Firestore emulator resolves that by lock timeout/retry, which can take far longer than production
 
   test('authorized provider-scoped driver can claim a requested job', async () => {
     const providerId = 'provider_canonical_claim';

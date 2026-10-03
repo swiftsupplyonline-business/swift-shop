@@ -44,3 +44,16 @@ export * from "./advertising";
 // Share Preview Functions
 export * from "./sharePreview";
 
+// Public web surfaces referenced by firebase.json hosting rewrites (/api/marketplace, /pay/**)
+export { publicMarketplace } from "./publicMarketplace";
+export { payPreview } from "./payPreview";
+
+// Notifications: FCM token registration and Firestore-triggered push delivery
+export {
+    updateFcmToken,
+    notifyOnMessage,
+    notifyOnOrderStatusChange,
+    notifyOnDeliveryRequestCreated,
+    notifyOnDeliveryRequestResponded,
+    notifyOnDeliveryStatusChange
+} from "./notifications";

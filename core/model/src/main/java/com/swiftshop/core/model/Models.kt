@@ -190,6 +190,7 @@ data class Listing(
     val stockQuantity: Int = 1,
     val commitmentCount: Int = 0,
     val deliveryEstimateDays: Int = 0,
+    val driverShareBps: Int = 0,
     val customFields: List<CustomField> = emptyList(),
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,

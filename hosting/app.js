@@ -30,6 +30,7 @@ const functions = getFunctions(app);
 
 const CART_KEY = "swiftshop_cart_v1";
 const LSL = (minorUnits) => `M${(minorUnits / 100).toFixed(2)}`;
+let frontDoorTimer = null;
 
 // ---------- Cart (client-side convenience only – never authoritative) ----------
 
@@ -172,8 +173,12 @@ function listingCard(l, shopById = new Map()) {
 function shopCard(s) {
   return `
     <a class="shop-card" href="/shop/${s.id}">
-      <div class="shop-logo" style="background-image:url('${s.logoUrl || ""}')"></div>
-      <div class="shop-name">${escapeHtml(s.name || "Shop")}</div>
+      <div class="shop-card-cover" style="background-image:url('${s.coverUrl || ""}')"></div>
+      <div class="shop-card-scrim"></div>
+      <div class="shop-card-content">
+        <div class="shop-logo" style="background-image:url('${s.logoUrl || ""}')"></div>
+        <div class="shop-name">${escapeHtml(s.name || "Shop")}</div>
+      </div>
     </a>`;
 }
 
@@ -186,22 +191,106 @@ function escapeHtml(s) {
 // ---------- Views ----------
 
 async function renderBrowse(root) {
-  root.innerHTML = `<div class="loading">Loading marketplace…</div>`;
-  try {
-    const [listings, shops] = await Promise.all([fetchListings(), fetchShops()]);
-    const shopById = new Map(shops.map(shop => [shop.id, shop]));
-    root.innerHTML = `
-      <section>
-        <h2>Shops</h2>
-        <div class="shop-row">${shops.length ? shops.map(shopCard).join("") : "<p class='empty'>No shops yet.</p>"}</div>
-      </section>
-      <section>
-        <h2>Latest listings</h2>
-        <div class="grid">${listings.length ? listings.map(l => listingCard(l, shopById)).join("") : "<p class='empty'>No listings yet.</p>"}</div>
-      </section>`;
-  } catch (err) {
-    root.innerHTML = `<div class="error">Couldn't load the marketplace. ${escapeHtml(err.message)}</div>`;
+  if (frontDoorTimer) {
+    clearInterval(frontDoorTimer);
+    frontDoorTimer = null;
   }
+
+  const marketPromise = Promise.all([fetchListings(), fetchShops()]);
+
+  root.innerHTML = `
+    <section class="market-front-door" aria-label="Swift marketplace welcome">
+      <div class="ad-slot" data-ad-provider="google-meta" aria-label="Advertisement">
+        <span class="ad-label">Advertisement</span>
+        <strong>Google / Meta ad space</strong>
+        <small>Reserved for marketplace advertising</small>
+      </div>
+
+      <div class="swift-house-ad" aria-label="Swift promotion">
+        <div class="swift-house-copy">
+          <span class="ad-label">Swift</span>
+          <div class="swift-house-slide is-active" data-house-slide="0">
+            <strong>Local market. One place.</strong>
+            <span>Discover products from local businesses around Maseru.</span>
+          </div>
+          <div class="swift-house-slide" data-house-slide="1">
+            <strong>Shop local with Swift.</strong>
+            <span>Find something you need, buy it, and keep moving.</span>
+          </div>
+          <div class="swift-house-slide" data-house-slide="2">
+            <strong>Businesses belong on Swift.</strong>
+            <span>Put your products in front of people already looking to buy.</span>
+          </div>
+        </div>
+        <div class="swift-house-dots" aria-hidden="true">
+          <span class="is-active" data-house-dot="0"></span>
+          <span data-house-dot="1"></span>
+          <span data-house-dot="2"></span>
+        </div>
+      </div>
+
+      <div class="guest-entry">
+        <div>
+          <span class="eyebrow">Swift marketplace</span>
+          <h2>Ready to shop?</h2>
+          <p>Browse the market as a guest. No account needed.</p>
+        </div>
+        <button class="btn primary guest-btn" id="continueGuestBtn" type="button">Continue as Guest <span aria-hidden="true">→</span></button>
+        <div class="signin-note">Already have Swift? <button type="button" class="text-btn" id="signInBtn">Sign in</button></div>
+        <div class="market-ready" id="marketReady" role="status" aria-live="polite">Preparing the market…</div>
+      </div>
+    </section>`;
+
+  const slides = [...root.querySelectorAll("[data-house-slide]")];
+  const dots = [...root.querySelectorAll("[data-house-dot]")];
+  let active = 0;
+  const showSlide = (index) => {
+    active = index % slides.length;
+    slides.forEach((slide, i) => slide.classList.toggle("is-active", i === active));
+    dots.forEach((dot, i) => dot.classList.toggle("is-active", i === active));
+  };
+  frontDoorTimer = setInterval(() => showSlide(active + 1), 4200);
+
+  const guestBtn = root.querySelector("#continueGuestBtn");
+  const ready = root.querySelector("#marketReady");
+  const signInBtn = root.querySelector("#signInBtn");
+
+  signInBtn?.addEventListener("click", () => {
+    ready.textContent = "Sign-in is coming soon. You can keep browsing as a guest.";
+  });
+
+  guestBtn?.addEventListener("click", async () => {
+    guestBtn.disabled = true;
+    guestBtn.textContent = "Opening market…";
+    try {
+      const [listings, shops] = await marketPromise;
+      const shopById = new Map(shops.map(shop => [shop.id, shop]));
+      if (frontDoorTimer) {
+        clearInterval(frontDoorTimer);
+        frontDoorTimer = null;
+      }
+      root.innerHTML = `
+        <section class="market-feed">
+          <div class="section-heading"><span class="eyebrow">Swift marketplace</span><h2>Shops</h2></div>
+          <div class="shop-row">${shops.length ? shops.map(shopCard).join("") : "<p class='empty'>No shops yet.</p>"}</div>
+        </section>
+        <section class="market-feed">
+          <div class="section-heading"><span class="eyebrow">Fresh on Swift</span><h2>Latest listings</h2></div>
+          <div class="grid">${listings.length ? listings.map(l => listingCard(l, shopById)).join("") : "<p class='empty'>No listings yet.</p>"}</div>
+        </section>`;
+    } catch (err) {
+      guestBtn.disabled = false;
+      guestBtn.textContent = "Continue as Guest →";
+      ready.textContent = `Couldn't open the market: ${err.message}`;
+      ready.classList.add("error-text");
+    }
+  });
+
+  marketPromise.then(() => {
+    if (ready) ready.textContent = "Market ready — jump in whenever you're ready.";
+  }).catch(() => {
+    if (ready) ready.textContent = "The market is taking a moment. Try Continue as Guest again.";
+  });
 }
 
 async function renderShop(root, shopId) {
@@ -359,7 +448,7 @@ function route() {
   const path = location.pathname;
   updateCartBadge();
 
-  if (path === "/" || path === "") return renderBrowse(root);
+  if (path === "/" || path === "" || path === "/market") return renderBrowse(root);
   if (path === "/cart") return renderCart(root);
   if (path === "/checkout") return renderCheckout(root);
 
@@ -372,11 +461,19 @@ function route() {
   root.innerHTML = `<div class="error">Page not found. <a href="/">Go home</a></div>`;
 }
 
+// Paths served by Cloud Functions (smart links, payment pages, API). The client router has no
+// route for them, so they must be real browser navigations, never intercepted.
+const SERVER_ROUTED = /^\/(s|d|pay|api)(\/|\?|#|$)/;
+
 document.addEventListener("click", (e) => {
   const a = e.target.closest("a[href^='/']");
   if (!a) return;
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  if (a.target && a.target !== "_self") return;
+  const href = a.getAttribute("href");
+  if (SERVER_ROUTED.test(href)) return;
   e.preventDefault();
-  navigate(a.getAttribute("href"));
+  navigate(href);
 });
 window.addEventListener("popstate", route);
 document.addEventListener("DOMContentLoaded", () => {
