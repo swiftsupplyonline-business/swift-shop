@@ -1263,34 +1263,44 @@ export const confirmDelivery = onCall(async (request) => {
             const order = orderDoc.data()!;
 
             if (order.buyerId !== auth.uid) throw new Error("Unauthorized");
-            if (!["READY", "DISPATCHED", "DELIVERED"].includes(order.status)) {
+            if (order.settlementStatus === "SETTLED") return;
+
+            // Fulfillment state gate: If attached to a fulfillment route, route MUST be in DELIVERED status
+            if (order.fulfillmentId) {
+                const routeRef = db.collection("deliveryRoutes").doc(order.fulfillmentId);
+                const routeDoc = await transaction.get(routeRef);
+                if (!routeDoc.exists) throw new Error("Associated delivery route not found");
+                const route = routeDoc.data()!;
+                if (route.status !== "DELIVERED") {
+                    throw new Error(`Delivery cannot be confirmed until fulfillment route is DELIVERED. Current route status: ${route.status}`);
+                }
+            } else if (!["READY", "DISPATCHED", "DELIVERED"].includes(order.status)) {
                 throw new Error(`Order cannot be confirmed in state ${order.status}`);
             }
-            if (order.settlementStatus === "SETTLED") return;
 
             const now = admin.firestore.Timestamp.now();
             const subtotal      = order.subtotalMinorUnits || 0;
-            const deliveryFee   = order.deliveryFeeMinorUnits || 0;
             const platformFee   = order.platformFeeMinorUnits || 0;
-            const total         = order.totalMinorUnits || 0;
-            const sellerProceeds = subtotal + deliveryFee;
+            const orderTotal    = order.totalMinorUnits || 0; // Product purchase total = subtotal + platformFee
 
+            // 1. Settle Product Order Escrow
             const ledgerId = db.collection("ledgerEntries").doc().id;
             transaction.set(db.collection("ledgerEntries").doc(ledgerId), {
                 id: ledgerId,
                 debitAccount: "system_order_escrow",
                 creditAccount: "system_clearing",
-                amountMinorUnits: total,
+                amountMinorUnits: orderTotal,
                 currency: "LSL",
                 reference: `SETTLE_ORDER_${orderId}`,
                 timestamp: now
             });
 
+            // Seller proceeds = subtotal (product cost)
             const sellerWalletRef = db.collection("wallets").doc(order.sellerId);
             const sellerWalletDoc = await transaction.get(sellerWalletRef);
             const currentSellerBalance = sellerWalletDoc.data()?.availableBalanceMinorUnits || 0;
             transaction.update(sellerWalletRef, {
-                availableBalanceMinorUnits: currentSellerBalance + sellerProceeds,
+                availableBalanceMinorUnits: currentSellerBalance + subtotal,
                 updatedAt: now
             });
 
@@ -1299,11 +1309,44 @@ export const confirmDelivery = onCall(async (request) => {
                 id: sellerLedgerId,
                 debitAccount: "system_clearing",
                 creditAccount: `user_${order.sellerId}`,
-                amountMinorUnits: sellerProceeds,
+                amountMinorUnits: subtotal,
                 currency: "LSL",
                 reference: `SALE_PROCEEDS_${orderId}`,
                 timestamp: now
             });
+
+            // 2. Settle Delivery Escrow (if a fulfillment request exists)
+            const drQuery = db.collection("deliveryRequests").where("relatedOrderId", "==", orderId).where("status", "==", "ACCEPTED").limit(1);
+            const drSnap = await transaction.get(drQuery);
+            if (!drSnap.empty) {
+                const drDoc = drSnap.docs[0];
+                const dr = drDoc.data();
+                const deliveryFee = dr.deliveryFeeMinorUnits || 0;
+
+                if (deliveryFee > 0 && dr.merchantId) {
+                    // Release delivery fee from system_delivery_escrow to delivery provider
+                    const deliveryLedgerId = db.collection("ledgerEntries").doc().id;
+                    transaction.set(db.collection("ledgerEntries").doc(deliveryLedgerId), {
+                        id: deliveryLedgerId,
+                        debitAccount: "system_delivery_escrow",
+                        creditAccount: `user_${dr.merchantId}`,
+                        amountMinorUnits: deliveryFee,
+                        currency: dr.deliveryFeeCurrency || "LSL",
+                        reference: `DELIVERY_PAYOUT_${orderId}`,
+                        timestamp: now
+                    });
+
+                    const providerWalletRef = db.collection("wallets").doc(dr.merchantId);
+                    const providerWalletDoc = await transaction.get(providerWalletRef);
+                    if (providerWalletDoc.exists) {
+                        const currentProviderBalance = providerWalletDoc.data()?.availableBalanceMinorUnits || 0;
+                        transaction.update(providerWalletRef, {
+                            availableBalanceMinorUnits: currentProviderBalance + deliveryFee,
+                            updatedAt: now
+                        });
+                    }
+                }
+            }
 
             if (platformFee > 0) {
                 const feeLedgerId = db.collection("ledgerEntries").doc().id;
