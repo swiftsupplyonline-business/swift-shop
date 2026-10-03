@@ -51,6 +51,10 @@
                 "function": "renderShopPreview"
             },
             {
+                "source": "/market",
+                "destination": "/index.html"
+            },
+            {
                 "source": "/cart",
                 "destination": "/index.html"
             },
