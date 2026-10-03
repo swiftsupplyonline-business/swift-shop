@@ -100,6 +100,7 @@ interface CommerceRepository {
     fun getShopListings(shopId: String, page: Int, pageSize: Int): Flow<List<Listing>>
     fun getDeliveryListings(shopId: String): Flow<List<Listing>> = kotlinx.coroutines.flow.emptyFlow()
     suspend fun getListing(listingId: String): Result<Listing>
+    suspend fun getListingByShareSlugs(shopSlug: String, productSlug: String): Result<Listing>
     suspend fun getUserListings(userId: String): Result<List<Listing>>
     fun observeUserListings(userId: String): Flow<List<Listing>> = kotlinx.coroutines.flow.emptyFlow()
     suspend fun searchListings(query: String): Result<List<Listing>>
