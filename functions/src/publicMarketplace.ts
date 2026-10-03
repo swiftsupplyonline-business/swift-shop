@@ -1,6 +1,7 @@
 import { onRequest } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { normalizeShareSlug } from "./shareSlug";
+import { ListingStatus } from "./listing/types";
 
 /**
  * Public marketplace contract.
@@ -43,6 +44,7 @@ const mapListing = (data: FirebaseFirestore.DocumentData, id: string) => ({
     category: String(data.category || ""),
     tags: Array.isArray(data.tags) ? data.tags : [],
     listingType: String(data.listingType || "BUY"),
+    status: String(data.status || ""),
     isAvailable: data.isAvailable !== false,
     isSponsored: data.isSponsored === true,
     stockQuantity: Number(data.stockQuantity ?? 1),
@@ -123,9 +125,12 @@ export const publicMarketplace = onRequest({ cors: true }, async (_request, resp
             db.collection("posts").orderBy("createdAt", "desc").limit(100).get()
         ]);
 
+        // Canonical Listing Engine lifecycle is authoritative. The legacy
+        // isAvailable flag is only a compatibility field and must not make
+        // old/demo documents discoverable on the public web feed.
         const listings = listingSnap.docs
             .map(d => mapListing(d.data(), d.id))
-            .filter(x => x.isAvailable);
+            .filter(x => x.status === ListingStatus.ACTIVE && x.isAvailable);
 
         const shops = shopSnap.docs
             .map(d => mapShop(d.data(), d.id))
