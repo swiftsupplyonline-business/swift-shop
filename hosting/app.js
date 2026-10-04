@@ -156,9 +156,11 @@ function normalizeShareSlug(value) {
     .replace(/-{2,}/g, "-");
 }
 
-function listingCard(l, shopById = new Map()) {
+function listingCard(l, shopById) {
+  // Guard: Array.map(listingCard) would pass the numeric index here.
+  const shopLookup = shopById instanceof Map ? shopById : new Map();
   const img = (l.imageUrls && l.imageUrls[0]) || "";
-  const shop = shopById.get(l.shopId);
+  const shop = shopLookup.get(l.shopId);
   const shopSlug = shop?.shareSlug || normalizeShareSlug(shop?.name || "shop");
   const productSlug = l.shareSlug || normalizeShareSlug(l.title || l.id);
   const sharePath = "/s/" + encodeURIComponent(shopSlug) + "/" + encodeURIComponent(productSlug);
@@ -309,7 +311,7 @@ async function renderShop(root, shopId) {
         <h1>${escapeHtml(shop.name || "Shop")}</h1>
         <p>${escapeHtml(shop.description || "")}</p>
       </div>
-      <div class="grid">${listings.length ? listings.map(listingCard).join("") : "<p class='empty'>No listings yet.</p>"}</div>`;
+      <div class="grid">${listings.length ? listings.map(l => listingCard(l, new Map([[shop.id, shop]]))).join("") : "<p class='empty'>No listings yet.</p>"}</div>`;
   } catch (err) {
     root.innerHTML = `<div class="error">Couldn't load this shop. ${escapeHtml(err.message)}</div>`;
   }
