@@ -1,5 +1,6 @@
 import * as functions from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
+import { parseSharePath, isScannableLegacySlug, isPubliclyVisible } from "./shareRouting";
 import { normalizeShareSlug } from "./shareSlug";
 
 function escapeHtml(input: string): string {
@@ -139,6 +140,7 @@ async function findShopBySlug(db: FirebaseFirestore.Firestore, shopSlug: string)
     if (direct.size > 1) return null;
 
     // Transitional fallback for shops created before shareSlug was introduced.
+    if (!isScannableLegacySlug(shopSlug)) return null;
     const legacy = await db.collection("shops").get();
     const matches = legacy.docs.filter(doc => normalizeShareSlug(doc.data().name) === shopSlug);
     return matches.length === 1 ? matches[0] : null;
@@ -158,6 +160,7 @@ async function findListingBySlug(
     if (direct.size > 1) return null;
 
     // Transitional fallback for listings created before shareSlug was introduced.
+    if (!isScannableLegacySlug(productSlug)) return null;
     const legacy = await db.collection("listings").where("shopId", "==", shopId).get();
     const matches = legacy.docs.filter(doc => normalizeShareSlug(doc.data().title) === productSlug);
     return matches.length === 1 ? matches[0] : null;
@@ -224,6 +227,10 @@ export const renderListingPreview = functions.onRequest(async (req, res) => {
         }
 
         const listing = listingDoc.data()!;
+        if (!isPubliclyVisible(listing.status)) {
+            res.status(404).send("Listing not found");
+            return;
+        }
         const shopDoc = await db.collection("shops").doc(String(listing.shopId || "")).get();
         if (!shopDoc.exists) {
             res.status(404).send("Shop not found");
@@ -244,14 +251,12 @@ export const renderListingPreview = functions.onRequest(async (req, res) => {
 });
 
 export const renderSharedListing = functions.onRequest(async (req, res) => {
-    const match = req.path.match(/^\/s\/([^/]+)\/([^/]+)\/?$/);
-    if (!match) {
+    const parsed = parseSharePath("s", req.path);
+    if (!parsed) {
         res.status(404).send("Listing not found");
         return;
     }
-
-    const shopSlug = decodeURIComponent(match[1]);
-    const productSlug = decodeURIComponent(match[2]);
+    const { shopSlug, productSlug } = parsed;
 
     try {
         const db = admin.firestore();
@@ -262,7 +267,7 @@ export const renderSharedListing = functions.onRequest(async (req, res) => {
         }
 
         const listingDoc = await findListingBySlug(db, shopDoc.id, productSlug);
-        if (!listingDoc) {
+        if (!listingDoc || !isPubliclyVisible(listingDoc.data().status)) {
             res.status(404).send("Listing not found");
             return;
         }
@@ -279,14 +284,12 @@ export const renderSharedListing = functions.onRequest(async (req, res) => {
 });
 
 export const renderSharedDelivery = functions.onRequest(async (req, res) => {
-    const match = req.path.match(/^\/d\/([^/]+)\/([^/]+)\/?$/);
-    if (!match) {
+    const parsed = parseSharePath("d", req.path);
+    if (!parsed) {
         res.status(404).send("Delivery listing not found");
         return;
     }
-
-    const shopSlug = decodeURIComponent(match[1]);
-    const productSlug = decodeURIComponent(match[2]);
+    const { shopSlug, productSlug } = parsed;
 
     try {
         const db = admin.firestore();
@@ -297,7 +300,7 @@ export const renderSharedDelivery = functions.onRequest(async (req, res) => {
         }
 
         const listingDoc = await findListingBySlug(db, shopDoc.id, productSlug);
-        if (!listingDoc || String(listingDoc.data().listingType || "") !== "DELIVER") {
+        if (!listingDoc || !isPubliclyVisible(listingDoc.data().status) || String(listingDoc.data().listingType || "") !== "DELIVER") {
             res.status(404).send("Delivery listing not found");
             return;
         }

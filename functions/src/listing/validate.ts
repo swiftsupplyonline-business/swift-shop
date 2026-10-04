@@ -12,7 +12,7 @@
  * commerce.ts integration:
  *   createListing       → validateCreateInput() + validateCreateSemantic()
  *   updateListing       → validateUpdateInput() + validateUpdateSemantic()
- *   createOrder         → assertPurchasable()
+ *   createPurchaseOrder → assertPurchasable()
  *   createDeliveryRequest → assertDeliverable()
  *   verifyMopayPayment  → assertCommittable()
  */
@@ -45,6 +45,7 @@ export interface ListingCreateInput {
     durationMinutes?:     number;
     customFields?:        unknown[];
     fulfillmentOptions?:  string[];
+    driverShareBps?:      number;  // DELIVER listings: driver's share of the net delivery fee, 0..10000 basis points
     isAvailable?:         boolean; // legacy; engine derives this from status
 }
 
@@ -84,6 +85,7 @@ export const CLIENT_ALLOWED_KEYS: ReadonlyArray<string> = [
     "durationMinutes",
     "customFields",
     "fulfillmentOptions",
+    "driverShareBps",
     "isAvailable",
 ] as const;
 
@@ -153,6 +155,12 @@ export function validateCreateInput(input: ListingCreateInput): void {
     if (input.durationMinutes !== undefined) {
         if (typeof input.durationMinutes !== "number" || input.durationMinutes < 0) {
             throw new Error("durationMinutes must be a non-negative number");
+        }
+    }
+
+    if (input.driverShareBps !== undefined) {
+        if (!Number.isInteger(input.driverShareBps) || input.driverShareBps < 0 || input.driverShareBps > 10000) {
+            throw new Error("driverShareBps must be an integer from 0 to 10000 (0% to 100%)");
         }
     }
 
@@ -299,14 +307,14 @@ export function validateRestockSemantic(
 // ─── Action gates ─────────────────────────────────────────────────────────────
 
 /**
- * Gate: can this listing be purchased via createOrder?
+ * Gate: can this listing be purchased via createPurchaseOrder?
  *
  * Checks:
  *  1. ListingType supports purchase
  *  2. Status is ACTIVE
  *  3. Stock is available (STOCKED mode)
  *
- * Replaces the inline Listing checks in commerce.ts createOrder.
+ * Replaces the inline Listing checks in commerce.ts createPurchaseOrder.
  * Throws a plain Error; caller wraps in HttpsError.
  */
 export function assertPurchasable(

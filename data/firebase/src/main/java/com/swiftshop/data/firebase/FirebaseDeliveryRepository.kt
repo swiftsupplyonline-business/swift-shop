@@ -67,26 +67,6 @@ class FirebaseDeliveryRepository @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
-    override suspend fun requestDelivery(orderId: String, pickup: GeoPoint, dropoff: GeoPoint): Result<String> = runCatching {
-        val data = mapOf(
-            "orderId" to orderId,
-            "pickup" to mapOf("lat" to pickup.lat, "lng" to pickup.lng),
-            "dropoff" to mapOf("lat" to dropoff.lat, "lng" to dropoff.lng)
-        )
-        val result = functions.getHttpsCallable("requestDelivery").call(data).await()
-        result.data as String
-    }
-
-    override suspend fun createDeliveryRequest(listingId: String, pickup: GeoPoint, dropoff: GeoPoint): Result<String> = runCatching {
-        val data = mapOf(
-            "listingId" to listingId,
-            "pickup" to mapOf("lat" to pickup.lat, "lng" to pickup.lng),
-            "dropoff" to mapOf("lat" to dropoff.lat, "lng" to dropoff.lng)
-        )
-        val result = functions.getHttpsCallable("createDeliveryRequest").call(data).await()
-        result.data as String
-    }
-
     override fun observeDeliveryRequest(requestId: String): Flow<DeliveryRequest> = callbackFlow {
         val subscription = firestore.collection("deliveryRequests").document(requestId)
             .addSnapshotListener { snapshot, _ ->
@@ -135,7 +115,7 @@ class FirebaseDeliveryRepository @Inject constructor(
     override fun getActiveDeliveriesForDriver(driverId: String): Flow<List<DeliveryRoute>> = callbackFlow {
         val subscription = firestore.collection("deliveryRoutes")
             .whereEqualTo("driverId", driverId)
-            .whereIn("status", listOf("ASSIGNED", "PICKUP", "IN_TRANSIT"))
+            .whereIn("status", listOf("ASSIGNED", "AT_PICKUP", "PICKUP_CONFIRMED", "IN_TRANSIT"))
             .addSnapshotListener { snapshot, _ ->
                 val list = snapshot?.documents?.mapNotNull { it.toObject(FirestoreDeliveryRoute::class.java)?.toDomain(it.id) } ?: emptyList()
                 trySend(list)

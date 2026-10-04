@@ -3,8 +3,8 @@
 // and, in "widget" mode, by the server-rendered /listing/{id} page for the
 // Add to Cart / Buy Now buttons.
 //
-// NOTE: this file only ever calls existing Cloud Functions (calculateOrderFees,
-// createOrder) – it does not implement any order/payment/inventory logic itself.
+// NOTE: this file only ever calls existing Cloud Functions (calculatePurchaseTotal,
+// createPurchaseOrder) – it does not implement any order/payment/inventory logic itself.
 // That authority stays server-side in functions/src/commerce.ts.
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
@@ -30,6 +30,7 @@ const functions = getFunctions(app);
 
 const CART_KEY = "swiftshop_cart_v1";
 const LSL = (minorUnits) => `M${(minorUnits / 100).toFixed(2)}`;
+let frontDoorTimer = null;
 
 // ---------- Cart (client-side convenience only – never authoritative) ----------
 
@@ -63,72 +64,11 @@ function cartCount() {
   return getCart().reduce((n, i) => n + i.quantity, 0);
 }
 function updateCartBadge() {
-  const n = cartCount();
-  document.querySelectorAll("[data-cart-badge], #count").forEach(el => {
-    el.textContent = String(n);
+  document.querySelectorAll("[data-cart-badge]").forEach(el => {
+    const n = cartCount();
+    el.textContent = n > 0 ? String(n) : "";
+    el.style.display = n > 0 ? "inline-block" : "none";
   });
-  const railBadge = document.getElementById("railCartBadge");
-  if (railBadge) railBadge.textContent = String(n);
-
-  const railSummary = document.getElementById("railCartSummary");
-  if (railSummary) {
-    const items = getCart();
-    if (!items.length) {
-      railSummary.innerHTML = `<div class="sub">Your bag is empty.</div>`;
-    } else {
-      railSummary.innerHTML = items.slice(0, 3).map(i => `
-        <div style="font-size:12px;font-weight:700;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-          ${escapeHtml(i.title)} <span style="color:var(--muted)">× ${i.quantity}</span>
-        </div>`).join("") + (items.length > 3 ? `<div class="sub">+${items.length - 3} more items</div>` : "");
-    }
-  }
-}
-
-// ---------- Delivery Rail Data ----------
-
-async function loadDeliveryProvidersRail() {
-  const providerList = document.getElementById("providerList");
-  const providerCount = document.getElementById("providerCount");
-  if (!providerList) return;
-
-  try {
-    const getOptions = httpsCallable(functions, "getDeliveryOptions");
-    const { data } = await getOptions();
-    const options = data?.options || [];
-    if (providerCount) providerCount.textContent = String(options.length);
-
-    if (!options.length) {
-      providerList.innerHTML = `<div class="sub">No active delivery providers in area.</div>`;
-      return;
-    }
-
-    providerList.innerHTML = options.slice(0, 4).map(opt => `
-      <div class="provider-item">
-        <div class="provider-avatar">🚚</div>
-        <div class="provider-info">
-          <div class="provider-title">${escapeHtml(opt.title || "Delivery Partner")}</div>
-          <div class="provider-meta">${LSL(opt.priceMinorUnits || 0)} · ${opt.deliveryEstimateDays || 1}d est.</div>
-        </div>
-      </div>`).join("");
-  } catch (err) {
-    if (providerList) providerList.innerHTML = `<div class="sub">Logistics options available at checkout</div>`;
-  }
-}
-
-// ---------- Profile Rail Data ----------
-
-function updateProfileRail(user) {
-  const summary = document.getElementById("profileSummary");
-  if (!summary) return;
-  if (user && !user.isAnonymous) {
-    summary.innerHTML = `
-      <div style="font-weight:800;font-size:14px;">${escapeHtml(user.displayName || user.email || "Member")}</div>
-      <div class="sub">Verified Account</div>`;
-  } else {
-    summary.innerHTML = `
-      <div style="font-weight:700;font-size:13px;margin-bottom:4px;">Guest shopper</div>
-      <div class="sub">Order online, track via App</div>`;
-  }
 }
 
 // ---------- Auth (anonymous – enough to call authenticated callables) ----------
@@ -233,8 +173,12 @@ function listingCard(l, shopById = new Map()) {
 function shopCard(s) {
   return `
     <a class="shop-card" href="/shop/${s.id}">
-      <div class="shop-logo" style="background-image:url('${s.logoUrl || ""}')"></div>
-      <div class="shop-name">${escapeHtml(s.name || "Shop")}</div>
+      <div class="shop-card-cover" style="background-image:url('${s.coverUrl || ""}')"></div>
+      <div class="shop-card-scrim"></div>
+      <div class="shop-card-content">
+        <div class="shop-logo" style="background-image:url('${s.logoUrl || ""}')"></div>
+        <div class="shop-name">${escapeHtml(s.name || "Shop")}</div>
+      </div>
     </a>`;
 }
 
@@ -247,22 +191,106 @@ function escapeHtml(s) {
 // ---------- Views ----------
 
 async function renderBrowse(root) {
-  root.innerHTML = `<div class="loading">Loading marketplace…</div>`;
-  try {
-    const [listings, shops] = await Promise.all([fetchListings(), fetchShops()]);
-    const shopById = new Map(shops.map(shop => [shop.id, shop]));
-    root.innerHTML = `
-      <section>
-        <h2>Shops</h2>
-        <div class="shop-row">${shops.length ? shops.map(shopCard).join("") : "<p class='empty'>No shops yet.</p>"}</div>
-      </section>
-      <section>
-        <h2>Latest listings</h2>
-        <div class="grid">${listings.length ? listings.map(l => listingCard(l, shopById)).join("") : "<p class='empty'>No listings yet.</p>"}</div>
-      </section>`;
-  } catch (err) {
-    root.innerHTML = `<div class="error">Couldn't load the marketplace. ${escapeHtml(err.message)}</div>`;
+  if (frontDoorTimer) {
+    clearInterval(frontDoorTimer);
+    frontDoorTimer = null;
   }
+
+  const marketPromise = Promise.all([fetchListings(), fetchShops()]);
+
+  root.innerHTML = `
+    <section class="market-front-door" aria-label="Swift marketplace welcome">
+      <div class="ad-slot" data-ad-provider="google-meta" aria-label="Advertisement">
+        <span class="ad-label">Advertisement</span>
+        <strong>Google / Meta ad space</strong>
+        <small>Reserved for marketplace advertising</small>
+      </div>
+
+      <div class="swift-house-ad" aria-label="Swift promotion">
+        <div class="swift-house-copy">
+          <span class="ad-label">Swift</span>
+          <div class="swift-house-slide is-active" data-house-slide="0">
+            <strong>Local market. One place.</strong>
+            <span>Discover products from local businesses around Maseru.</span>
+          </div>
+          <div class="swift-house-slide" data-house-slide="1">
+            <strong>Shop local with Swift.</strong>
+            <span>Find something you need, buy it, and keep moving.</span>
+          </div>
+          <div class="swift-house-slide" data-house-slide="2">
+            <strong>Businesses belong on Swift.</strong>
+            <span>Put your products in front of people already looking to buy.</span>
+          </div>
+        </div>
+        <div class="swift-house-dots" aria-hidden="true">
+          <span class="is-active" data-house-dot="0"></span>
+          <span data-house-dot="1"></span>
+          <span data-house-dot="2"></span>
+        </div>
+      </div>
+
+      <div class="guest-entry">
+        <div>
+          <span class="eyebrow">Swift marketplace</span>
+          <h2>Ready to shop?</h2>
+          <p>Browse the market as a guest. No account needed.</p>
+        </div>
+        <button class="btn primary guest-btn" id="continueGuestBtn" type="button">Continue as Guest <span aria-hidden="true">→</span></button>
+        <div class="signin-note">Already have Swift? <button type="button" class="text-btn" id="signInBtn">Sign in</button></div>
+        <div class="market-ready" id="marketReady" role="status" aria-live="polite">Preparing the market…</div>
+      </div>
+    </section>`;
+
+  const slides = [...root.querySelectorAll("[data-house-slide]")];
+  const dots = [...root.querySelectorAll("[data-house-dot]")];
+  let active = 0;
+  const showSlide = (index) => {
+    active = index % slides.length;
+    slides.forEach((slide, i) => slide.classList.toggle("is-active", i === active));
+    dots.forEach((dot, i) => dot.classList.toggle("is-active", i === active));
+  };
+  frontDoorTimer = setInterval(() => showSlide(active + 1), 4200);
+
+  const guestBtn = root.querySelector("#continueGuestBtn");
+  const ready = root.querySelector("#marketReady");
+  const signInBtn = root.querySelector("#signInBtn");
+
+  signInBtn?.addEventListener("click", () => {
+    ready.textContent = "Sign-in is coming soon. You can keep browsing as a guest.";
+  });
+
+  guestBtn?.addEventListener("click", async () => {
+    guestBtn.disabled = true;
+    guestBtn.textContent = "Opening market…";
+    try {
+      const [listings, shops] = await marketPromise;
+      const shopById = new Map(shops.map(shop => [shop.id, shop]));
+      if (frontDoorTimer) {
+        clearInterval(frontDoorTimer);
+        frontDoorTimer = null;
+      }
+      root.innerHTML = `
+        <section class="market-feed">
+          <div class="section-heading"><span class="eyebrow">Swift marketplace</span><h2>Shops</h2></div>
+          <div class="shop-row">${shops.length ? shops.map(shopCard).join("") : "<p class='empty'>No shops yet.</p>"}</div>
+        </section>
+        <section class="market-feed">
+          <div class="section-heading"><span class="eyebrow">Fresh on Swift</span><h2>Latest listings</h2></div>
+          <div class="grid">${listings.length ? listings.map(l => listingCard(l, shopById)).join("") : "<p class='empty'>No listings yet.</p>"}</div>
+        </section>`;
+    } catch (err) {
+      guestBtn.disabled = false;
+      guestBtn.textContent = "Continue as Guest →";
+      ready.textContent = `Couldn't open the market: ${err.message}`;
+      ready.classList.add("error-text");
+    }
+  });
+
+  marketPromise.then(() => {
+    if (ready) ready.textContent = "Market ready — jump in whenever you're ready.";
+  }).catch(() => {
+    if (ready) ready.textContent = "The market is taking a moment. Try Continue as Guest again.";
+  });
 }
 
 async function renderShop(root, shopId) {
@@ -356,8 +384,8 @@ async function renderCheckout(root) {
 
   try {
     await ensureSignedIn();
-    const calculateOrderFees = httpsCallable(functions, "calculatePurchaseTotal");
-    const { data: fees } = await calculateOrderFees({
+    const calculatePurchaseTotal = httpsCallable(functions, "calculatePurchaseTotal");
+    const { data: fees } = await calculatePurchaseTotal({
       items: items.map(i => ({ listingId: i.listingId, quantity: i.quantity, title: i.title }))
     });
 
@@ -379,9 +407,9 @@ async function renderCheckout(root) {
       const msg = root.querySelector("#checkoutMsg");
       msg.textContent = "Placing order…";
       try {
-        const createOrder = httpsCallable(functions, "createPurchaseOrder");
+        const createPurchaseOrder = httpsCallable(functions, "createPurchaseOrder");
         const idempotencyKey = `web_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        const { data: result } = await createOrder({
+        const { data: result } = await createPurchaseOrder({
           items: items.map(i => ({ listingId: i.listingId, quantity: i.quantity, title: i.title })),
           paymentMethod: "SWIFT_WALLET",
           idempotencyKey
@@ -420,13 +448,7 @@ function route() {
   const path = location.pathname;
   updateCartBadge();
 
-  const layout = document.getElementById("pageLayout");
-  if (layout) {
-    if (path === "/" || path === "") layout.classList.add("has-rails");
-    else layout.classList.remove("has-rails");
-  }
-
-  if (path === "/" || path === "") return renderBrowse(root);
+  if (path === "/" || path === "" || path === "/market") return renderBrowse(root);
   if (path === "/cart") return renderCart(root);
   if (path === "/checkout") return renderCheckout(root);
 
@@ -439,36 +461,25 @@ function route() {
   root.innerHTML = `<div class="error">Page not found. <a href="/">Go home</a></div>`;
 }
 
+// Paths served by Cloud Functions (smart links, payment pages, API). The client router has no
+// route for them, so they must be real browser navigations, never intercepted.
+const SERVER_ROUTED = /^\/(s|d|pay|api)(\/|\?|#|$)/;
+
 document.addEventListener("click", (e) => {
   const a = e.target.closest("a[href^='/']");
   if (!a) return;
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  if (a.target && a.target !== "_self") return;
+  const href = a.getAttribute("href");
+  if (SERVER_ROUTED.test(href)) return;
   e.preventDefault();
-  navigate(a.getAttribute("href"));
+  navigate(href);
 });
 window.addEventListener("popstate", route);
 document.addEventListener("DOMContentLoaded", () => {
   updateCartBadge();
-  ensureSignedIn().then(updateProfileRail).catch(() => updateProfileRail(null));
-  loadDeliveryProvidersRail();
-
-  window.openCartDrawer = () => {
-    renderCart(document.getElementById("cart"));
-    document.getElementById("drawer")?.classList.add("open");
-  };
-  window.closeCartDrawer = () => {
-    document.getElementById("drawer")?.classList.remove("open");
-  };
-  window.filterCategory = (cat) => {
-    const root = document.getElementById("app");
-    if (root) {
-      renderBrowse(root).then(() => {
-        const input = document.getElementById("search");
-        if (input) input.value = cat;
-      });
-    }
-  };
-
-  if (location.pathname.startsWith("/s/") && document.body.dataset.sharePage === "true") return;
+  if ((location.pathname.startsWith("/s/") || location.pathname.startsWith("/d/"))
+      && document.body.dataset.sharePage === "true") return;
   route();
 });
 

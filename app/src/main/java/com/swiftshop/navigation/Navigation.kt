@@ -1,5 +1,6 @@
 ﻿package com.swiftshop.navigation
 
+import com.swiftshop.BuildConfig
 import com.swiftshop.core.ui.navigation.Screen
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -117,7 +118,7 @@ fun SwiftShopNavHost(
             arguments = listOf(navArgument("listingId") { type = NavType.StringType }),
             deepLinks = listOf(
                 navDeepLink { uriPattern = "swiftshop://listing/{listingId}" },
-                navDeepLink { uriPattern = "https://${com.swiftshop.BuildConfig.APP_LINK_HOST}/listing/{listingId}" }
+                navDeepLink { uriPattern = "https://${BuildConfig.WEB_HOST}/listing/{listingId}" }
             )
         ) { ListingDetailScreen(navController = navController) }
 
@@ -128,15 +129,10 @@ fun SwiftShopNavHost(
                 navArgument("productSlug") { type = NavType.StringType }
             ),
             deepLinks = listOf(
-                navDeepLink { uriPattern = "https://${com.swiftshop.BuildConfig.APP_LINK_HOST}/s/{shopSlug}/{productSlug}" },
-                navDeepLink { uriPattern = "https://${com.swiftshop.BuildConfig.APP_LINK_HOST}/d/{shopSlug}/{productSlug}" }
+                navDeepLink { uriPattern = "https://${BuildConfig.WEB_HOST}/s/{shopSlug}/{productSlug}" },
+                navDeepLink { uriPattern = "https://${BuildConfig.WEB_HOST}/d/{shopSlug}/{productSlug}" }
             )
         ) { ListingDetailScreen(navController = navController) }
-
-        composable(
-            route = Screen.RequestDelivery.route,
-            arguments = listOf(navArgument("listingId") { type = NavType.StringType })
-        ) { com.swiftshop.feature.delivery.RequestDeliveryScreen(navController = navController) }
 
         composable(
             route = Screen.IncomingDeliveryRequests.route
@@ -147,7 +143,7 @@ fun SwiftShopNavHost(
             arguments = listOf(navArgument("shopId") { type = NavType.StringType }),
             deepLinks = listOf(
                 navDeepLink { uriPattern = "swiftshop://shop/{shopId}" },
-                navDeepLink { uriPattern = "https://${com.swiftshop.BuildConfig.APP_LINK_HOST}/shop/{shopId}" }
+                navDeepLink { uriPattern = "https://${BuildConfig.WEB_HOST}/shop/{shopId}" }
             )
         ) { ShopDetailScreen(navController = navController) }
 
@@ -167,7 +163,7 @@ fun SwiftShopNavHost(
             route = Screen.OrderDetail.route,
             arguments = listOf(navArgument("orderId") { type = NavType.StringType }),
             deepLinks = listOf(navDeepLink { uriPattern = "swiftshop://order/{orderId}" })
-        ) { OrderDetailScreen(navController = navController, biometricGuard = biometricGuard) }
+        ) { OrderDetailScreen(navController = navController) }
 
         composable(Screen.CreatePost.route) {
             CreatePostScreen(onBack = { navController.popBackStack() },

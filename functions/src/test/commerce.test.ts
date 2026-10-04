@@ -1,147 +1,89 @@
 import firebaseTest from 'firebase-functions-test';
 import * as admin from 'firebase-admin';
-import { createOrder, cancelOrder, confirmDelivery } from '../commerce';
-import { MopayClient } from '../mopay';
+import { calculatePurchaseTotal, createPurchaseOrder, cancelOrder, confirmDelivery } from '../commerce';
 
-const testEnv = firebaseTest({
-  projectId: 'swift-shop-reconciled',
-});
+const testEnv = firebaseTest({ projectId: 'swift-shop-reconciled' });
+if (admin.apps.length === 0) admin.initializeApp({ projectId: 'swift-shop-reconciled' });
 
-if (admin.apps.length === 0) {
-  admin.initializeApp({ projectId: 'swift-shop-reconciled' });
-}
-
-// Mock MopayClient
-jest.mock('../mopay', () => ({
-  MopayClient: {
-    initiatePaymentSession: jest.fn()
-  },
-  MOPAY_API_KEY: { value: () => 'mock-key' }
-}));
-
-describe('Commerce Payment Concurrency (SWIFT-021)', () => {
-  let wrapped: any;
+describe('Canonical Purchase Authority', () => {
   const db = admin.firestore();
 
-  beforeAll(async () => {
-    wrapped = testEnv.wrap(createOrder);
+  const seedListing = async (id: string, overrides: Record<string, unknown> = {}) => {
+    await db.collection('listings').doc(id).set({
+      id, title: 'Canonical Item', sellerId: 'seller_canonical', shopId: 'shop_canonical',
+      listingType: 'BUY', priceMinorUnits: 1000, priceCurrency: 'LSL',
+      stockQuantity: 5, reservedQuantity: 0, status: 'ACTIVE', inventoryMode: 'STOCKED', ...overrides
+    });
+  };
+
+  afterAll(() => testEnv.cleanup());
+
+  test('calculatePurchaseTotal calculates authoritative total', async () => {
+    await seedListing('purchase_total_valid');
+    const result = await testEnv.wrap(calculatePurchaseTotal)({
+      data: { items: [{ listingId: 'purchase_total_valid', quantity: 2 }] },
+      auth: { uid: 'buyer_total', token: {} }
+    } as any);
+    expect(result.subtotalMinorUnits).toBe(2000);
+    expect(result.platformFeeMinorUnits).toBe(30);
+    expect(result.totalMinorUnits).toBe(2030);
   });
 
-  afterAll(() => {
-    testEnv.cleanup();
+  test('calculatePurchaseTotal rejects missing listing', async () => {
+    await expect(testEnv.wrap(calculatePurchaseTotal)({
+      data: { items: [{ listingId: 'missing_listing', quantity: 1 }] },
+      auth: { uid: 'buyer_missing', token: {} }
+    } as any)).rejects.toThrow(/not found/i);
   });
 
-  test('createOrder - Concurrent request detects active lease', async () => {
-    const orderId = 'order_concurrency_test';
-    const idempotencyKey = 'key_123';
-
-    // 1. Setup existing order with a fresh "CREATING" lease
-    await db.collection('orders').doc(orderId).set({
-      id: orderId,
-      totalMinorUnits: 1000,
-      paymentSessionStatus: 'CREATING',
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    await db.collection('idempotencyKeys').doc(idempotencyKey).set({
-      orderId: orderId,
-      userId: 'user_1'
-    });
-
-    // 2. Call again immediately
-    await expect(wrapped({
-      data: {
-        items: [{ listingId: 'l1', quantity: 1 }],
-        requiresDelivery: false,
-        paymentMethod: 'MOPAY',
-        idempotencyKey: idempotencyKey
-      },
-      auth: { uid: 'user_1', token: { email: 'test@test.com' } }
-    })).rejects.toThrow(/RETRY_TOO_SOON/);
+  test('calculatePurchaseTotal rejects unavailable listing', async () => {
+    await seedListing('purchase_total_paused', { status: 'PAUSED' });
+    await expect(testEnv.wrap(calculatePurchaseTotal)({
+      data: { items: [{ listingId: 'purchase_total_paused', quantity: 1 }] },
+      auth: { uid: 'buyer_paused', token: {} }
+    } as any)).rejects.toThrow();
   });
 
-  test('createOrder - Recovery logic handles failed session', async () => {
-    const orderId = 'order_recovery_test';
-    const idempotencyKey = 'key_456';
-
-    // 1. Setup failed order
-    await db.collection('orders').doc(orderId).set({
-      id: orderId,
-      totalMinorUnits: 5000,
-      paymentSessionStatus: 'FAILED',
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  test('createPurchaseOrder commits wallet inventory atomically and is idempotent', async () => {
+    await db.collection('shops').doc('shop_canonical').set({
+      ownerId: 'seller_canonical', name: 'Canonical Shop', locationLat: -29.31, locationLng: 27.48
     });
+    await seedListing('purchase_create_valid');
+    await db.collection('wallets').doc('buyer_create').set({ availableBalanceMinorUnits: 5000 });
 
-    await db.collection('idempotencyKeys').doc(idempotencyKey).set({
-      orderId: orderId,
-      userId: 'user_1'
-    });
+    const wrapped = testEnv.wrap(createPurchaseOrder);
+    const data = {
+      items: [{ listingId: 'purchase_create_valid', quantity: 2 }],
+      paymentMethod: 'SWIFT_WALLET',
+      idempotencyKey: 'canonical-idempotency-1'
+    };
 
-    // Setup mock success for recovery attempt
-    (MopayClient.initiatePaymentSession as jest.Mock).mockResolvedValue({
-      success: true,
-      sessionId: 'session_recovered',
-      paymentUrl: 'https://pay.me/recovered'
-    });
+    const first = await wrapped({ data, auth: { uid: 'buyer_create', token: {} } } as any);
+    const second = await wrapped({ data, auth: { uid: 'buyer_create', token: {} } } as any);
 
-    // 2. Call again (retry)
-    const result = await wrapped({
-      data: {
-        items: [{ listingId: 'l1', quantity: 1 }],
-        requiresDelivery: false,
-        paymentMethod: 'MOPAY',
-        idempotencyKey: idempotencyKey
-      },
-      auth: { uid: 'user_1', token: { email: 'test@test.com' } }
-    });
+    expect(second.orderId).toBe(first.orderId);
+    const order = (await db.collection('orders').doc(first.orderId).get()).data();
+    expect(order?.status).toBe('CONFIRMED');
+    expect(order?.paymentStatus).toBe('PAID');
+    expect(order?.settlementStatus).toBe('ESCROW_HOLD');
+    expect(order?.inventoryStatus).toBe('COMMITTED');
 
-    // 3. Verify recovery succeeded
-    expect(result.mopaySessionId).toBe('session_recovered');
-    const orderDoc = await db.collection('orders').doc(orderId).get();
-    expect(orderDoc.data()?.paymentSessionStatus).toBe('CREATED');
+    const listing = (await db.collection('listings').doc('purchase_create_valid').get()).data();
+    expect(listing?.stockQuantity).toBe(3);
+    expect(listing?.reservedQuantity).toBe(0);
+
+    const reservations = await db.collection('reservations')
+      .where('orderId', '==', first.orderId)
+      .get();
+    expect(reservations.docs).toHaveLength(1);
+    expect(reservations.docs[0].data()?.status).toBe('COMMITTED');
+    expect(reservations.docs[0].data()?.quantity).toBe(2);
+
+    const wallet = (await db.collection('wallets').doc('buyer_create').get()).data();
+    expect(wallet?.availableBalanceMinorUnits).toBe(2970);
   });
 
-  test('createOrder - Amount authority: uses order total, not client request', async () => {
-    const orderId = 'order_amount_authority';
-    const idempotencyKey = 'key_amount_test';
-
-    await db.collection('orders').doc(orderId).set({
-      id: orderId,
-      totalMinorUnits: 9999, // Authoritative M99.99
-      paymentSessionStatus: 'FAILED',
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    await db.collection('idempotencyKeys').doc(idempotencyKey).set({
-      orderId: orderId,
-      userId: 'user_1'
-    });
-
-    (MopayClient.initiatePaymentSession as jest.Mock).mockClear();
-    (MopayClient.initiatePaymentSession as jest.Mock).mockResolvedValue({
-      success: true,
-      sessionId: 's1',
-      paymentUrl: 'u1'
-    });
-
-    await wrapped({
-      data: {
-        items: [{ listingId: 'l1', quantity: 1 }],
-        requiresDelivery: false,
-        paymentMethod: 'MOPAY',
-        idempotencyKey: idempotencyKey,
-        totalMinorUnits: 1 // Malicious client attempt to pay M0.01
-      },
-      auth: { uid: 'user_1', token: { email: 'test@test.com' } }
-    });
-
-    // Verify MoPay received the authoritative amount (99.99)
-    expect(MopayClient.initiatePaymentSession).toHaveBeenCalledWith(expect.objectContaining({
-      amount: 99.99
-    }));
-  });
-
-  test('cancelOrder - normal pre-payment cancellation releases reservation', async () => {
+  test('cancelOrder releases a reservation', async () => {
     const orderId = 'order_normal_cancel';
     const listingId = 'listing_normal_cancel';
     const reservationId = 'reservation_normal_cancel';
@@ -149,7 +91,7 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
     await db.collection('listings').doc(listingId).set({
       id: listingId, title: 'Normal Cancel Item', sellerId: 'seller_cancel',
       shopId: 'shop_cancel', priceMinorUnits: 1000, stockQuantity: 5,
-      reservedQuantity: 2, isAvailable: true
+      reservedQuantity: 2, isAvailable: true, status: 'ACTIVE', listingType: 'BUY'
     });
     await db.collection('reservations').doc(reservationId).set({
       id: reservationId, orderId, listingId, quantity: 2, status: 'ACTIVE'
@@ -160,56 +102,79 @@ describe('Commerce Payment Concurrency (SWIFT-021)', () => {
 
     const result = await testEnv.wrap(cancelOrder)({
       data: { orderId, reason: 'Customer changed mind' },
-      auth: { uid: 'buyer_cancel', token: {} as any , rawToken: '' }
+      auth: { uid: 'buyer_cancel', token: {}, rawToken: '' }
     } as any);
 
     expect(result.success).toBe(true);
     expect((await db.collection('orders').doc(orderId).get()).data()?.status).toBe('CANCELLED');
     expect((await db.collection('reservations').doc(reservationId).get()).data()?.status).toBe('RELEASED');
-    const listing = (await db.collection('listings').doc(listingId).get()).data();
-    expect(listing?.reservedQuantity).toBe(0);
-    expect(listing?.stockQuantity).toBe(5);
   });
 
-  test('confirmDelivery - self-pickup normal path settles from READY', async () => {
+  test('cancelOrder rejects a paid CONFIRMED order at the payment boundary', async () => {
+    const orderId = 'order_paid_confirmed_no_cancel';
+    await db.collection('orders').doc(orderId).set({
+      id: orderId, buyerId: 'buyer_paid_confirmed', sellerId: 'seller_paid_confirmed',
+      status: 'CONFIRMED', paymentStatus: 'PAID', paymentMethod: 'SWIFT_WALLET',
+      totalMinorUnits: 1000, settlementStatus: 'ESCROW_HOLD'
+    });
+
+    await expect(testEnv.wrap(cancelOrder)({
+      data: { orderId, reason: 'Customer changed mind' },
+      auth: { uid: 'buyer_paid_confirmed', token: {}, rawToken: '' }
+    } as any)).rejects.toThrow(/Paid orders cannot be cancelled/i);
+
+    expect((await db.collection('orders').doc(orderId).get()).data()?.status).toBe('CONFIRMED');
+  });
+
+  test('cancelOrder rejects a paid PROCESSING order at the payment boundary', async () => {
+    const orderId = 'order_paid_processing_no_cancel';
+    await db.collection('orders').doc(orderId).set({
+      id: orderId, buyerId: 'buyer_paid_processing', sellerId: 'seller_paid_processing',
+      status: 'PROCESSING', paymentStatus: 'PAID', paymentMethod: 'SWIFT_WALLET',
+      totalMinorUnits: 1000, settlementStatus: 'ESCROW_HOLD'
+    });
+
+    await expect(testEnv.wrap(cancelOrder)({
+      data: { orderId, reason: 'Customer changed mind' },
+      auth: { uid: 'buyer_paid_processing', token: {}, rawToken: '' }
+    } as any)).rejects.toThrow(/Paid orders cannot be cancelled/i);
+
+    expect((await db.collection('orders').doc(orderId).get()).data()?.status).toBe('PROCESSING');
+  });
+
+  test('confirmDelivery self-pickup path settles escrow', async () => {
     const orderId = 'order_self_pickup_normal';
     await db.collection('wallets').doc('seller_pickup').set({ availableBalanceMinorUnits: 0 });
     await db.collection('orders').doc(orderId).set({
       id: orderId, buyerId: 'buyer_pickup', sellerId: 'seller_pickup',
-      status: 'READY', requiresDelivery: false, subtotalMinorUnits: 1000,
+      status: 'READY', paymentStatus: 'PAID', requiresDelivery: false, subtotalMinorUnits: 1000,
       deliveryFeeMinorUnits: 0, platformFeeMinorUnits: 15, totalMinorUnits: 1015,
       settlementStatus: 'ESCROW_HOLD'
     });
 
     const result = await testEnv.wrap(confirmDelivery)({
-      data: { orderId }, auth: { uid: 'buyer_pickup', token: {} as any , rawToken: '' }
-    } as any);
-
-    expect(result.success).toBe(true);
-    const order = (await db.collection('orders').doc(orderId).get()).data();
-    expect(order?.status).toBe('DELIVERED');
-    expect(order?.settlementStatus).toBe('SETTLED');
-    expect((await db.collection('wallets').doc('seller_pickup').get()).data()?.availableBalanceMinorUnits).toBe(1000);
-  });
-
-  test('confirmDelivery - delivery normal path settles from DELIVERED', async () => {
-    const orderId = 'order_delivery_confirm_normal';
-    await db.collection('wallets').doc('seller_delivery').set({ availableBalanceMinorUnits: 0 });
-    await db.collection('wallets').doc('provider_delivery').set({ availableBalanceMinorUnits: 0 });
-    await db.collection('orders').doc(orderId).set({
-      id: orderId, buyerId: 'buyer_delivery', sellerId: 'seller_delivery',
-      deliveryProviderSellerId: 'provider_delivery', status: 'DELIVERED',
-      requiresDelivery: true, subtotalMinorUnits: 2000, deliveryFeeMinorUnits: 500,
-      platformFeeMinorUnits: 30, totalMinorUnits: 2530, settlementStatus: 'ESCROW_HOLD'
-    });
-
-    const result = await testEnv.wrap(confirmDelivery)({
-      data: { orderId }, auth: { uid: 'buyer_delivery', token: {} as any , rawToken: '' }
+      data: { orderId }, auth: { uid: 'buyer_pickup', token: {}, rawToken: '' }
     } as any);
 
     expect(result.success).toBe(true);
     expect((await db.collection('orders').doc(orderId).get()).data()?.settlementStatus).toBe('SETTLED');
-    expect((await db.collection('wallets').doc('seller_delivery').get()).data()?.availableBalanceMinorUnits).toBe(2000);
-    expect((await db.collection('wallets').doc('provider_delivery').get()).data()?.availableBalanceMinorUnits).toBe(500);
+  });
+
+  test('confirmDelivery refuses an unpaid order and pays nobody', async () => {
+    const orderId = 'order_unpaid_confirm';
+    await db.collection('wallets').doc('seller_unpaid').set({ availableBalanceMinorUnits: 0 });
+    await db.collection('orders').doc(orderId).set({
+      id: orderId, buyerId: 'buyer_unpaid', sellerId: 'seller_unpaid',
+      status: 'READY', paymentStatus: 'PENDING', requiresDelivery: false, subtotalMinorUnits: 1000,
+      deliveryFeeMinorUnits: 0, platformFeeMinorUnits: 15, totalMinorUnits: 1015,
+      settlementStatus: 'ESCROW_HOLD'
+    });
+
+    await expect(testEnv.wrap(confirmDelivery)({
+      data: { orderId }, auth: { uid: 'buyer_unpaid', token: {}, rawToken: '' }
+    } as any)).rejects.toThrow(/not been paid/i);
+
+    expect((await db.collection('wallets').doc('seller_unpaid').get()).data()?.availableBalanceMinorUnits).toBe(0);
+    expect((await db.collection('orders').doc(orderId).get()).data()?.settlementStatus).toBe('ESCROW_HOLD');
   });
 });

@@ -155,6 +155,7 @@ lottie-compose = { group = "com.airbnb.android", name = "lottie-compose", versio
 
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+mockito-kotlin = { group = "org.mockito.kotlin", name = "mockito-kotlin", version = "5.4.0" }
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitAndroid" }

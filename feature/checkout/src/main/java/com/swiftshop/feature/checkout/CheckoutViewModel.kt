@@ -161,11 +161,13 @@ class CheckoutViewModel @Inject constructor(
             ).fold(
                 onSuccess = { initiation ->
                     clearCartUseCase(currentUserId)
-                    if (initiation.paymentUrl != null && initiation.mopaySessionId != null) {
+                    val paymentUrl = initiation.paymentUrl
+                    val mopaySessionId = initiation.mopaySessionId
+                    if (paymentUrl != null && mopaySessionId != null) {
                         _uiState.value = CheckoutUiState.AwaitingPayment(
                             initiation.orderId,
-                            initiation.paymentUrl,
-                            initiation.mopaySessionId
+                            paymentUrl,
+                            mopaySessionId
                         )
                     } else {
                         _uiState.value = CheckoutUiState.OrderPlaced(initiation.orderId)

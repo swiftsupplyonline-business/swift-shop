@@ -25,6 +25,8 @@ android {
         buildConfigField("String", "MOPAY_PUBLIC_KEY", "\"${project.properties["MOPAY_PUBLIC_KEY"]}\"")
         buildConfigField("String", "BACKEND_BASE_URL", "\"${project.properties["BACKEND_BASE_URL"]}\"")
         manifestPlaceholders["MAPS_API_KEY"] = project.properties["MAPS_API_KEY"] ?: ""
+        manifestPlaceholders["APP_LINK_HOST"] = "swift-dev-3d3ae.web.app"
+        buildConfigField("String", "WEB_HOST", "\"swift-dev-3d3ae.web.app\"")
     }
 
     buildTypes {
@@ -51,22 +53,22 @@ android {
             applicationIdSuffix = ".dev.debug"
             versionNameSuffix = "-dev"
             buildConfigField("String", "FLAVOR", "\"dev\"")
-            buildConfigField("String", "APP_LINK_HOST", "\"swift-dev-3d3ae.web.app\"")
             manifestPlaceholders["APP_LINK_HOST"] = "swift-dev-3d3ae.web.app"
+            buildConfigField("String", "WEB_HOST", "\"swift-dev-3d3ae.web.app\"")
         }
         create("staging") {
             dimension = "environment"
             applicationIdSuffix = ".staging.debug"
             versionNameSuffix = "-staging"
             buildConfigField("String", "FLAVOR", "\"staging\"")
-            buildConfigField("String", "APP_LINK_HOST", "\"swift-staging-3bed1.web.app\"")
             manifestPlaceholders["APP_LINK_HOST"] = "swift-staging-3bed1.web.app"
+            buildConfigField("String", "WEB_HOST", "\"swift-staging-3bed1.web.app\"")
         }
         create("production") {
             dimension = "environment"
             buildConfigField("String", "FLAVOR", "\"production\"")
-            buildConfigField("String", "APP_LINK_HOST", "\"swift-d1baa.web.app\"")
             manifestPlaceholders["APP_LINK_HOST"] = "swift-d1baa.web.app"
+            buildConfigField("String", "WEB_HOST", "\"swift-d1baa.web.app\"")
         }
     }
 

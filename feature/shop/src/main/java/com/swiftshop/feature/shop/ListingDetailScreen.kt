@@ -24,6 +24,7 @@ import coil.compose.AsyncImage
 import com.swiftshop.core.model.*
 import com.swiftshop.core.ui.components.*
 import com.swiftshop.core.ui.theme.swiftColors
+import com.swiftshop.core.ui.LocalWebHost
 import com.swiftshop.core.ui.navigation.Screen
 
 // ─── CTA Configuration Engine ─────────────────────────────────────────────────
@@ -62,6 +63,7 @@ fun ListingDetailScreen(
     val actionState by viewModel.actionState.collectAsState()
     val colors = MaterialTheme.swiftColors
     val context = androidx.compose.ui.platform.LocalContext.current
+    val webHost = LocalWebHost.current
     val snackbarHostState = remember { SnackbarHostState() }
     var activeSheet by remember { mutableStateOf<ListingType?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -155,7 +157,7 @@ fun ListingDetailScreen(
                                 val shopSlug = sharedShop?.name?.let(::normalizeShareSlug) ?: "shop"
                                 val productSlug = normalizeShareSlug(listing.title.ifBlank { listing.id })
                                 val basePath = if (listing.listingType == ListingType.DELIVER) "/d/" else "/s/"
-                                val shareUrl = "https://" + com.swiftshop.BuildConfig.APP_LINK_HOST + basePath + Uri.encode(shopSlug) + "/" + Uri.encode(productSlug)
+                                val shareUrl = "https://" + webHost + basePath + Uri.encode(shopSlug) + "/" + Uri.encode(productSlug)
                                 val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(android.content.Intent.EXTRA_TEXT, "Check out ${listing.title} on SwiftShop: $shareUrl")
@@ -245,8 +247,10 @@ fun ListingDetailScreen(
                                         ListingType.BUY, ListingType.PLACE_ORDER -> {
                                             viewModel.buyNow()
                                         }
+                                        // Delivery is a fulfillment service attached to a paid order:
+                                        // the buyer picks the order from "My orders" and chooses a provider there.
                                         ListingType.DELIVER ->
-                                            navController.navigate(Screen.RequestDelivery.createRoute(listing.id))
+                                            navController.navigate(Screen.Orders.route)
                                         else -> { activeSheet = listing.listingType }
                                     }
                                 },
@@ -822,8 +826,8 @@ private fun CustomFieldRenderer(field: CustomField) {
 
 
 
-private fun normalizeShareSlug(value: String): String = java.text.Normalizer
-    .normalize(value, java.text.Normalizer.Form.NFKD)
+private fun normalizeShareSlug(value: String): String = value
+    .let { java.text.Normalizer.normalize(it, java.text.Normalizer.Form.NFKD) }
     .replace(Regex("\\p{M}+"), "")
     .lowercase()
     .replace(Regex("[^a-z0-9]+"), "-")

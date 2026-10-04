@@ -1,6 +1,7 @@
 import { onRequest } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { normalizeShareSlug } from "./shareSlug";
+import { ListingStatus } from "./listing/types";
 
 /**
  * Public marketplace contract.
@@ -43,6 +44,7 @@ const mapListing = (data: FirebaseFirestore.DocumentData, id: string) => ({
     category: String(data.category || ""),
     tags: Array.isArray(data.tags) ? data.tags : [],
     listingType: String(data.listingType || "BUY"),
+    status: String(data.status || ""),
     isAvailable: data.isAvailable !== false,
     isSponsored: data.isSponsored === true,
     stockQuantity: Number(data.stockQuantity ?? 1),
@@ -123,9 +125,42 @@ export const publicMarketplace = onRequest({ cors: true }, async (_request, resp
             db.collection("posts").orderBy("createdAt", "desc").limit(100).get()
         ]);
 
+        // Canonical Listing Engine lifecycle is authoritative. Existing
+        // pre-engine documents may have isAvailable=true but no status field.
+        // Reconcile only that legacy shape once, then continue using status as
+        // the sole discovery authority. This is a bounded migration of up to
+        // the 100 documents already read by this endpoint; new writes always
+        // receive status from listing/builder.ts.
+        const legacyActiveDocs = listingSnap.docs.filter(d => {
+            const data = d.data();
+            return data.status == null && data.isAvailable === true;
+        });
+        if (legacyActiveDocs.length > 0) {
+            const batch = db.batch();
+            for (const doc of legacyActiveDocs) {
+                batch.update(doc.ref, {
+                    status: ListingStatus.ACTIVE,
+                    isAvailable: true,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+            }
+            await batch.commit();
+        }
+
+        // Use the snapshot's reconciled lifecycle for this response as well,
+        // so the first request after deployment does not need a second fetch.
         const listings = listingSnap.docs
-            .map(d => mapListing(d.data(), d.id))
-            .filter(x => x.isAvailable);
+            .map(d => {
+                const data = d.data();
+                if (data.status == null && data.isAvailable === true) {
+                    return mapListing(
+                        { ...data, status: ListingStatus.ACTIVE, isAvailable: true },
+                        d.id
+                    );
+                }
+                return mapListing(data, d.id);
+            })
+            .filter(x => x.status === ListingStatus.ACTIVE && x.isAvailable);
 
         const shops = shopSnap.docs
             .map(d => mapShop(d.data(), d.id))

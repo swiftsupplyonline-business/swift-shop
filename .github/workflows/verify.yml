@@ -2,9 +2,9 @@ name: Verify Swift Shop
 
 on:
   push:
-    branches: [ master, delivery-first-checkout, canonical-platform-tree-2026-09-29, canonical-platform-integration-2026-09-29 ]
+    branches: [ master, delivery-first-checkout, canonical-reconcile-d, canonical-platform-integration-2026-09-29, canonical-platform-tree-2026-09-29 ]
   pull_request:
-    branches: [ master, delivery-first-checkout, canonical-platform-tree-2026-09-29, canonical-platform-integration-2026-09-29 ]
+    branches: [ master, delivery-first-checkout, canonical-platform-integration-2026-09-29, canonical-platform-tree-2026-09-29 ]
 
 jobs:
   android-tests:
@@ -67,3 +67,10 @@ jobs:
 
       - name: Run Tests with Emulator
         run: firebase emulators:exec --project swift-shop-reconciled "npm --prefix functions test"
+
+  canonical-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Strict canonical architecture audit
+        run: bash scripts/canonical-audit.sh

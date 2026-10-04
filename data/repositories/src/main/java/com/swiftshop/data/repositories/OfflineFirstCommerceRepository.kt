@@ -72,6 +72,9 @@ class OfflineFirstCommerceRepository @Inject constructor(
         result.getOrNull()?.let { local.cacheListing(it) }
     }
 
+    override suspend fun getListingByShareSlugs(shopSlug: String, productSlug: String): Result<Listing> =
+        remote.getListingByShareSlugs(shopSlug, productSlug)
+
     override suspend fun getUserListings(userId: String): Result<List<Listing>> = 
         remote.getUserListings(userId)
 
@@ -91,6 +94,9 @@ class OfflineFirstCommerceRepository @Inject constructor(
 
     override suspend fun searchListings(query: String): Result<List<Listing>> = 
         remote.searchListings(query)
+
+    override suspend fun searchShops(query: String): Result<List<Shop>> =
+        remote.searchShops(query)
 
     override suspend fun createListing(listing: Listing) = remote.createListing(listing)
     override suspend fun updateListing(listing: Listing) = remote.updateListing(listing)
@@ -116,24 +122,7 @@ class OfflineFirstCommerceRepository @Inject constructor(
         idempotencyKey: String
     ) = remote.placePurchase(items, paymentMethod, provider, phoneNumber, idempotencyKey)
 
-    override suspend fun calculateOrderFees(
-        items: List<com.swiftshop.core.model.OrderItem>,
-        requiresDelivery: Boolean,
-        address: com.swiftshop.core.model.DeliveryAddress?,
-        selectedDeliveryListingId: String?
-    ) = remote.calculateOrderFees(items, requiresDelivery, address, selectedDeliveryListingId)
 
-    override suspend fun placeOrder(
-        items: List<com.swiftshop.core.model.OrderItem>,
-        requiresDelivery: Boolean,
-        address: com.swiftshop.core.model.DeliveryAddress?,
-        paymentMethod: com.swiftshop.core.model.PaymentMethod,
-        provider: String?,
-        phoneNumber: String,
-        idempotencyKey: String,
-        selectedDeliveryListingId: String?,
-        deliveryRequestId: String?
-    ) = remote.placeOrder(items, requiresDelivery, address, paymentMethod, provider, phoneNumber, idempotencyKey, selectedDeliveryListingId, deliveryRequestId)
 
     override suspend fun verifyMopayPayment(sessionId: String) = remote.verifyMopayPayment(sessionId)
 

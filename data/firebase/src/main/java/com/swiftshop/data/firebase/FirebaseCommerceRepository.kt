@@ -52,7 +52,10 @@ class FirebaseCommerceRepository @Inject constructor(
     }
 
     override suspend fun updateShop(shop: Shop): Result<Unit> = runCatching {
-        firestore.collection("shops").document(shop.id).update(shop.toUpdateMap()).await()
+        // Firestore rules deny direct shop writes; the callable enforces ownership + allowlisted fields.
+        functions.getHttpsCallable("updateShop")
+            .call(mapOf("shopId" to shop.id, "updates" to shop.toUpdateMap()))
+            .await()
         Unit
     }
 
@@ -106,6 +109,28 @@ class FirebaseCommerceRepository @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
+    override suspend fun getListingByShareSlugs(shopSlug: String, productSlug: String): Result<Listing> = runCatching {
+        val normalizedShopSlug = shopSlug.trim().lowercase()
+        val normalizedProductSlug = productSlug.trim().lowercase()
+        require(normalizedShopSlug.isNotBlank() && normalizedProductSlug.isNotBlank()) { "Invalid listing share link" }
+
+        val shopSnapshot = firestore.collection("shops")
+            .whereEqualTo("shareSlug", normalizedShopSlug)
+            .limit(2)
+            .get().await()
+        if (shopSnapshot.size() != 1) throw NoSuchElementException("Shop not found")
+
+        val shopId = shopSnapshot.documents.single().id
+        val listingSnapshot = firestore.collection("listings")
+            .whereEqualTo("shopId", shopId)
+            .whereEqualTo("shareSlug", normalizedProductSlug)
+            .limit(2)
+            .get().await()
+        if (listingSnapshot.size() != 1) throw NoSuchElementException("Listing not found")
+
+        getListing(listingSnapshot.documents.single().id).getOrThrow()
+    }
+
     override suspend fun getListing(listingId: String): Result<Listing> = runCatching {
         val doc = firestore.collection("listings").document(listingId).get().await()
         val firestoreListing = doc.toObject(FirestoreListing::class.java) ?: throw NoSuchElementException("Listing not found")
@@ -154,12 +179,29 @@ class FirebaseCommerceRepository @Inject constructor(
     }
 
     override suspend fun searchListings(query: String): Result<List<Listing>> = runCatching {
-        // Basic title prefix search (limited by Firestore capabilities without external index)
+        // Case-insensitive prefix search on the engine-derived `title_lowercase` field.
+        // Input is normalised exactly like the stored value (trim + lowercase); bounded to one page.
+        val normalized = query.trim().lowercase()
+        if (normalized.isEmpty()) return@runCatching emptyList<Listing>()
         firestore.collection("listings")
-            .whereGreaterThanOrEqualTo("title", query)
-            .whereLessThanOrEqualTo("title", query + "\uf8ff")
+            .whereGreaterThanOrEqualTo("title_lowercase", normalized)
+            .whereLessThanOrEqualTo("title_lowercase", normalized + "\uf8ff")
+            .limit(30)
             .get().await()
             .toObjects(FirestoreListing::class.java).map { it.toDomain() }
+    }
+
+    override suspend fun searchShops(query: String): Result<List<Shop>> = runCatching {
+        // Case-insensitive prefix search on `name_lowercase` (indexed with isActive); bounded to one page.
+        val normalized = query.trim().lowercase()
+        if (normalized.isEmpty()) return@runCatching emptyList<Shop>()
+        firestore.collection("shops")
+            .whereEqualTo("isActive", true)
+            .whereGreaterThanOrEqualTo("name_lowercase", normalized)
+            .whereLessThanOrEqualTo("name_lowercase", normalized + "\uf8ff")
+            .limit(30)
+            .get().await()
+            .toObjects(FirestoreShop::class.java).map { it.toDomain() }
     }
 
     override suspend fun createListing(listing: Listing): Result<String> = runCatching {
@@ -309,61 +351,7 @@ class FirebaseCommerceRepository @Inject constructor(
         )
     }
 
-    override suspend fun calculateOrderFees(
-        items: List<OrderItem>,
-        requiresDelivery: Boolean,
-        address: DeliveryAddress?,
-        selectedDeliveryListingId: String?
-    ): Result<OrderSummary> = runCatching {
-        val data = mapOf(
-            "items" to items.map { it.toFirestore() },
-            "requiresDelivery" to requiresDelivery,
-            "deliveryAddress" to address?.toFirestore(),
-            "selectedDeliveryListingId" to selectedDeliveryListingId
-        )
-        val result = functions.getHttpsCallable("calculateOrderFees").call(data).await()
-        val resMap = result.data as Map<String, Any>
 
-        val currency = resMap["currency"] as? String ?: "LSL"
-        OrderSummary(
-            subtotal = MoneyAmount(currency, (resMap["subtotalMinorUnits"] as Number).toLong()),
-            deliveryFee = MoneyAmount(currency, (resMap["deliveryFeeMinorUnits"] as Number).toLong()),
-            platformFee = MoneyAmount(currency, (resMap["platformFeeMinorUnits"] as Number).toLong()),
-            total = MoneyAmount(currency, (resMap["totalMinorUnits"] as Number).toLong())
-        )
-    }
-
-    override suspend fun placeOrder(
-        items: List<OrderItem>,
-        requiresDelivery: Boolean,
-        address: DeliveryAddress?,
-        paymentMethod: PaymentMethod,
-        provider: String?,
-        phoneNumber: String,
-        idempotencyKey: String,
-        selectedDeliveryListingId: String?,
-        deliveryRequestId: String?
-    ): Result<OrderInitiation> = runCatching {
-        val data = mapOf(
-            "items" to items.map { it.toFirestore() },
-            "requiresDelivery" to requiresDelivery,
-            "deliveryAddress" to address?.toFirestore(),
-            "paymentMethod" to paymentMethod.name,
-            "provider" to provider,
-            "phoneNumber" to phoneNumber,
-            "idempotencyKey" to idempotencyKey,
-            "selectedDeliveryListingId" to selectedDeliveryListingId,
-            "deliveryRequestId" to deliveryRequestId
-        )
-        val result = functions.getHttpsCallable("createOrder").call(data).await()
-        val resMap = result.data as Map<String, Any>
-
-        OrderInitiation(
-            orderId = resMap["orderId"] as String,
-            paymentUrl = resMap["paymentUrl"] as? String,
-            mopaySessionId = resMap["mopaySessionId"] as? String
-        )
-    }
 
     override suspend fun verifyMopayPayment(sessionId: String): Result<Unit> = runCatching {
         val data = mapOf("sessionId" to sessionId)
@@ -474,18 +462,20 @@ data class FirestoreListing(
     val category: String = "",
     val tags: List<String> = emptyList(),
     val listingType: String = "BUY",
+    val shareSlug: String = "",
     @get:PropertyName("isAvailable") @set:PropertyName("isAvailable") var isAvailable: Boolean = true,
     @get:PropertyName("isSponsored") @set:PropertyName("isSponsored") var isSponsored: Boolean = false,
     val stockQuantity: Int = 1,
     val commitmentCount: Int = 0,
     val bookmarkCount: Int = 0,
     val deliveryEstimateDays: Int = 0,
+    val driverShareBps: Int = 0,
     val likeCount: Int = 0,
     val commentCount: Int = 0,
     val createdAt: Any? = null,
     val updatedAt: Any? = null
 ) {
-    fun toDomain(isLiked: Boolean = false, isBookmarked: Boolean = false) = Listing(id, shopId, sellerId, title, description, MoneyAmount(priceCurrency, priceMinorUnits), imageUrls, videoUrl, category, tags, runCatching { ListingType.valueOf(listingType) }.getOrDefault(ListingType.BUY), isAvailable, isSponsored, stockQuantity, commitmentCount, deliveryEstimateDays, emptyList(), tsToLong(createdAt), tsToLong(updatedAt), commentCount, bookmarkCount, isLiked, isBookmarked, likeCount)
+    fun toDomain(isLiked: Boolean = false, isBookmarked: Boolean = false) = Listing(id, shopId, sellerId, title, description, MoneyAmount(priceCurrency, priceMinorUnits), imageUrls, videoUrl, category, tags, runCatching { ListingType.valueOf(listingType) }.getOrDefault(ListingType.BUY), isAvailable, isSponsored, stockQuantity, commitmentCount, deliveryEstimateDays, driverShareBps, emptyList(), tsToLong(createdAt), tsToLong(updatedAt), commentCount, bookmarkCount, isLiked, isBookmarked, likeCount)
 }
 
 fun Listing.toFirestore() = mapOf(
@@ -494,6 +484,7 @@ fun Listing.toFirestore() = mapOf(
     "imageUrls" to imageUrls, "videoUrl" to videoUrl, "category" to category, "tags" to tags,
     "listingType" to listingType.name, "isAvailable" to isAvailable, "isSponsored" to isSponsored,
     "stockQuantity" to stockQuantity,
+    "driverShareBps" to driverShareBps,
     "commitmentCount" to commitmentCount, "deliveryEstimateDays" to deliveryEstimateDays,
     "createdAt" to createdAt, "updatedAt" to updatedAt
 )

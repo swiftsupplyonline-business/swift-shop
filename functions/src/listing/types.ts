@@ -120,6 +120,8 @@ export interface ListingDoc {
     priceMinorUnits:    number;
     priceCurrency:      string; // always "LSL" for now
     fulfillmentOptions: string[];
+    /** Driver's share of the net delivery fee, in basis points; configurable by the delivery listing author. */
+    driverShareBps?: number;
 
     // ── Inventory [CLIENT + SERVER] ───────────────────────────────────────────
     inventoryMode:    InventoryMode; // [SERVER] derived from listingType at creation

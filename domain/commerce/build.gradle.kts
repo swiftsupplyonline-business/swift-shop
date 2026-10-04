@@ -13,10 +13,11 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
+    testImplementation(libs.bundles.testing)
+    testImplementation(libs.mockito.kotlin)
     implementation(project(":core:model"))
     implementation(project(":core:media"))
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.timber)
-    testImplementation(libs.bundles.testing)
-    testImplementation("org.mockito.kotlin:mockito-kotlin:5.3.1")
+
 }

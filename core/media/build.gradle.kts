@@ -15,6 +15,7 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
+    testImplementation(libs.bundles.testing)
     implementation(project(":core:model"))
 
     implementation(platform(libs.firebase.bom))
@@ -26,5 +27,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.androidx.core.ktx)
+
     testImplementation(libs.junit)
 }
