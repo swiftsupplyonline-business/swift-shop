@@ -63,11 +63,72 @@ function cartCount() {
   return getCart().reduce((n, i) => n + i.quantity, 0);
 }
 function updateCartBadge() {
-  document.querySelectorAll("[data-cart-badge]").forEach(el => {
-    const n = cartCount();
-    el.textContent = n > 0 ? String(n) : "";
-    el.style.display = n > 0 ? "inline-block" : "none";
+  const n = cartCount();
+  document.querySelectorAll("[data-cart-badge], #count").forEach(el => {
+    el.textContent = String(n);
   });
+  const railBadge = document.getElementById("railCartBadge");
+  if (railBadge) railBadge.textContent = String(n);
+
+  const railSummary = document.getElementById("railCartSummary");
+  if (railSummary) {
+    const items = getCart();
+    if (!items.length) {
+      railSummary.innerHTML = `<div class="sub">Your bag is empty.</div>`;
+    } else {
+      railSummary.innerHTML = items.slice(0, 3).map(i => `
+        <div style="font-size:12px;font-weight:700;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+          ${escapeHtml(i.title)} <span style="color:var(--muted)">× ${i.quantity}</span>
+        </div>`).join("") + (items.length > 3 ? `<div class="sub">+${items.length - 3} more items</div>` : "");
+    }
+  }
+}
+
+// ---------- Delivery Rail Data ----------
+
+async function loadDeliveryProvidersRail() {
+  const providerList = document.getElementById("providerList");
+  const providerCount = document.getElementById("providerCount");
+  if (!providerList) return;
+
+  try {
+    const getOptions = httpsCallable(functions, "getDeliveryOptions");
+    const { data } = await getOptions();
+    const options = data?.options || [];
+    if (providerCount) providerCount.textContent = String(options.length);
+
+    if (!options.length) {
+      providerList.innerHTML = `<div class="sub">No active delivery providers in area.</div>`;
+      return;
+    }
+
+    providerList.innerHTML = options.slice(0, 4).map(opt => `
+      <div class="provider-item">
+        <div class="provider-avatar">🚚</div>
+        <div class="provider-info">
+          <div class="provider-title">${escapeHtml(opt.title || "Delivery Partner")}</div>
+          <div class="provider-meta">${LSL(opt.priceMinorUnits || 0)} · ${opt.deliveryEstimateDays || 1}d est.</div>
+        </div>
+      </div>`).join("");
+  } catch (err) {
+    if (providerList) providerList.innerHTML = `<div class="sub">Logistics options available at checkout</div>`;
+  }
+}
+
+// ---------- Profile Rail Data ----------
+
+function updateProfileRail(user) {
+  const summary = document.getElementById("profileSummary");
+  if (!summary) return;
+  if (user && !user.isAnonymous) {
+    summary.innerHTML = `
+      <div style="font-weight:800;font-size:14px;">${escapeHtml(user.displayName || user.email || "Member")}</div>
+      <div class="sub">Verified Account</div>`;
+  } else {
+    summary.innerHTML = `
+      <div style="font-weight:700;font-size:13px;margin-bottom:4px;">Guest shopper</div>
+      <div class="sub">Order online, track via App</div>`;
+  }
 }
 
 // ---------- Auth (anonymous – enough to call authenticated callables) ----------
@@ -359,6 +420,12 @@ function route() {
   const path = location.pathname;
   updateCartBadge();
 
+  const layout = document.getElementById("pageLayout");
+  if (layout) {
+    if (path === "/" || path === "") layout.classList.add("has-rails");
+    else layout.classList.remove("has-rails");
+  }
+
   if (path === "/" || path === "") return renderBrowse(root);
   if (path === "/cart") return renderCart(root);
   if (path === "/checkout") return renderCheckout(root);
@@ -381,6 +448,26 @@ document.addEventListener("click", (e) => {
 window.addEventListener("popstate", route);
 document.addEventListener("DOMContentLoaded", () => {
   updateCartBadge();
+  ensureSignedIn().then(updateProfileRail).catch(() => updateProfileRail(null));
+  loadDeliveryProvidersRail();
+
+  window.openCartDrawer = () => {
+    renderCart(document.getElementById("cart"));
+    document.getElementById("drawer")?.classList.add("open");
+  };
+  window.closeCartDrawer = () => {
+    document.getElementById("drawer")?.classList.remove("open");
+  };
+  window.filterCategory = (cat) => {
+    const root = document.getElementById("app");
+    if (root) {
+      renderBrowse(root).then(() => {
+        const input = document.getElementById("search");
+        if (input) input.value = cat;
+      });
+    }
+  };
+
   if (location.pathname.startsWith("/s/") && document.body.dataset.sharePage === "true") return;
   route();
 });

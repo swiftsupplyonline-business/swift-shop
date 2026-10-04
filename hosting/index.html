@@ -10,8 +10,32 @@
 :root{--ink:#111318;--muted:#747983;--line:#e8e9ec;--paper:#f7f7f5;--card:#fff;--accent:#111318;--radius:24px;--shadow:0 18px 60px rgba(17,19,24,.10)}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input{font:inherit}button{cursor:pointer;border:0}.app{min-height:100vh}
 .top{position:sticky;top:0;z-index:20;background:rgba(247,247,245,.84);backdrop-filter:blur(18px);border-bottom:1px solid rgba(0,0,0,.05)}
-.nav{height:72px;max-width:1180px;margin:auto;padding:0 22px;display:flex;align-items:center;gap:22px}.brand{display:flex;align-items:center;gap:10px;font-weight:900;font-size:21px;letter-spacing:-.04em}.brand img{width:34px;height:34px;object-fit:contain}.search{flex:1;max-width:480px;margin:auto;position:relative}.search input{width:100%;border:1px solid var(--line);background:#fff;border-radius:999px;padding:13px 18px 13px 44px;outline:none}.search span{position:absolute;left:16px;top:11px;font-size:18px}.nav-actions{display:flex;gap:9px}.pill{background:#fff;border:1px solid var(--line);border-radius:999px;padding:10px 14px}.cart{position:relative}.badge{position:absolute;right:-2px;top:-4px;background:#111;color:#fff;border-radius:99px;min-width:18px;height:18px;font-size:11px;display:grid;place-items:center}
-main{max-width:1180px;margin:auto;padding:26px 22px 100px}.hero{min-height:390px;border-radius:34px;overflow:hidden;position:relative;background:radial-gradient(circle at 78% 32%,#fff 0,#ecebe6 26%,#d7d5cf 55%,#bbb9b2 100%);display:grid;grid-template-columns:1.05fr .95fr;align-items:center;padding:48px}.hero:before{content:"";position:absolute;width:360px;height:360px;border-radius:50%;right:80px;top:10px;background:linear-gradient(145deg,rgba(255,255,255,.9),rgba(0,0,0,.12));box-shadow:inset -35px -35px 80px rgba(0,0,0,.12),0 35px 80px rgba(0,0,0,.16);transform:rotate(-14deg);animation:float 6s ease-in-out infinite}.hero:after{content:"SWIFT";position:absolute;right:62px;bottom:24px;font-size:110px;font-weight:1000;letter-spacing:-.09em;color:rgba(255,255,255,.35);transform:rotate(-8deg)}.hero-copy{position:relative;z-index:2;max-width:570px}.eyebrow{text-transform:uppercase;font-size:12px;letter-spacing:.18em;font-weight:800;color:#606269}.hero h1{font-size:clamp(42px,6vw,78px);line-height:.9;letter-spacing:-.075em;margin:14px 0 22px}.hero p{font-size:18px;line-height:1.55;color:#4e5158;max-width:510px}.cta{background:#111;color:#fff;border-radius:999px;padding:14px 20px;font-weight:800;margin-top:12px;box-shadow:0 12px 30px rgba(0,0,0,.16);transition:.25s}.cta:hover{transform:translateY(-3px);box-shadow:0 18px 38px rgba(0,0,0,.22)}
+.nav{height:72px;max-width:1600px;margin:auto;padding:0 22px;display:flex;align-items:center;gap:22px}.brand{display:flex;align-items:center;gap:10px;font-weight:900;font-size:21px;letter-spacing:-.04em}.brand img{width:34px;height:34px;object-fit:contain}.search{flex:1;max-width:480px;margin:auto;position:relative}.search input{width:100%;border:1px solid var(--line);background:#fff;border-radius:999px;padding:13px 18px 13px 44px;outline:none}.search span{position:absolute;left:16px;top:11px;font-size:18px}.nav-actions{display:flex;gap:9px}.pill{background:#fff;border:1px solid var(--line);border-radius:999px;padding:10px 14px}.cart{position:relative}.badge{position:absolute;right:-2px;top:-4px;background:#111;color:#fff;border-radius:99px;min-width:18px;height:18px;font-size:11px;display:grid;place-items:center}
+
+/* Layout Rails */
+.page-layout{max-width:1600px;margin:auto;padding:26px 22px 100px;display:grid;grid-template-columns:1fr;gap:24px}
+@media(min-width:1300px){
+  .page-layout.has-rails{grid-template-columns:280px 1fr 280px}
+  .rail-left,.rail-right{display:block !important}
+}
+.rail-left,.rail-right{display:none}
+.rail-card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin-bottom:20px;box-shadow:0 4px 16px rgba(0,0,0,.02)}
+.rail-card h3{font-size:16px;letter-spacing:-.02em;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+.rail-card .badge-sm{background:#f1f1ef;color:#333;font-size:11px;padding:2px 8px;border-radius:99px;font-weight:700}
+.provider-item{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.provider-item:last-child{border-bottom:0}
+.provider-avatar{width:36px;height:36px;border-radius:12px;background:#111;color:#fff;display:grid;place-items:center;font-weight:900;font-size:14px}
+.provider-info{flex:1;min-width:0}
+.provider-title{font-weight:800;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.provider-meta{font-size:11px;color:var(--muted)}
+
+/* Ads Card */
+.ad-card{background:linear-gradient(135deg,#111318,#2a2d35);color:#fff;border-radius:var(--radius);padding:20px;margin-bottom:20px;position:relative;overflow:hidden}
+.ad-tag{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#a0a4ad;font-weight:800;margin-bottom:8px}
+.ad-card h4{font-size:18px;margin:0 0 6px;letter-spacing:-.03em;color:#fff}
+.ad-card p{font-size:12px;color:#c5c8d0;margin:0 0 14px;line-height:1.4}
+
+main{max-width:100%;margin:0}.hero{min-height:390px;border-radius:34px;overflow:hidden;position:relative;background:radial-gradient(circle at 78% 32%,#fff 0,#ecebe6 26%,#d7d5cf 55%,#bbb9b2 100%);display:grid;grid-template-columns:1.05fr .95fr;align-items:center;padding:48px}.hero:before{content:"";position:absolute;width:360px;height:360px;border-radius:50%;right:80px;top:10px;background:linear-gradient(145deg,rgba(255,255,255,.9),rgba(0,0,0,.12));box-shadow:inset -35px -35px 80px rgba(0,0,0,.12),0 35px 80px rgba(0,0,0,.16);transform:rotate(-14deg);animation:float 6s ease-in-out infinite}.hero:after{content:"SWIFT";position:absolute;right:62px;bottom:24px;font-size:110px;font-weight:1000;letter-spacing:-.09em;color:rgba(255,255,255,.35);transform:rotate(-8deg)}.hero-copy{position:relative;z-index:2;max-width:570px}.eyebrow{text-transform:uppercase;font-size:12px;letter-spacing:.18em;font-weight:800;color:#606269}.hero h1{font-size:clamp(42px,6vw,78px);line-height:.9;letter-spacing:-.075em;margin:14px 0 22px}.hero p{font-size:18px;line-height:1.55;color:#4e5158;max-width:510px}.cta{background:#111;color:#fff;border-radius:999px;padding:14px 20px;font-weight:800;margin-top:12px;box-shadow:0 12px 30px rgba(0,0,0,.16);transition:.25s}.cta:hover{transform:translateY(-3px);box-shadow:0 18px 38px rgba(0,0,0,.22)}
 .section{margin-top:46px}.section-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:18px}.section h2{font-size:29px;letter-spacing:-.05em;margin:0}.sub{color:var(--muted);font-size:14px;margin-top:5px}.link{background:none;color:#555;font-weight:700}
 .categories{display:flex;gap:12px;overflow:auto;padding:2px 0 8px}.cat{min-width:120px;height:96px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:14px;display:flex;flex-direction:column;justify-content:space-between;transition:.25s}.cat:hover{transform:translateY(-4px);box-shadow:var(--shadow)}.cat b{font-size:25px}.cat span{font-weight:750;font-size:13px}
 .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.product{background:#fff;border:1px solid var(--line);border-radius:24px;overflow:hidden;transition:.28s;cursor:pointer}.product:hover{transform:translateY(-6px);box-shadow:var(--shadow)}.photo{height:220px;display:grid;place-items:center;position:relative;overflow:hidden;background:#ecebe7}.photo .orb{width:135px;height:135px;border-radius:36px;background:linear-gradient(145deg,#fff,#bfc0bd);box-shadow:18px 24px 45px rgba(0,0,0,.2),inset -14px -14px 25px rgba(0,0,0,.13);transform:rotate(-8deg);transition:.5s}.product:hover .orb{transform:rotate(3deg) scale(1.08)}.tag{position:absolute;left:12px;top:12px;background:#fff;border-radius:99px;padding:6px 9px;font-size:10px;font-weight:900}.heart{position:absolute;right:11px;top:11px;background:rgba(255,255,255,.88);border-radius:50%;width:34px;height:34px}.info{padding:15px}.shop{font-size:11px;color:#888;font-weight:700}.name{font-weight:850;margin:5px 0}.price{font-weight:900;font-size:18px}.product-foot{display:flex;justify-content:space-between;align-items:center}.add{background:#111;color:#fff;width:34px;height:34px;border-radius:50%;font-size:20px}
@@ -20,8 +44,9 @@ main{max-width:1180px;margin:auto;padding:26px 22px 100px}.hero{min-height:390px
 .toast{position:fixed;bottom:24px;left:50%;transform:translate(-50%,20px);background:#111;color:#fff;padding:12px 17px;border-radius:999px;opacity:0;pointer-events:none;z-index:100;transition:.3s}.toast.show{opacity:1;transform:translate(-50%,0)}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.48);z-index:60;display:none;place-items:center;padding:20px}.modal.open{display:grid}.modal-card{background:#fff;width:min(820px,100%);max-height:90vh;overflow:auto;border-radius:30px;padding:24px}.detail{display:grid;grid-template-columns:1fr 1fr;gap:25px}.detail-photo{min-height:400px;border-radius:25px;background:#e8e7e3;display:grid;place-items:center}.detail-photo .orb{width:230px;height:230px;border-radius:60px;background:linear-gradient(145deg,#fff,#b9bab7);box-shadow:30px 40px 70px rgba(0,0,0,.2);transform:rotate(-9deg)}.detail h2{font-size:42px;letter-spacing:-.06em;line-height:.95}.detail-price{font-size:30px;font-weight:900;margin:20px 0}.qty{display:flex;align-items:center;gap:14px;margin:20px 0}.qty button{width:35px;height:35px;border-radius:50%;background:#eee}.full{width:100%}
 @keyframes float{0%,100%{transform:rotate(-14deg) translateY(0)}50%{transform:rotate(-10deg) translateY(-14px)}}@keyframes slide{from{transform:translateX(100%)}to{transform:translateX(0)}}
+@media(max-width:1299px){.grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:850px){.nav{gap:10px}.search{order:3;flex-basis:100%;max-width:none}.nav{height:auto;min-height:72px;flex-wrap:wrap;padding-bottom:10px}.hero{grid-template-columns:1fr;min-height:480px;padding:32px}.hero:before{right:-60px;bottom:-90px;top:auto}.hero:after{font-size:70px;right:18px}.grid{grid-template-columns:repeat(2,1fr)}.shops{grid-template-columns:1fr}.photo{height:180px}.detail{grid-template-columns:1fr}.detail-photo{min-height:300px}}
-@media(max-width:500px){main{padding:16px 14px 90px}.hero{border-radius:25px;padding:25px}.hero h1{font-size:49px}.grid{gap:10px}.product{border-radius:18px}.photo{height:155px}.info{padding:12px}.nav-actions .pill:not(.cart){display:none}.detail h2{font-size:35px}}
+@media(max-width:500px){.page-layout{padding:16px 14px 90px}.hero{border-radius:25px;padding:25px}.hero h1{font-size:49px}.grid{gap:10px}.product{border-radius:18px}.photo{height:155px}.info{padding:12px}.nav-actions .pill:not(.cart){display:none}.detail h2{font-size:35px}}
 </style>
 </head>
 <body>
@@ -31,14 +56,43 @@ main{max-width:1180px;margin:auto;padding:26px 22px 100px}.hero{min-height:390px
 <div class="search"><span>⌕</span><input id="search" placeholder="Search products, shops..." oninput="filterProducts(this.value)"></div>
 <div class="nav-actions"><button class="pill">♡</button><button class="pill cart" onclick="openCart()">Bag <i class="badge" id="count">0</i></button></div>
 </nav></header>
-<main>
-<section class="hero">
-<div class="hero-copy"><div class="eyebrow">Swift marketplace · Lesotho</div><h1>Local finds.<br>Delivered fast.</h1><p>Discover products from local shops, share a listing with one smart link, and buy directly from your phone.</p><button class="cta" onclick="document.getElementById('products').scrollIntoView()">Explore products ↗</button></div>
-</section>
-<section class="section"><div class="section-head"><div><h2>Shop by category</h2><div class="sub">Everything you need, from shops near you.</div></div></div>
-<div class="categories"><button class="cat" onclick="filterProducts('Beauty')"><b>✦</b><span>Beauty</span></button><button class="cat" onclick="filterProducts('Fashion')"><b>◈</b><span>Fashion</span></button><button class="cat" onclick="filterProducts('Gadgets')"><b>⌁</b><span>Gadgets</span></button><button class="cat" onclick="filterProducts('Home')"><b>⌂</b><span>Home</span></button><button class="cat" onclick="filterProducts('Baby')"><b>♡</b><span>Baby</span></button><button class="cat" onclick="filterProducts('Food')"><b>◉</b><span>Food</span></button></div></section>
-<div id="app"></div>
-</main>
+<div class="page-layout has-rails" id="pageLayout">
+  <!-- Left Persistent Rail (Desktop) -->
+  <aside class="rail-left">
+    <div class="rail-card" id="deliveryProvidersCard">
+      <h3>🚚 Active Delivery <span class="badge-sm" id="providerCount">...</span></h3>
+      <div id="providerList"><div class="sub">Loading providers…</div></div>
+    </div>
+    <div class="ad-card">
+      <div class="ad-tag">Advertisement</div>
+      <h4>Swift Fast Delivery</h4>
+      <p>Local logistics powered by verified delivery partners across Lesotho.</p>
+    </div>
+  </aside>
+
+  <!-- Central Marketplace Surface -->
+  <main>
+    <section class="hero">
+      <div class="hero-copy"><div class="eyebrow">Swift marketplace · Lesotho</div><h1>Local finds.<br>Delivered fast.</h1><p>Discover products from local shops, share a listing with one smart link, and buy directly from your phone.</p><button class="cta" onclick="document.getElementById('app').scrollIntoView()">Explore products ↗</button></div>
+    </section>
+    <section class="section"><div class="section-head"><div><h2>Shop by category</h2><div class="sub">Everything you need, from shops near you.</div></div></div>
+    <div class="categories"><button class="cat" onclick="window.filterCategory('Beauty')"><b>✦</b><span>Beauty</span></button><button class="cat" onclick="window.filterCategory('Fashion')"><b>◈</b><span>Fashion</span></button><button class="cat" onclick="window.filterCategory('Gadgets')"><b>⌁</b><span>Gadgets</span></button><button class="cat" onclick="window.filterCategory('Home')"><b>⌂</b><span>Home</span></button><button class="cat" onclick="window.filterCategory('Baby')"><b>♡</b><span>Baby</span></button><button class="cat" onclick="window.filterCategory('Food')"><b>◉</b><span>Food</span></button></div></section>
+    <div id="app"></div>
+  </main>
+
+  <!-- Right Persistent Rail (Desktop) -->
+  <aside class="rail-right">
+    <div class="rail-card" id="profileCard">
+      <h3>👤 Account</h3>
+      <div id="profileSummary"><div class="sub">Guest user</div></div>
+    </div>
+    <div class="rail-card" id="cartCard">
+      <h3>🛍️ Your Bag <span class="badge-sm" id="railCartBadge">0</span></h3>
+      <div id="railCartSummary"><div class="sub">Your bag is empty.</div></div>
+      <button class="checkout full" style="margin-top:12px;" onclick="window.openCartDrawer()">View Cart</button>
+    </div>
+  </aside>
+</div>
 </div>
 <div class="drawer" id="drawer" onclick="if(event.target===this)closeCart()"><aside class="panel"><div class="panel-head"><h2>Your bag</h2><button class="close" onclick="closeCart()">×</button></div><div id="cart"></div><div class="summary"><div class="row"><span>Subtotal</span><b id="subtotal">M0</b></div><div class="row"><span>Delivery</span><span>Calculated at checkout</span></div><button class="checkout" onclick="checkout()">Continue to checkout</button></div></aside></div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="modal-card" id="modalContent"></div></div>
