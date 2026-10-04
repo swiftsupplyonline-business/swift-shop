@@ -598,6 +598,12 @@ function route() {
   if (!root) return;
   const path = location.pathname;
   updateCartBadge();
+  document.querySelectorAll(".rail a").forEach(link => {
+    const href = link.getAttribute("href");
+    const active = href === "/" ? (path === "/" || path === "") : path === href || path.startsWith(href + "/");
+    link.classList.toggle("is-active", active);
+    if (active) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current");
+  });
 
   if (path === "/" || path === "") return renderBrowse(root);
   if (path === "/market") return renderBrowse(root);
