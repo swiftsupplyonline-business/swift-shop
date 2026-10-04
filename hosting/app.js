@@ -27,6 +27,7 @@ const firebaseConfig = await fetch("/__/firebase/init.json").then(async response
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const functions = getFunctions(app);
+const db = getFirestore(app);
 
 const CART_KEY = "swiftshop_cart_v1";
 const LSL = (minorUnits) => `M${(minorUnits / 100).toFixed(2)}`;
@@ -435,6 +436,156 @@ async function renderCheckout(root) {
   }
 }
 
+// ---------- Search ----------
+
+async function renderSearch(root, initialQuery = "") {
+  root.innerHTML = `
+    <section class="rail-page">
+      <div class="section-heading"><span class="eyebrow">Swift search</span><h1>Search the Market</h1></div>
+      <div class="search-panel">
+        <input id="marketSearchInput" value="${escapeHtml(initialQuery)}" placeholder="Search products and shops..." aria-label="Search products and shops">
+        <button class="btn primary" id="marketSearchBtn" type="button">Search</button>
+      </div>
+      <div id="searchResults"><div class="loading">Searching the market…</div></div>
+    </section>`;
+  const input = root.querySelector("#marketSearchInput");
+  const results = root.querySelector("#searchResults");
+  const run = async () => {
+    const term = input.value.trim().toLowerCase();
+    if (!term) { results.innerHTML = "<p class='empty'>Type a product or shop name to search.</p>"; return; }
+    try {
+      const [listings, shops] = await Promise.all([fetchListings({ max: 100 }), fetchShops({ max: 50 })]);
+      const shopById = new Map(shops.map(shop => [shop.id, shop]));
+      const matchedShops = shops.filter(s => String(s.name || "").toLowerCase().includes(term));
+      const matchedListings = listings.filter(l =>
+        String(l.title || "").toLowerCase().includes(term) ||
+        String(l.description || "").toLowerCase().includes(term) ||
+        String(shopById.get(l.shopId)?.name || "").toLowerCase().includes(term)
+      );
+      results.innerHTML = `
+        <div class="search-group"><div class="section-heading"><h2>Shops</h2></div>
+          <div class="shop-row">${matchedShops.length ? matchedShops.map(shopCard).join("") : "<p class='empty'>No matching shops.</p>"}</div>
+        </div>
+        <div class="search-group"><div class="section-heading"><h2>Products</h2></div>
+          <div class="grid">${matchedListings.length ? matchedListings.map(l => listingCard(l, shopById)).join("") : "<p class='empty'>No matching products.</p>"}</div>
+        </div>`;
+    } catch (err) {
+      results.innerHTML = `<div class="error">Couldn't search the market. ${escapeHtml(err.message)}</div>`;
+    }
+  };
+  root.querySelector("#marketSearchBtn").addEventListener("click", run);
+  input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+  if (initialQuery) run();
+}
+
+function formatOrderDate(value) {
+  if (!value) return "Date unavailable";
+  const date = value?.toDate ? value.toDate() : new Date(value);
+  return Number.isNaN(date.getTime()) ? "Date unavailable" : date.toLocaleString();
+}
+
+function orderStatusLabel(value) {
+  return String(value || "PENDING").replaceAll("_", " ").toLowerCase().replace(/(^|\\s)\\S/g, c => c.toUpperCase());
+}
+
+function orderCard(order) {
+  const items = Array.isArray(order.items) ? order.items : [];
+  const itemSummary = items.slice(0, 2).map(i => `${escapeHtml(i.title || "Item")} × ${Number(i.quantity || 1)}`).join(", ");
+  const more = items.length > 2 ? ` + ${items.length - 2} more` : "";
+  return `
+    <a class="order-card" href="/orders/${encodeURIComponent(order.id)}">
+      <div class="order-card-top"><strong>Order ${escapeHtml(order.id.slice(0, 8))}</strong><span>${escapeHtml(formatOrderDate(order.createdAt))}</span></div>
+      <div class="order-items">${itemSummary || "Order items"}${more}</div>
+      <div class="order-card-bottom"><span class="status-pill">${escapeHtml(orderStatusLabel(order.status))}</span><strong>${LSL(Number(order.totalMinorUnits || 0))}</strong></div>
+    </a>`;
+}
+
+function subscribeBuyerOrders(userId, onData, onError) {
+  const q = query(collection(db, "orders"), where("buyerId", "==", userId));
+  return onSnapshot(q, snapshot => {
+    const orders = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, z) => {
+        const at = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
+        const zt = z.createdAt?.toMillis ? z.createdAt.toMillis() : new Date(z.createdAt || 0).getTime();
+        return zt - at;
+      });
+    onData(orders);
+  }, onError);
+}
+
+async function renderOrders(root) {
+  root.innerHTML = `
+    <section class="rail-page">
+      <div class="section-heading"><span class="eyebrow">Swift account</span><h1>My Orders</h1></div>
+      <div id="ordersState" class="loading">Checking your Swift account…</div>
+    </section>`;
+  const state = root.querySelector("#ordersState");
+  const user = auth.currentUser;
+  if (!user) {
+    state.innerHTML = `<div class="empty"><h2>Sign in to see your orders</h2><p>Your orders are private to your Swift account.</p></div>`;
+    return;
+  }
+  state.innerHTML = "<div class='loading'>Loading your orders…</div>";
+  let unsubscribe;
+  try {
+    unsubscribe = subscribeBuyerOrders(user.uid, orders => {
+      state.innerHTML = orders.length
+        ? `<div class="orders-list">${orders.map(orderCard).join("")}</div>`
+        : `<div class="empty"><h2>No orders yet</h2><p>When you buy something on Swift, it will appear here.</p><a class="btn primary" href="/market">Shop the Market</a></div>`;
+    }, err => {
+      state.innerHTML = `<div class="error">Couldn't load your orders. ${escapeHtml(err.message)}</div>`;
+    });
+  } catch (err) {
+    state.innerHTML = `<div class="error">Couldn't load your orders. ${escapeHtml(err.message)}</div>`;
+  }
+  root._ordersUnsubscribe = unsubscribe;
+}
+
+async function renderOrderDetail(root, orderId) {
+  root.innerHTML = "<div class='loading'>Loading order…</div>";
+  const user = auth.currentUser;
+  if (!user) {
+    root.innerHTML = `<div class="empty"><h2>Sign in to view this order</h2><a class="btn primary" href="/orders">Back to Orders</a></div>`;
+    return;
+  }
+  try {
+    const snap = await getDoc(doc(db, "orders", orderId));
+    if (!snap.exists()) {
+      root.innerHTML = "<div class='error'>Order not found.</div>";
+      return;
+    }
+    const order = { id: snap.id, ...snap.data() };
+    if (order.buyerId !== user.uid && order.sellerId !== user.uid) {
+      root.innerHTML = "<div class='error'>You do not have access to this order.</div>";
+      return;
+    }
+    const items = Array.isArray(order.items) ? order.items : [];
+    root.innerHTML = `
+      <section class="rail-page order-detail">
+        <a class="back-link" href="/orders">← Orders</a>
+        <div class="section-heading"><span class="eyebrow">Order ${escapeHtml(order.id.slice(0, 8))}</span><h1>${escapeHtml(orderStatusLabel(order.status))}</h1></div>
+        <div class="order-detail-grid">
+          <div class="order-panel"><h2>Items</h2>${items.map(i => `<div class="order-line"><span>${escapeHtml(i.title || "Item")} × ${Number(i.quantity || 1)}</span><strong>${LSL(Number(i.unitPriceMinorUnits || 0) * Number(i.quantity || 1))}</strong></div>`).join("") || "<p>No items recorded.</p>"}</div>
+          <div class="order-panel"><h2>Summary</h2>
+            <div class="order-line"><span>Subtotal</span><span>${LSL(Number(order.subtotalMinorUnits || 0))}</span></div>
+            <div class="order-line"><span>Platform fee</span><span>${LSL(Number(order.platformFeeMinorUnits || 0))}</span></div>
+            <div class="order-line"><span>Delivery fee</span><span>${LSL(Number(order.deliveryFeeMinorUnits || 0))}</span></div>
+            <div class="order-line total-line"><strong>Total</strong><strong>${LSL(Number(order.totalMinorUnits || 0))}</strong></div>
+          </div>
+          <div class="order-panel"><h2>Progress</h2>
+            <p><strong>Payment:</strong> ${escapeHtml(order.paymentId ? "Recorded" : "Pending")}</p>
+            <p><strong>Order:</strong> ${escapeHtml(orderStatusLabel(order.status))}</p>
+            <p><strong>Inventory:</strong> ${escapeHtml(orderStatusLabel(order.inventoryStatus))}</p>
+            <p><strong>Fulfillment:</strong> ${escapeHtml(orderStatusLabel(order.fulfillmentStatus))}</p>
+            ${order.requiresDelivery ? "<p><strong>Delivery:</strong> Delivery requested/required for this order.</p>" : "<p><strong>Delivery:</strong> Pickup / no delivery requested.</p>"}
+          </div>
+        </div>
+      </section>`;
+  } catch (err) {
+    root.innerHTML = `<div class="error">Couldn't load this order. ${escapeHtml(err.message)}</div>`;
+  }
+}
+
 // ---------- Router ----------
 
 function navigate(path) {
@@ -448,9 +599,9 @@ function route() {
   const path = location.pathname;
   updateCartBadge();
 
-  if (path === "/" || path === "" || path === "/market") return renderBrowse(root);
+  if (path === "/" || path === "") return renderBrowse(root);\n  if (path === "/market") return renderBrowse(root);\n  if (path === "/search") return renderSearch(root);\n  if (path === "/orders") return renderOrders(root);
   if (path === "/cart") return renderCart(root);
-  if (path === "/checkout") return renderCheckout(root);
+  if (path === "/checkout") return renderCheckout(root);\n\n  m = path.match(/^\\/orders\\/([^/]+)\\/?$/);\n  if (m) return renderOrderDetail(root, decodeURIComponent(m[1]));
 
   let m = path.match(/^\/shop\/([^/]+)\/?$/);
   if (m) return renderShop(root, m[1]);
