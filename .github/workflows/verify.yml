@@ -4,7 +4,7 @@ on:
   push:
     branches: [ master, delivery-first-checkout, canonical-reconcile-d, canonical-platform-integration-2026-09-29, canonical-platform-tree-2026-09-29 ]
   pull_request:
-    branches: [ master, delivery-first-checkout, canonical-platform-integration-2026-09-29, canonical-platform-tree-2026-09-29 ]
+    branches: [ master, delivery-first-checkout, canonical-reconcile-d, canonical-platform-integration-2026-09-29, canonical-platform-tree-2026-09-29 ]
 
 jobs:
   android-tests:
@@ -141,12 +141,13 @@ jobs:
             console.log(`✅ export { }: 1`);
           }
 
-          // No literal \n corruption
-          if (src.includes('\\\\n')) {
-            console.error('❌ Literal \\\\n source corruption detected');
+          // No literal backslash-n fusing statements (e.g. `";\nimport ...`)
+          const fused = /["';}]\\n\s*(import|export|const|let|var|function|async|if|for)\b/;
+          if (fused.test(src)) {
+            console.error('❌ Literal \\n source corruption detected (fused statements)');
             failed = true;
           } else {
-            console.log('✅ No literal \\\\n corruption');
+            console.log('✅ No literal \\n corruption');
           }
 
           // No duplicate application boundary marker
