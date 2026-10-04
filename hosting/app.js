@@ -13,7 +13,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
   getFunctions, httpsCallable
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js";
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js";\nimport { getFirestore, collection, query, where, onSnapshot, getDoc, doc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 // Firebase Hosting exposes the configuration for the project serving this page.
 // This keeps Dev, Staging, and Production aligned with their Hosting target.
