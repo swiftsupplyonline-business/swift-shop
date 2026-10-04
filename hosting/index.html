@@ -65,7 +65,9 @@ main{max-width:1180px;margin:auto;padding:26px 22px 100px}
 .section-heading h2{margin:5px 0 0;font-size:30px;letter-spacing:-.05em}
 .market-feed{margin-bottom:40px}
 @keyframes swiftFade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
-@media(min-width:1201px){main{margin-left:210px;max-width:calc(100% - 250px);margin-right:22px}}\n@media(max-width:1200px){.rail{position:static;width:auto;display:flex;max-width:1180px;margin:0 auto;padding:8px 22px;background:var(--paper);box-shadow:none;overflow-x:auto}.rail a{white-space:nowrap}.rail-spacer{display:none}}\n@media(max-width:850px){.nav{flex-wrap:wrap}.search{order:3;flex-basis:100%;max-width:none}.grid{grid-template-columns:repeat(2,1fr)}.shop-row{grid-template-columns:1fr}.hero{padding:32px;min-height:400px}.listing-img{height:300px}.guest-entry{grid-template-columns:1fr}.guest-btn{justify-self:start}.swift-house-ad{min-height:170px}}
+@media(min-width:1201px){main{margin-left:210px;max-width:calc(100% - 250px);margin-right:22px}}
+@media(max-width:1200px){.rail{position:static;width:auto;display:flex;max-width:1180px;margin:0 auto;padding:8px 22px;background:var(--paper);box-shadow:none;overflow-x:auto}.rail a{white-space:nowrap}.rail-spacer{display:none}}
+@media(max-width:850px){.nav{flex-wrap:wrap}.search{order:3;flex-basis:100%;max-width:none}.grid{grid-template-columns:repeat(2,1fr)}.shop-row{grid-template-columns:1fr}.hero{padding:32px;min-height:400px}.listing-img{height:300px}.guest-entry{grid-template-columns:1fr}.guest-btn{justify-self:start}.swift-house-ad{min-height:170px}}
 @media(max-width:500px){main{padding:16px 14px 80px}.grid{gap:10px}.card-img{height:170px}.hero{border-radius:24px;padding:26px}.hero h1{font-size:48px}.hero{min-height:390px;border-radius:24px;padding:26px}.nav-actions .pill:first-child{display:none}.ad-slot{min-height:76px;flex-wrap:wrap;gap:5px 9px}.ad-slot small{flex-basis:100%}.swift-house-ad{padding:22px;min-height:190px}.swift-house-dots{position:absolute;right:22px;bottom:22px}.guest-entry{padding:22px}.guest-entry h2{font-size:25px}}
 </style>
 </head>
@@ -75,6 +77,12 @@ main{max-width:1180px;margin:auto;padding:26px 22px 100px}
 <div class="search"><input id="search" placeholder="Search products, shops..." aria-label="Search products and shops"></div>
 <div class="nav-actions"><a class="pill" href="/cart">Bag <span data-cart-badge></span></a></div>
 </nav></header>
+<nav class="rail" aria-label="Swift primary navigation">
+  <a href="/" aria-label="Home"><span aria-hidden="true">⌂</span><span class="rail-label">Home</span></a>
+  <a href="/market" aria-label="Market"><span aria-hidden="true">▦</span><span class="rail-label">Market</span></a>
+  <a href="/search" aria-label="Search"><span aria-hidden="true">⌕</span><span class="rail-label">Search</span></a>
+  <a href="/orders" aria-label="Orders"><span aria-hidden="true">▤</span><span class="rail-label">Orders</span></a>
+</nav>
 <main>
 <section class="hero"><div class="hero-copy"><div class="eyebrow">Swift marketplace · Lesotho</div><h1>Local Market,<br>Delivered Fast</h1><p>Find products from local businesses, buy now, and have them delivered to you instantly.</p><a class="btn primary hero-cta" href="/market">Shop the Market</a></div><div class="hero-media"><img src="/img/swift-maseru-hero.jfif" alt="Swift marketplace in Maseru, Lesotho"></div></section>
 <div id="app" aria-live="polite"></div>
