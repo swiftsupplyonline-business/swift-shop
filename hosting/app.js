@@ -204,15 +204,15 @@ async function renderBrowse(root) {
 
   root.innerHTML = `
     <section class="market-front-door" aria-label="Swift marketplace welcome">
-      <div class="ad-slot" data-ad-provider="google-meta" aria-label="Advertisement">
+      <div class="ad-slot" data-ad-slot="marketplace-top" data-ad-provider="multi-network" aria-label="Advertisement">
         <span class="ad-label">Advertisement</span>
-        <strong>Google / Meta ad space</strong>
-        <small>Reserved for marketplace advertising</small>
+        <strong>Marketplace advertising</strong>
+        <small>Google · Meta · TikTok · local sponsors</small>
       </div>
 
       <div class="swift-house-ad" aria-label="Swift promotion">
         <div class="swift-house-copy">
-          <span class="ad-label">Swift</span>
+          <span class="ad-label">Featured on Swift</span>
           <div class="swift-house-slide is-active" data-house-slide="0">
             <strong>Local market. One place.</strong>
             <span>Discover products from local businesses around Maseru.</span>
