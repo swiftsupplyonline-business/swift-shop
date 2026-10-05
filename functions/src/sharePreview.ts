@@ -76,15 +76,34 @@ function renderPage(opts: {
     ${!inStock ? '<p class="oos">Currently unavailable</p>' : ""}
     ` : "";
 
-    const commerceScript = listingId && !isDeliveryListing ? `
+    // Progressive enhancement: the markup below is a complete, crawler-friendly fallback.
+    // The browser module replaces it with the full Android-parity listing view (hosting/listing-detail.js);
+    // if anything fails, the original markup is restored and the basic Buy button keeps working.
+    const jsonForScript = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
+    const commerceScript = listingId ? `
     <script type="module">
-      import { addToCart } from "/app.js";
-      const id = ${JSON.stringify(listingId)};
-      const title = ${JSON.stringify(title)};
-      document.getElementById("buyNowBtn")?.addEventListener("click", () => {
-        addToCart(id, title, 1);
-        window.location.href = "/checkout";
-      });
+      import { addToCart, mountListingDetail } from "/app.js";
+      const id = ${jsonForScript(listingId)};
+      const title = ${jsonForScript(title)};
+      const isDelivery = ${isDeliveryListing ? "true" : "false"};
+      const root = document.getElementById("swift-listing-root");
+      const fallbackHtml = root ? root.innerHTML : "";
+      const useFallback = () => {
+        if (root) root.innerHTML = fallbackHtml;
+        document.body.classList.remove("ld-enhanced");
+        if (isDelivery) return;
+        document.getElementById("buyNowBtn")?.addEventListener("click", () => {
+          addToCart(id, title, 1);
+          window.location.href = "/checkout";
+        });
+      };
+      if (!root) { useFallback(); }
+      else {
+        document.body.classList.add("ld-enhanced");
+        mountListingDetail(root, { listingId: id, standalone: true })
+          .then((ok) => { if (!ok) useFallback(); })
+          .catch(useFallback);
+      }
     </script>` : "";
 
     return `<!DOCTYPE html>
@@ -106,6 +125,7 @@ function renderPage(opts: {
   <meta name="twitter:title" content="${safeTitle}">
   <meta name="twitter:description" content="${safeDescription}">
   <meta name="twitter:image" content="${safeImage}">
+  <link rel="stylesheet" href="/listing-detail.css">
   <style>
     body { font-family: -apple-system, Roboto, sans-serif; max-width: 480px; margin: 24px auto; padding: 0 20px; color: #1a1a1a; }
     img { width: 100%; max-width: 420px; aspect-ratio: 1; object-fit: cover; border-radius: 12px; margin-bottom: 18px; background: #eee; }
@@ -122,12 +142,14 @@ function renderPage(opts: {
   </style>
 </head>
 <body data-share-page="true">
+  <div id="swift-listing-root">
   ${safeImage ? `<img src="${safeImage}" alt="${safeTitle}" loading="eager">` : ""}
   <h1>${safeTitle}</h1>
   <p>${safeDescription}</p>
   ${commerceButtons}
   ${deepLink ? `<a class="btn" href="${escapeHtml(deepLink)}">Open in SwiftShop app</a>` : ""}
   <a class="btn" href="${PLAY_STORE_URL}">Get the SwiftShop app</a>
+  </div>
   ${commerceScript}
 </body>
 </html>`;

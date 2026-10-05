@@ -18,6 +18,8 @@ import { getFirestore, collection, query, where, onSnapshot, getDoc, doc } from 
 
 // Firebase Hosting exposes the configuration for the project serving this page.
 // This keeps Dev, Staging, and Production aligned with their Hosting target.
+import { renderListingDetailHTML, bindListingDetail } from "./listing-detail.js";
+
 const firebaseConfig = await fetch("/__/firebase/init.json").then(async response => {
   if (!response.ok) {
     throw new Error(`Firebase Hosting config returned HTTP ${response.status}`);
@@ -319,36 +321,56 @@ async function renderShop(root, shopId) {
 
 async function renderListing(root, listingId) {
   root.innerHTML = `<div class="loading">Loading listing…</div>`;
+  await mountListingDetail(root, { listingId });
+}
+
+// Share-link path for a listing (matches listingCard): /s/{shopSlug}/{productSlug}, or /d/ for delivery.
+function sharePathFor(l, shop) {
+  const shopSlug = shop?.shareSlug || normalizeShareSlug(shop?.name || "shop");
+  const productSlug = l.shareSlug || normalizeShareSlug(l.title || l.id);
+  const base = String(l.listingType) === "DELIVER" ? "/d/" : "/s/";
+  return base + encodeURIComponent(shopSlug) + "/" + encodeURIComponent(productSlug);
+}
+
+// Mounts the Android-parity Listing Detail view into `root`.
+// Used by the SPA (/listing/:id) and by the server-rendered /s/ and /d/ share pages (standalone).
+async function mountListingDetail(root, { listingId, standalone = false } = {}) {
   try {
-    const l = await fetchListing(listingId);
+    const data = await fetchMarketplace();
+    const listings = data.listings || [];
+    const shops = data.shops || [];
+    const l = listings.find(x => x.id === listingId);
     if (!l) {
       root.innerHTML = `<div class="error">Listing not found – it may have been removed.</div>`;
-      return;
+      return false;
     }
-    const img = (l.imageUrls && l.imageUrls[0]) || "";
-    root.innerHTML = `
-      <div class="listing-detail">
-        <div class="listing-img" style="background-image:url('${img}')"></div>
-        <h1>${escapeHtml(l.title || "Untitled")}</h1>
-        <div class="price">${LSL(l.priceMinorUnits || 0)}</div>
-        <p>${escapeHtml(l.description || "")}</p>
-        <p class="stock">${(l.stockQuantity || 0) > 0 ? `In stock: ${l.stockQuantity}` : "Out of stock"}</p>
-        <a class="shop-link" href="/shop/${l.shopId}">Visit shop</a>
-        <div class="actions">
-          <button class="btn secondary" id="addCartBtn" ${(l.stockQuantity || 0) <= 0 ? "disabled" : ""}>Add to Cart</button>
-          <button class="btn primary" id="buyNowBtn" ${(l.stockQuantity || 0) <= 0 ? "disabled" : ""}>Buy Now</button>
-        </div>
-      </div>`;
-    root.querySelector("#addCartBtn")?.addEventListener("click", () => {
-      addToCart(l.id, l.title, 1);
-      root.querySelector("#addCartBtn").textContent = "Added ✓";
+    const shopById = new Map(shops.map(s => [s.id, s]));
+    const shop = shopById.get(l.shopId) || null;
+    const isVisible = (x) => x.id !== l.id && x.isAvailable !== false;
+    const moreFromShop = listings.filter(x => isVisible(x) && x.shopId === l.shopId).slice(0, 10);
+    const moreIds = new Set(moreFromShop.map(x => x.id));
+    const similar = l.category
+      ? listings.filter(x => isVisible(x) && !moreIds.has(x.id) && x.category === l.category).slice(0, 10)
+      : [];
+    const ctx = {
+      listing: l, shop, moreFromShop, similar, standalone,
+      cardHTML: (x) => listingCard(x, shopById),
+      shareUrl: location.origin + sharePathFor(l, shop)
+    };
+    root.innerHTML = renderListingDetailHTML(ctx);
+    bindListingDetail(root, ctx, {
+      addToCart,
+      navigate: standalone ? (path) => location.assign(path) : navigate
     });
-    root.querySelector("#buyNowBtn")?.addEventListener("click", () => {
-      addToCart(l.id, l.title, 1);
-      navigate("/checkout");
-    });
+    if (!standalone && l.title) document.title = `${l.title} — SwiftShop`;
+    return true;
   } catch (err) {
-    root.innerHTML = `<div class="error">Couldn't load this listing. ${escapeHtml(err.message)}</div>`;
+    root.innerHTML = `<div class="error">Couldn't load this listing. ${escapeHtml(err.message)} <button class="btn secondary" type="button" data-retry>Try again</button></div>`;
+    root.querySelector("[data-retry]")?.addEventListener("click", () => {
+      root.innerHTML = `<div class="loading">Loading listing…</div>`;
+      mountListingDetail(root, { listingId, standalone });
+    });
+    return false;
   }
 }
 
@@ -632,6 +654,7 @@ function route() {
 const SERVER_ROUTED = /^\/(s|d|pay|api)(\/|\?|#|$)/;
 
 document.addEventListener("click", (e) => {
+  if (document.body.dataset.sharePage === "true") return; // server-rendered page: let links navigate normally
   const a = e.target.closest("a[href^='/']");
   if (!a) return;
   if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -649,4 +672,4 @@ document.addEventListener("DOMContentLoaded", () => {
   route();
 });
 
-export { addToCart, cartCount };
+export { addToCart, cartCount, mountListingDetail };
