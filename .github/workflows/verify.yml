@@ -161,3 +161,32 @@ jobs:
           if (failed) process.exit(1);
           console.log('\n✅ hosting/app.js structural integrity: PASS');
           JS
+
+      - name: P8 — HTML structural integrity check (hosting/index.html)
+        run: |
+          node - << 'JS'
+          const fs = require('fs');
+          const html = fs.readFileSync('hosting/index.html', 'utf8').trim();
+
+          let failed = false;
+
+          // 1. File must end cleanly with </html>
+          if (!html.endsWith('</html>')) {
+            console.error('❌ hosting/index.html does not end with </html> (content found after closing root tag)');
+            failed = true;
+          } else {
+            console.log('✅ hosting/index.html terminates cleanly with </html>');
+          }
+
+          // 2. All CSS @media queries or CSS comments must be inside <style> tags
+          const outsideStyle = html.replace(/<style[\s\S]*?<\/style>/gi, '');
+          if (outsideStyle.includes('@media') || outsideStyle.includes('/* Mobile rail')) {
+            console.error('❌ CSS rules or comments found outside <style> element');
+            failed = true;
+          } else {
+            console.log('✅ All CSS rules are inside <style> tags');
+          }
+
+          if (failed) process.exit(1);
+          console.log('\n✅ hosting/index.html structural integrity: PASS');
+          JS

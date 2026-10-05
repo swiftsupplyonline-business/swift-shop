@@ -81,27 +81,6 @@ main{max-width:1280px}.hero{min-height:470px;border-radius:32px;box-shadow:0 24p
 .section-heading h1,.section-heading h2{color:var(--swift-navy)}.eyebrow{color:#2388b8}.grid{gap:18px}.card{border-color:#dcebf2;box-shadow:0 5px 18px rgba(16,40,58,.04)}.card:hover{box-shadow:0 18px 45px rgba(16,40,58,.12);border-color:#b8deed}.card-img{background-color:#edf7fb}.card-body{padding:17px}.card-title{color:#203643}.card-price{color:#0875aa}.shop-row{gap:18px}.shop-card{box-shadow:var(--shadow)}.shop-card::after{content:"View shop →";position:absolute;right:18px;bottom:18px;z-index:3;font-size:12px;font-weight:800;opacity:.85}.shop-card-content{min-height:160px}.shop-logo{border:2px solid rgba(255,255,255,.7)}
 .order-card,.order-panel,.cart-list,.summary,.success,.shop-header,.listing-detail{border-color:#dcebf2;box-shadow:0 8px 28px rgba(16,40,58,.055)}.order-card{transition:.18s}.order-card:hover{box-shadow:0 16px 40px rgba(16,40,58,.11);border-color:#b8deed}.status-pill{background:#e8f6fc;color:#126489}.back-link{color:#0875aa}.loading,.empty{color:#71828e}
 @media(min-width:1201px){main{margin-left:218px;max-width:calc(100% - 270px);margin-right:28px}}@media(max-width:1200px){.rail{padding:10px 22px;background:rgba(245,251,254,.94);border-bottom:1px solid rgba(22,137,196,.08)}}@media(max-width:850px){.hero{min-height:420px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.nav{padding-left:16px;padding-right:16px}.rail{padding-left:16px;padding-right:16px}}@media(max-width:500px){main{padding-bottom:108px}.hero{min-height:520px;align-items:flex-end;padding:24px}.hero::before{background:linear-gradient(180deg,rgba(8,30,45,.05) 0%,rgba(8,30,45,.18) 32%,rgba(8,30,45,.88) 78%,rgba(8,30,45,.94) 100%)}.hero-copy{max-width:100%;margin-top:220px}.hero h1{font-size:42px}.hero h1{font-size:46px}.card-img{height:175px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.card-body{padding:13px}.card-title{font-size:14px}.card-price{font-size:16px}.rail{position:fixed;left:10px;right:10px;bottom:10px;top:auto;width:auto;margin:0;padding:7px;display:grid;grid-template-columns:repeat(4,1fr);gap:5px;z-index:30;border:1px solid rgba(22,137,196,.14);border-radius:20px;background:rgba(248,253,255,.94);box-shadow:0 14px 35px rgba(16,40,58,.18);backdrop-filter:blur(18px)}.rail a{min-width:0;padding:9px 4px;border:0;background:transparent;box-shadow:none;border-radius:14px;display:flex;flex-direction:column;justify-content:center;gap:3px;text-align:center;color:#536673;transform:none}.rail a:hover,.rail a:focus-visible{background:#eaf8ff;color:var(--swift-navy);transform:none}.rail a.is-active{background:linear-gradient(135deg,#6fd0f6,#2999d0);color:#fff;box-shadow:0 6px 15px rgba(41,153,208,.24)}.rail a span:first-child{font-size:19px;line-height:1}.rail .rail-label{font-size:10px;line-height:1.1;font-weight:850}}
-</style>
-</head>
-<body>
-<header class="top"><nav class="nav">
-<a class="brand" href="/"><img src="https://raw.githubusercontent.com/swiftsupplyonline-business/swift-shop/master/app/src/main/res/drawable/swift_icon_flat.png" alt="Swift">Swift</a>
-<div class="search"><input id="search" placeholder="Search products, shops..." aria-label="Search products and shops"></div>
-<div class="nav-actions"><a class="pill" href="/cart">Bag <span data-cart-badge></span></a></div>
-</nav></header>
-<nav class="rail" aria-label="Swift primary navigation">
-  <a href="/" aria-label="Home"><span aria-hidden="true">⌂</span><span class="rail-label">Home</span></a>
-  <a href="/market" aria-label="Market"><span aria-hidden="true">▦</span><span class="rail-label">Market</span></a>
-  <a href="/search" aria-label="Search"><span aria-hidden="true">⌕</span><span class="rail-label">Search</span></a>
-  <a href="/orders" aria-label="Orders"><span aria-hidden="true">▤</span><span class="rail-label">Orders</span></a>
-</nav>
-<main>
-<section class="hero"><div class="hero-copy"><div class="eyebrow">Swift marketplace · Lesotho</div><h1>Local Market,<br>Delivered Fast</h1><p>Find products from local businesses, buy now, and have them delivered to you instantly.</p><a class="btn primary hero-cta" href="/market">Shop the Market</a></div><div class="hero-media"><img src="/img/swift-maseru-hero.webp" alt="Swift marketplace in Maseru, Lesotho"></div></section>
-<div id="app" aria-live="polite"></div>
-</main>
-<script type="module" src="/app.js"></script>
-</body>
-</html>
 /* Mobile rail refinement */
 @media(max-width:500px){
   body{padding-bottom:calc(82px + env(safe-area-inset-bottom))}
@@ -135,3 +114,24 @@ main{max-width:1280px}.hero{min-height:470px;border-radius:32px;box-shadow:0 24p
   .rail a:active{transform:scale(.96)}
   .rail a.is-active{transform:none}
 }
+</style>
+</head>
+<body>
+<header class="top"><nav class="nav">
+<a class="brand" href="/"><img src="https://raw.githubusercontent.com/swiftsupplyonline-business/swift-shop/master/app/src/main/res/drawable/swift_icon_flat.png" alt="Swift">Swift</a>
+<div class="search"><input id="search" placeholder="Search products, shops..." aria-label="Search products and shops"></div>
+<div class="nav-actions"><a class="pill" href="/cart">Bag <span data-cart-badge></span></a></div>
+</nav></header>
+<nav class="rail" aria-label="Swift primary navigation">
+  <a href="/" aria-label="Home"><span aria-hidden="true">⌂</span><span class="rail-label">Home</span></a>
+  <a href="/market" aria-label="Market"><span aria-hidden="true">▦</span><span class="rail-label">Market</span></a>
+  <a href="/search" aria-label="Search"><span aria-hidden="true">⌕</span><span class="rail-label">Search</span></a>
+  <a href="/orders" aria-label="Orders"><span aria-hidden="true">▤</span><span class="rail-label">Orders</span></a>
+</nav>
+<main>
+<section class="hero"><div class="hero-copy"><div class="eyebrow">Swift marketplace · Lesotho</div><h1>Local Market,<br>Delivered Fast</h1><p>Find products from local businesses, buy now, and have them delivered to you instantly.</p><a class="btn primary hero-cta" href="/market">Shop the Market</a></div><div class="hero-media"><img src="/img/swift-maseru-hero.webp" alt="Swift marketplace in Maseru, Lesotho"></div></section>
+<div id="app" aria-live="polite"></div>
+</main>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
