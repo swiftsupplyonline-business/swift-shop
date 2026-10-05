@@ -102,3 +102,36 @@ main{max-width:1280px}.hero{min-height:470px;border-radius:32px;box-shadow:0 24p
 <script type="module" src="/app.js"></script>
 </body>
 </html>
+/* Mobile rail refinement */
+@media(max-width:500px){
+  body{padding-bottom:calc(82px + env(safe-area-inset-bottom))}
+  .rail{
+    left:50%;
+    right:auto;
+    bottom:calc(10px + env(safe-area-inset-bottom));
+    width:min(430px,calc(100vw - 20px));
+    transform:translateX(-50%);
+    padding:7px;
+    border-radius:22px;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+  }
+  .rail a{
+    min-height:52px;
+    padding:8px 3px;
+    border-radius:16px;
+    gap:4px;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .rail a span:first-child{
+    font-size:20px;
+    line-height:22px;
+    font-weight:700;
+  }
+  .rail .rail-label{
+    font-size:10px;
+    line-height:12px;
+    letter-spacing:-.01em;
+  }
+  .rail a:active{transform:scale(.96)}
+  .rail a.is-active{transform:none}
+}
