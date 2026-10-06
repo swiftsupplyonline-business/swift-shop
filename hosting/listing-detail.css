@@ -94,6 +94,7 @@
 .listing-detail-route .utility-rail{display:none!important}
 .listing-detail-route main{margin-right:28px}
 .listing-detail-route .ld-media{width:100%;max-width:760px;margin:0 auto}
+@media(min-width:851px){.listing-detail-route .ld-media{width:min(82vw,1180px);max-width:100%}}
 
 /* Rails reuse the site's .card component */
 .ld-rails{grid-area:rails;grid-column:1 / -1;display:grid;gap:22px;min-width:0;width:100%;overflow:hidden}
