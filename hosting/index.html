@@ -143,7 +143,43 @@ main{max-width:1280px}.hero{min-height:470px;border-radius:32px;box-shadow:0 24p
 @media(max-width:500px){
   .cart-drawer-panel{padding:20px}
   .cart-drawer{z-index:70}
+  .rail .rail-more{
+    display:flex;
+    border:0;
+    cursor:pointer;
+    font:inherit;
+    align-items:center;
+    justify-content:center;
+    min-width:0;
+    padding:8px 3px;
+    border-radius:16px;
+    gap:4px;
+    color:#536673;
+    background:transparent;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .rail .rail-more:hover,.rail .rail-more:focus-visible{background:#eaf8ff;color:var(--swift-navy);outline:none}
+  .rail .rail-more:active{transform:scale(.96)}
+  .utility-sheet{position:fixed;inset:0;z-index:80;display:none}
+  .utility-sheet.is-open{display:block}
+  .utility-sheet-backdrop{position:absolute;inset:0;background:rgba(8,30,45,.38);backdrop-filter:blur(3px)}
+  .utility-sheet-panel{
+    position:absolute;left:10px;right:10px;bottom:calc(82px + env(safe-area-inset-bottom));
+    max-height:calc(100dvh - 120px);overflow:auto;
+    padding:20px;border:1px solid #dcebf2;border-radius:24px;
+    background:rgba(248,253,255,.98);box-shadow:0 20px 55px rgba(16,40,58,.24);
+  }
+  .utility-sheet-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}
+  .utility-sheet-head h2{margin:3px 0 0;color:var(--swift-navy);font-size:28px;letter-spacing:-.04em}
+  .utility-sheet-close{border:1px solid #dcebf2;background:#fff;color:#314451;border-radius:12px;padding:9px 12px;font-weight:800;cursor:pointer}
+  .utility-sheet-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .utility-sheet-card{background:#fff;border:1px solid #dcebf2;border-radius:18px;padding:15px;min-width:0}
+  .utility-sheet-card.utility-sheet-wide{grid-column:1 / -1}
+  .utility-sheet-card h3{margin:0 0 8px;font-size:13px;color:var(--swift-navy)}
+  .utility-sheet-card strong{display:block;font-size:14px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .utility-sheet-card p{margin:5px 0;color:var(--muted);font-size:12px;line-height:1.45}
 }
+@media(min-width:501px){.rail-more,.utility-sheet{display:none!important}}
 </style>
 </head>
 <body>
@@ -157,6 +193,7 @@ main{max-width:1280px}.hero{min-height:470px;border-radius:32px;box-shadow:0 24p
   <a href="/market" aria-label="Market"><span aria-hidden="true">▦</span><span class="rail-label">Market</span></a>
   <a href="/search" aria-label="Search"><span aria-hidden="true">⌕</span><span class="rail-label">Search</span></a>
   <a href="/orders" aria-label="Orders"><span aria-hidden="true">▤</span><span class="rail-label">Orders</span></a>
+  <button class="rail-more" type="button" aria-label="More Swift utilities" aria-expanded="false" data-open-utility><span aria-hidden="true">⋯</span><span class="rail-label">More</span></button>
 </nav>
 <aside class="utility-rail" aria-label="Swift utility rail">
   <section class="rail-card" id="railAccountCard">
@@ -181,6 +218,40 @@ main{max-width:1280px}.hero{min-height:470px;border-radius:32px;box-shadow:0 24p
     <p class="rail-muted">Web advertising tools are being prepared.</p>
   </section>
 </aside>
+<div class="utility-sheet" id="utilitySheet" aria-hidden="true">
+  <div class="utility-sheet-backdrop" data-close-utility></div>
+  <section class="utility-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="utilitySheetTitle">
+    <div class="utility-sheet-head">
+      <div>
+        <span class="eyebrow">Swift</span>
+        <h2 id="utilitySheetTitle">More</h2>
+      </div>
+      <button class="utility-sheet-close" type="button" data-close-utility aria-label="Close utilities">Close</button>
+    </div>
+    <div class="utility-sheet-grid">
+      <section class="utility-sheet-card">
+        <h3>Account</h3>
+        <strong id="profileSummaryMobile">Guest shopper</strong>
+        <p id="profileStatusMobile">Browsing Swift as a guest.</p>
+      </section>
+      <section class="utility-sheet-card">
+        <h3>Bag <span id="railCartBadgeMobile"></span></h3>
+        <p id="railCartSummaryMobile">Your bag is empty.</p>
+        <button class="rail-action" type="button" data-open-cart data-close-utility>Open bag</button>
+      </section>
+      <section class="utility-sheet-card utility-sheet-wide">
+        <h3>Active delivery providers</h3>
+        <div id="providerCountMobile" class="rail-muted">Checking availability…</div>
+        <div id="providerListMobile" class="delivery-options"></div>
+      </section>
+      <section class="utility-sheet-card utility-sheet-wide">
+        <h3>Promote on Swift</h3>
+        <p>Put your local business in front of shoppers on Swift.</p>
+        <p class="rail-muted">Web advertising tools are being prepared.</p>
+      </section>
+    </div>
+  </section>
+</div>
 <div class="cart-drawer" id="cartDrawer" aria-hidden="true">
   <div class="cart-drawer-backdrop" data-close-cart></div>
   <section class="cart-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="cartDrawerTitle">
