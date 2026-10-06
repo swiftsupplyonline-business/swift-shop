@@ -660,6 +660,7 @@ async function loadUtilityRail() {
   if (!providerCount || !providerList) return;
   providerCount.textContent = "Checking availability…";
   try {
+    await ensureSignedIn();
     const getDeliveryOptions = httpsCallable(functions, "getDeliveryOptions");
     const result = await getDeliveryOptions({});
     const options = Array.isArray(result.data?.options) ? result.data.options : [];
