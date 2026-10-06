@@ -697,6 +697,19 @@ function closeCartDrawer() {
   drawer.setAttribute("aria-hidden", "true");
 }
 
+// Bind the mobile More control directly as well as through the delegated handler below.
+// This keeps the primary rail interaction reliable on mobile browsers after route/render changes.
+function bindUtilityRailControls() {
+  const moreButton = document.querySelector("[data-open-utility]");
+  if (!moreButton || moreButton.dataset.utilityBound === "true") return;
+  moreButton.dataset.utilityBound = "true";
+  moreButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    openUtilitySheet();
+  });
+}
+
 async function loadUtilityRail() {
   renderRailCart();
   const accountTargets = [
@@ -848,6 +861,7 @@ window.addEventListener("popstate", route);
 document.addEventListener("DOMContentLoaded", () => {
   updateCartBadge();
   loadUtilityRail();
+  bindUtilityRailControls();
   if ((location.pathname.startsWith("/s/") || location.pathname.startsWith("/d/"))
       && document.body.dataset.sharePage === "true") return;
   route();
