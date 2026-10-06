@@ -104,9 +104,9 @@
 /* Server-rendered share pages: lift the 480px column the basic template used */
 html.ld-enhancement-pending body{max-width:none;margin:0;padding:12px 20px 40px;background:linear-gradient(180deg,#f8fdff 0%,#f4f9fc 100%)}
 body.ld-enhanced{max-width:none;margin:0;padding:12px 20px 40px;background:linear-gradient(180deg,#f8fdff 0%,#f4f9fc 100%)}
-.ld-hydrating{min-height:clamp(520px,72vh,860px)}
+.ld-hydrating{min-height:clamp(520px,72vh,860px);width:100%;max-width:1080px;margin:0 auto}
 .ld-fallback[hidden],.ld-loading-shell[hidden]{display:none!important}
-.ld-loading-shell{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:18px 36px;max-width:1080px;margin:0 auto;align-items:start}
+.ld-loading-shell{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:18px 36px;width:100%;max-width:1080px;margin:0 auto;align-items:start}
 .ld-loading-media{aspect-ratio:1/1;border-radius:24px;overflow:hidden;background:#edf7fb;border:1px solid var(--ld-line)}
 .ld-loading-media img{width:100%;height:100%;object-fit:cover;display:block}
 .ld-loading-info{display:grid;gap:14px;padding-top:8px}
@@ -126,6 +126,9 @@ body.ld-enhanced .ld .btn.secondary{background:#eaf7fc;color:#15506d;border:1px 
   .ld-price{font-size:28px}
   .ld-buy{position:sticky;bottom:12px;z-index:25;box-shadow:0 12px 34px rgba(16,40,58,.2)}
   .ld-thumbs{display:none}
+  .ld-hydrating,.ld-loading-shell{width:100%;max-width:100%}
+  .ld-loading-shell{grid-template-columns:minmax(0,1fr);gap:16px}
+  .ld-loading-info{padding-top:0}
 }
 /* The SPA's mobile nav rail is fixed to the bottom at <=500px; sit above it */
 @media (max-width:500px){
