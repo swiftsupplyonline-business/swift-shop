@@ -109,6 +109,52 @@ async function fetchMarketplace() {
   }
 }
 
+// ---------- Rail Data (Delivery & Profile) ----------
+
+async function loadDeliveryProvidersRail() {
+  const providerList = document.getElementById("providerList");
+  const providerCount = document.getElementById("providerCount");
+  if (!providerList) return;
+
+  try {
+    await ensureSignedIn();
+    const getOptions = httpsCallable(functions, "getDeliveryOptions");
+    const { data } = await getOptions();
+    const options = data?.options || [];
+    if (providerCount) providerCount.textContent = String(options.length);
+
+    if (!options.length) {
+      providerList.innerHTML = `<div class="sub">No active delivery providers in area.</div>`;
+      return;
+    }
+
+    providerList.innerHTML = options.slice(0, 4).map(opt => `
+      <div class="provider-item">
+        <div class="provider-avatar">🚚</div>
+        <div class="provider-info">
+          <div class="provider-title">${escapeHtml(opt.title || "Delivery Partner")}</div>
+          <div class="provider-meta">${LSL(opt.priceMinorUnits || 0)} · ${opt.deliveryEstimateDays || 1}d est.</div>
+        </div>
+      </div>`).join("");
+  } catch (err) {
+    if (providerList) providerList.innerHTML = `<div class="sub">Logistics options available at checkout</div>`;
+  }
+}
+
+function updateProfileRail(user) {
+  const summary = document.getElementById("profileSummary");
+  if (!summary) return;
+  if (user && !user.isAnonymous) {
+    summary.innerHTML = `
+      <div style="font-weight:800;font-size:14px;">${escapeHtml(user.displayName || user.email || "Member")}</div>
+      <div class="sub">Verified Account</div>`;
+  } else {
+    summary.innerHTML = `
+      <div style="font-weight:700;font-size:13px;margin-bottom:4px;">Guest shopper</div>
+      <div class="sub">Order online, track via App</div>`;
+  }
+}
+
 async function fetchListings({ max = 24 } = {}) {
   const data = await fetchMarketplace();
   return (data.listings || []).slice(0, max);
@@ -475,9 +521,18 @@ document.addEventListener("click", (e) => {
   e.preventDefault();
   navigate(href);
 });
+window.navigatePath = navigate;
+
 window.addEventListener("popstate", route);
 document.addEventListener("DOMContentLoaded", () => {
   updateCartBadge();
+  ensureSignedIn().then(updateProfileRail).catch(() => updateProfileRail(null));
+  loadDeliveryProvidersRail();
+
+  window.openCartDrawer = () => {
+    navigate("/cart");
+  };
+
   if ((location.pathname.startsWith("/s/") || location.pathname.startsWith("/d/"))
       && document.body.dataset.sharePage === "true") return;
   route();
