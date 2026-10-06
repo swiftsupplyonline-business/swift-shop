@@ -180,6 +180,50 @@ main{max-width:1280px}.hero{min-height:470px;border-radius:32px;box-shadow:0 24p
   .utility-sheet-card p{margin:5px 0;color:var(--muted);font-size:12px;line-height:1.45}
 }
 @media(min-width:501px){.rail-more,.utility-sheet{display:none!important}}
+/* Shop discovery — compact home preview + dedicated directory */
+.section-heading-row{display:flex;align-items:flex-end;justify-content:space-between;gap:18px}
+.section-heading-row h2{margin-bottom:4px}
+.section-subtitle{margin:7px 0 0;color:var(--muted);font-size:14px;line-height:1.45;max-width:620px}
+.section-link{display:inline-flex;align-items:center;gap:7px;flex:none;padding:10px 14px;border:1px solid #cfe5ef;border-radius:12px;background:#fff;color:var(--swift-blue-deep);font-weight:850;box-shadow:0 6px 18px rgba(16,40,58,.05);transition:.18s}
+.section-link:hover,.section-link:focus-visible{background:var(--swift-sky);border-color:#a9d8eb;transform:translateY(-1px)}
+.shop-row{grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-bottom:0}
+.shop-card{min-height:218px;padding:18px;border:1px solid rgba(255,255,255,.16);box-shadow:0 12px 32px rgba(16,40,58,.11);transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
+.shop-card:hover,.shop-card:focus-visible{transform:translateY(-4px);box-shadow:0 20px 44px rgba(16,40,58,.16);border-color:rgba(255,255,255,.45);outline:none}
+.shop-card-cover{transition:transform .45s ease}
+.shop-card:hover .shop-card-cover,.shop-card:focus-visible .shop-card-cover{transform:scale(1.035)}
+.shop-card-scrim{background:linear-gradient(180deg,rgba(8,30,45,.08) 0%,rgba(8,30,45,.28) 34%,rgba(8,30,45,.9) 100%)}
+.shop-card-content{min-height:182px}
+.shop-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.shop-card-category{display:inline-flex;max-width:55%;padding:6px 9px;border:1px solid rgba(255,255,255,.28);border-radius:999px;background:rgba(8,30,45,.3);backdrop-filter:blur(8px);font-size:10px;line-height:1.1;font-weight:850;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shop-logo{width:58px;height:58px;border-radius:17px;box-shadow:0 7px 20px rgba(0,0,0,.2)}
+.shop-card-bottom{display:grid;gap:5px;max-width:88%}
+.shop-name{font-size:24px;line-height:1.05}
+.shop-description{font-size:12px;line-height:1.4;color:rgba(255,255,255,.78);max-width:440px}
+.shop-card-link{display:inline-flex;align-items:center;gap:6px;margin-top:5px;font-size:12px;font-weight:900;color:#fff}
+.shop-card::after{display:none}
+.shops-preview{margin-bottom:38px}
+.shop-directory{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.shops-page .section-heading{margin-bottom:24px}
+.shops-page .shop-card{min-height:235px}
+@media(max-width:850px){
+  .section-heading-row{align-items:flex-start}
+  .shop-directory{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .shop-card{min-height:210px}
+  .shop-card-content{min-height:174px}
+}
+@media(max-width:500px){
+  .section-heading-row{align-items:flex-start}
+  .section-heading-row .section-link{padding:9px 11px;font-size:12px}
+  .section-subtitle{font-size:13px}
+  .shop-row,.shop-directory{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .shop-card{min-height:205px;padding:12px;border-radius:18px}
+  .shop-card-content{min-height:181px}
+  .shop-logo{width:48px;height:48px;border-radius:14px}
+  .shop-card-category{max-width:60%;font-size:9px;padding:5px 7px}
+  .shop-name{font-size:17px}
+  .shop-description{font-size:10px}
+  .shop-card-link{font-size:10px}
+}
 </style>
 </head>
 <body>
