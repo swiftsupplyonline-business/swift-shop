@@ -168,3 +168,12 @@ body.ld-enhanced .ld .btn.secondary{background:#eaf7fc;color:#15506d;border:1px 
   .listing-detail-route .ld-appnote{max-width:760px}
   .listing-detail-route .ld-rails{max-width:900px;margin:0 auto}
 }
+
+
+/* Authoritative desktop shell: left rail | full central canvas | right utility rail */
+@media(min-width:1201px){
+  main{margin-left:218px;margin-right:300px;width:auto;max-width:none}
+}
+@media(min-width:1201px){
+  .listing-detail-route .ld{width:100%;max-width:none;margin:0}
+}
