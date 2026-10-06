@@ -113,7 +113,7 @@ const mapPost = (data: FirebaseFirestore.DocumentData, id: string) => ({
     updatedAt: timestampMillis(data.updatedAt)
 });
 
-export const publicMarketplace = onRequest({ cors: true }, async (_request, response) => {
+export const publicMarketplace = onRequest({ cors: true, invoker: "public" }, async (_request, response) => {
     try {
         const db = admin.firestore();
 

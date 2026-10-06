@@ -211,7 +211,7 @@ function listingResponse(
     }));
 }
 
-export const renderListingPreview = functions.onRequest(async (req, res) => {
+export const renderListingPreview = functions.onRequest({ invoker: "public" }, async (req, res) => {
     const listingId = req.path.match(/\/listing\/([^/]+)/)?.[1];
     if (!listingId) {
         res.status(404).send("Listing not found");
@@ -250,7 +250,7 @@ export const renderListingPreview = functions.onRequest(async (req, res) => {
     }
 });
 
-export const renderSharedListing = functions.onRequest(async (req, res) => {
+export const renderSharedListing = functions.onRequest({ invoker: "public" }, async (req, res) => {
     const parsed = parseSharePath("s", req.path);
     if (!parsed) {
         res.status(404).send("Listing not found");
@@ -283,7 +283,7 @@ export const renderSharedListing = functions.onRequest(async (req, res) => {
     }
 });
 
-export const renderSharedDelivery = functions.onRequest(async (req, res) => {
+export const renderSharedDelivery = functions.onRequest({ invoker: "public" }, async (req, res) => {
     const parsed = parseSharePath("d", req.path);
     if (!parsed) {
         res.status(404).send("Delivery listing not found");
@@ -312,7 +312,7 @@ export const renderSharedDelivery = functions.onRequest(async (req, res) => {
     }
 });
 
-export const renderShopPreview = functions.onRequest(async (req, res) => {
+export const renderShopPreview = functions.onRequest({ invoker: "public" }, async (req, res) => {
     const shopId = req.path.match(/\/shop\/([^/]+)/)?.[1];
     if (!shopId) {
         res.status(404).send("Shop not found");
