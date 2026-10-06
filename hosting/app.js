@@ -296,7 +296,6 @@ async function renderBrowse(root) {
           <div class="section-heading"><span class="eyebrow">Fresh on Swift</span><h2>Latest listings</h2></div>
           <div class="grid">${listings.length ? listings.map(l => listingCard(l, shopById)).join("") : "<p class='empty'>No listings yet.</p>"}</div>
         </section>`;
-      }
     } catch (err) {
       guestBtn.disabled = false;
       guestBtn.textContent = "Continue as Guest →";
