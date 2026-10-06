@@ -91,14 +91,14 @@
 .ld-tags{display:flex;gap:8px;flex-wrap:wrap}
 .ld-tag{background:#f1f6f9;border:1px solid var(--ld-line);border-radius:999px;padding:5px 12px;font-size:13px;font-weight:700;color:#35566a}
 
-.listing-detail-route .ld-media{width:100%;max-width:900px;margin:0 auto}
+.listing-detail-route .ld-media{width:100%;margin:0 auto}
 @media(min-width:851px){
-  .listing-detail-route .ld-media{width:min(100%,900px);max-width:900px}
+  .listing-detail-route .ld-media{width:min(100%,1180px);max-width:1180px}
   .listing-detail-route .ld-gallery{aspect-ratio:4/3}
   .listing-detail-route .ld-info{background:#fff;border:1px solid var(--ld-line);border-radius:22px;padding:22px 24px;box-shadow:0 8px 28px rgba(16,40,58,.06)}
-  .listing-detail-route .ld-buy{position:sticky;bottom:18px;z-index:20;max-width:900px;margin:0 auto;width:100%;box-shadow:0 14px 36px rgba(16,40,58,.14)}
-  .listing-detail-route .ld-sellerbox{max-width:900px;width:100%;margin:0 auto}
-  .listing-detail-route .ld-body{max-width:900px;width:100%;margin:0 auto}
+  .listing-detail-route .ld-buy{position:sticky;bottom:18px;z-index:20;width:100%;box-shadow:0 14px 36px rgba(16,40,58,.14)}
+  .listing-detail-route .ld-sellerbox{width:100%;margin:0 auto}
+  .listing-detail-route .ld-body{width:100%;margin:0 auto}
 }
 
 /* Rails reuse the site's .card component */
@@ -164,9 +164,9 @@ body.ld-enhanced .ld .btn.secondary{background:#eaf7fc;color:#15506d;border:1px 
   .listing-detail-route .ld{gap:26px}
   .listing-detail-route .ld-top{padding-bottom:2px}
   .listing-detail-route .ld-back{font-size:14px}
-  .listing-detail-route .ld-thumbs{max-width:900px;margin-left:auto;margin-right:auto}
+  .listing-detail-route .ld-thumbs{max-width:1180px;margin-left:auto;margin-right:auto}
   .listing-detail-route .ld-appnote{max-width:760px}
-  .listing-detail-route .ld-rails{max-width:900px;margin:0 auto}
+  .listing-detail-route .ld-rails{width:100%;margin:0 auto}
 }
 
 
