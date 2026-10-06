@@ -91,8 +91,6 @@
 .ld-tags{display:flex;gap:8px;flex-wrap:wrap}
 .ld-tag{background:#f1f6f9;border:1px solid var(--ld-line);border-radius:999px;padding:5px 12px;font-size:13px;font-weight:700;color:#35566a}
 
-.listing-detail-route .utility-rail{display:none!important}
-.listing-detail-route main{margin-right:28px}
 .listing-detail-route .ld-media{width:100%;max-width:900px;margin:0 auto}
 @media(min-width:851px){
   .listing-detail-route .ld-media{width:min(100%,900px);max-width:900px}
