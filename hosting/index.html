@@ -114,13 +114,44 @@ main{max-width:1280px}.hero{min-height:470px;border-radius:32px;box-shadow:0 24p
   .rail a:active{transform:scale(.96)}
   .rail a.is-active{transform:none}
 }
+
+/* Swift desktop utility rail */
+.utility-rail{display:none}
+.cart-drawer{position:fixed;inset:0;z-index:60;display:none}
+.cart-drawer.is-open{display:block}
+.cart-drawer-backdrop{position:absolute;inset:0;background:rgba(8,30,45,.34);backdrop-filter:blur(2px)}
+.cart-drawer-panel{position:absolute;top:0;right:0;width:min(390px,92vw);height:100%;background:#fff;box-shadow:-18px 0 50px rgba(16,40,58,.18);padding:24px;overflow:auto}
+.cart-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+.cart-drawer-head h2{margin:0;color:var(--swift-navy)}
+.cart-drawer-close{border:1px solid #dcebf2;background:#f5fbfe;border-radius:10px;padding:8px 11px;cursor:pointer}
+.rail-card{background:rgba(255,255,255,.94);border:1px solid #dcebf2;border-radius:18px;padding:16px;box-shadow:0 8px 24px rgba(16,40,58,.055)}
+.rail-card h2{font-size:14px;margin:0 0 9px;color:var(--swift-navy)}
+.rail-card p{margin:5px 0;color:var(--muted);font-size:12px;line-height:1.45}
+.rail-card .rail-value{font-weight:850;color:var(--ink);font-size:14px}
+.rail-cart-items{display:grid;gap:7px;margin:9px 0}
+.rail-cart-item{font-size:12px;color:#425563;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rail-action{display:inline-flex;border:0;border-radius:11px;padding:9px 12px;background:linear-gradient(135deg,#1c92ca,#0875aa);color:#fff;font-weight:800;cursor:pointer;text-decoration:none}
+.rail-muted{color:var(--muted);font-size:12px}
+.delivery-options{display:grid;gap:7px}
+.delivery-option{padding:8px 10px;border-radius:11px;background:#f5fbfe;border:1px solid #e1f0f6}
+.delivery-option strong{display:block;font-size:12px;color:#264454}
+.delivery-option span{font-size:11px;color:#667482}
+@media(min-width:1301px){
+  .utility-rail{position:fixed;display:grid;gap:10px;right:20px;top:96px;width:260px;z-index:10}
+  main{margin-left:218px;max-width:none;margin-right:300px}
+}
+@media(max-width:1300px){.utility-rail{display:none}}
+@media(max-width:500px){
+  .cart-drawer-panel{padding:20px}
+  .cart-drawer{z-index:70}
+}
 </style>
 </head>
 <body>
 <header class="top"><nav class="nav">
 <a class="brand" href="/"><img src="https://raw.githubusercontent.com/swiftsupplyonline-business/swift-shop/master/app/src/main/res/drawable/swift_icon_flat.png" alt="Swift">Swift</a>
 <div class="search"><input id="search" placeholder="Search products, shops..." aria-label="Search products and shops"></div>
-<div class="nav-actions"><a class="pill" href="/cart">Bag <span data-cart-badge></span></a></div>
+<div class="nav-actions"><button class="pill" type="button" data-open-cart>Bag <span data-cart-badge></span></button></div>
 </nav></header>
 <nav class="rail" aria-label="Swift primary navigation">
   <a href="/" aria-label="Home"><span aria-hidden="true">⌂</span><span class="rail-label">Home</span></a>
@@ -128,6 +159,39 @@ main{max-width:1280px}.hero{min-height:470px;border-radius:32px;box-shadow:0 24p
   <a href="/search" aria-label="Search"><span aria-hidden="true">⌕</span><span class="rail-label">Search</span></a>
   <a href="/orders" aria-label="Orders"><span aria-hidden="true">▤</span><span class="rail-label">Orders</span></a>
 </nav>
+<aside class="utility-rail" aria-label="Swift utility rail">
+  <section class="rail-card" id="railAccountCard">
+    <h2>Account</h2>
+    <div class="rail-value" id="profileSummary">Guest shopper</div>
+    <p id="profileStatus">Browsing Swift as a guest.</p>
+  </section>
+  <section class="rail-card" id="railCartCard">
+    <h2>Bag <span id="railCartBadge"></span></h2>
+    <div class="rail-value" id="railCartSummary">Your bag is empty.</div>
+    <div class="rail-cart-items" id="railCartItems"></div>
+    <button class="rail-action" type="button" data-open-cart>Open bag</button>
+  </section>
+  <section class="rail-card" id="railDeliveryCard">
+    <h2>Active delivery providers</h2>
+    <div id="providerCount" class="rail-muted">Checking availability…</div>
+    <div id="providerList" class="delivery-options"></div>
+  </section>
+  <section class="rail-card">
+    <h2>Promote on Swift</h2>
+    <p>Put your local business in front of shoppers on Swift.</p>
+    <p class="rail-muted">Web advertising tools are being prepared.</p>
+  </section>
+</aside>
+<div class="cart-drawer" id="cartDrawer" aria-hidden="true">
+  <div class="cart-drawer-backdrop" data-close-cart></div>
+  <section class="cart-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="cartDrawerTitle">
+    <div class="cart-drawer-head">
+      <h2 id="cartDrawerTitle">Your Swift Bag</h2>
+      <button class="cart-drawer-close" type="button" data-close-cart>Close</button>
+    </div>
+    <div id="cartDrawerContent"></div>
+  </section>
+</div>
 <main>
 <section class="hero"><div class="hero-copy"><div class="eyebrow">Swift marketplace · Lesotho</div><h1>Local Market,<br>Delivered Fast</h1><p>Find products from local businesses, buy now, and have them delivered to you instantly.</p><a class="btn primary hero-cta" href="/market">Shop the Market</a></div><div class="hero-media"><img src="/img/swift-maseru-hero.webp" alt="Swift marketplace in Maseru, Lesotho"></div></section>
 <div id="app" aria-live="polite"></div>
