@@ -43,6 +43,7 @@ function getCart() {
 function saveCart(items) {
   localStorage.setItem(CART_KEY, JSON.stringify(items));
   updateCartBadge();
+  document.dispatchEvent(new CustomEvent("swift:cart-updated"));
 }
 function addToCart(listingId, title, qty = 1) {
   const items = getCart();
@@ -589,12 +590,124 @@ async function renderOrderDetail(root, orderId) {
   }
 }
 
+
+// ---------- Utility rail ----------
+
+function renderRailCart() {
+  const items = getCart();
+  const count = cartCount();
+  const badge = document.getElementById("railCartBadge");
+  const summary = document.getElementById("railCartSummary");
+  const list = document.getElementById("railCartItems");
+  if (badge) badge.textContent = count ? String(count) : "";
+  if (summary) summary.textContent = count ? `${count} item${count === 1 ? "" : "s"} in your bag` : "Your bag is empty.";
+  if (list) {
+    list.innerHTML = items.slice(0, 3).map(item =>
+      `<div class="rail-cart-item">${escapeHtml(item.title || item.listingId)} × ${Number(item.quantity || 1)}</div>`
+    ).join("");
+    if (items.length > 3) list.insertAdjacentHTML("beforeend", `<div class="rail-muted">+ ${items.length - 3} more</div>`);
+  }
+}
+
+function renderCartDrawer() {
+  const root = document.getElementById("cartDrawerContent");
+  if (!root) return;
+  const items = getCart();
+  if (!items.length) {
+    root.innerHTML = `<p class="rail-muted">Your bag is empty.</p><a class="rail-action" href="/market">Browse Market</a>`;
+    return;
+  }
+  root.innerHTML = `
+    <div class="cart-list">
+      ${items.map(item => `
+        <div class="cart-row">
+          <span class="cart-title">${escapeHtml(item.title || item.listingId)}</span>
+          <strong>× ${Number(item.quantity || 1)}</strong>
+        </div>`).join("")}
+    </div>
+    <div class="actions"><a class="btn primary" href="/cart">View full bag</a><a class="btn secondary" href="/checkout">Checkout</a></div>`;
+}
+
+function openCartDrawer() {
+  const drawer = document.getElementById("cartDrawer");
+  if (!drawer) return;
+  renderCartDrawer();
+  drawer.classList.add("is-open");
+  drawer.setAttribute("aria-hidden", "false");
+}
+
+function closeCartDrawer() {
+  const drawer = document.getElementById("cartDrawer");
+  if (!drawer) return;
+  drawer.classList.remove("is-open");
+  drawer.setAttribute("aria-hidden", "true");
+}
+
+async function loadUtilityRail() {
+  renderRailCart();
+  const account = document.getElementById("profileSummary");
+  const status = document.getElementById("profileStatus");
+  if (account || status) {
+    onAuthStateChanged(auth, user => {
+      const guest = !user || user.isAnonymous;
+      if (account) account.textContent = guest ? "Guest shopper" : (user.displayName || user.email || "Swift shopper");
+      if (status) status.textContent = guest ? "Browsing Swift as a guest." : "Signed in to your Swift account.";
+    });
+  }
+
+  const providerCount = document.getElementById("providerCount");
+  const providerList = document.getElementById("providerList");
+  if (!providerCount || !providerList) return;
+  providerCount.textContent = "Checking availability…";
+  try {
+    await ensureSignedIn();
+    const getDeliveryOptions = httpsCallable(functions, "getDeliveryOptions");
+    const result = await getDeliveryOptions({});
+    const options = Array.isArray(result.data?.options) ? result.data.options : [];
+    providerCount.textContent = options.length ? `${options.length} active provider${options.length === 1 ? "" : "s"}` : "No active providers right now.";
+    providerList.innerHTML = options.slice(0, 3).map(option =>
+      `<div class="delivery-option"><strong>${escapeHtml(option.title || "Delivery provider")}</strong><span>${LSL(Number(option.priceMinorUnits || 0))} · available</span></div>`
+    ).join("") || "";
+  } catch (error) {
+    providerCount.textContent = "Delivery availability is temporarily unavailable.";
+    providerList.innerHTML = "";
+  }
+}
+
+document.addEventListener("click", event => {
+  const open = event.target.closest("[data-open-cart]");
+  if (open) {
+    event.preventDefault();
+    openCartDrawer();
+    return;
+  }
+  const close = event.target.closest("[data-close-cart]");
+  if (close) {
+    event.preventDefault();
+    closeCartDrawer();
+  }
+});
+document.addEventListener("swift:cart-updated", () => {
+  renderRailCart();
+  const drawer = document.getElementById("cartDrawer");
+  if (drawer?.classList.contains("is-open")) renderCartDrawer();
+});
+window.addEventListener("storage", event => {
+  if (event.key === CART_KEY) {
+    renderRailCart();
+    renderCartDrawer();
+  }
+});
+
 // ---------- Router ----------
 
 function navigate(path) {
   history.pushState({}, "", path);
   route();
 }
+
+window.navigatePath = navigate;
+window.openCartDrawer = openCartDrawer;
 
 function route() {
   const root = document.getElementById("app");
@@ -644,6 +757,7 @@ document.addEventListener("click", (e) => {
 window.addEventListener("popstate", route);
 document.addEventListener("DOMContentLoaded", () => {
   updateCartBadge();
+  loadUtilityRail();
   if ((location.pathname.startsWith("/s/") || location.pathname.startsWith("/d/"))
       && document.body.dataset.sharePage === "true") return;
   route();
