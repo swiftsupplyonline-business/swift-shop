@@ -102,7 +102,17 @@
 .ld-toast.is-on{opacity:1;transform:translate(-50%,0)}
 
 /* Server-rendered share pages: lift the 480px column the basic template used */
+html.ld-enhancement-pending body{max-width:none;margin:0;padding:12px 20px 40px;background:linear-gradient(180deg,#f8fdff 0%,#f4f9fc 100%)}
 body.ld-enhanced{max-width:none;margin:0;padding:12px 20px 40px;background:linear-gradient(180deg,#f8fdff 0%,#f4f9fc 100%)}
+.ld-hydrating{min-height:clamp(520px,72vh,860px)}
+.ld-fallback[hidden],.ld-loading-shell[hidden]{display:none!important}
+.ld-loading-shell{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:18px 36px;max-width:1080px;margin:0 auto;align-items:start}
+.ld-loading-media{aspect-ratio:1/1;border-radius:24px;overflow:hidden;background:#edf7fb;border:1px solid var(--ld-line)}
+.ld-loading-media img{width:100%;height:100%;object-fit:cover;display:block}
+.ld-loading-info{display:grid;gap:14px;padding-top:8px}
+.ld-loading-line,.ld-loading-actions{border-radius:12px;background:linear-gradient(90deg,#edf3f6 25%,#f7fafb 50%,#edf3f6 75%);background-size:200% 100%;animation:ld-loading 1.2s linear infinite}
+.ld-loading-price{width:34%;height:28px}.ld-loading-title{width:82%;height:38px}.ld-loading-copy{width:100%;height:18px}.ld-loading-copy.short{width:68%}.ld-loading-actions{height:74px;width:100%;margin-top:8px}
+@keyframes ld-loading{to{background-position:-200% 0}}
 body.ld-enhanced .btn{display:inline-block;width:auto;padding:12px 18px}
 body.ld-enhanced .ld .btn.primary{background:linear-gradient(135deg,#1c92ca,#0875aa);color:#fff;border-radius:14px;font-weight:800;text-align:center;text-decoration:none}
 body.ld-enhanced .ld .btn.secondary{background:#eaf7fc;color:#15506d;border:1px solid #d5eaf4;border-radius:14px;font-weight:800;text-align:center;text-decoration:none}

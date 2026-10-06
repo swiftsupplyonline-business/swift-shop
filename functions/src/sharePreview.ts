@@ -86,10 +86,16 @@ function renderPage(opts: {
       const title = ${jsonForScript(title)};
       const isDelivery = ${isDeliveryListing ? "true" : "false"};
       const root = document.getElementById("swift-listing-root");
-      const fallbackHtml = root ? root.innerHTML : "";
+      const fallback = root?.querySelector("[data-listing-fallback]");
+      const enhancedRoot = root?.querySelector("[data-listing-enhanced]");
       const useFallback = () => {
-        if (root) root.innerHTML = fallbackHtml;
+        if (root) {
+          root.classList.remove("ld-hydrating");
+          enhancedRoot?.setAttribute("hidden", "");
+          if (fallback) fallback.removeAttribute("hidden");
+        }
         document.body.classList.remove("ld-enhanced");
+        document.documentElement.classList.remove("ld-enhancement-pending");
         if (isDelivery) return;
         document.getElementById("buyNowBtn")?.addEventListener("click", async () => {
           const { addToCart } = await import("/app.js");
@@ -97,13 +103,20 @@ function renderPage(opts: {
           window.location.href = "/checkout";
         });
       };
-      if (!root) { useFallback(); }
-      else {
+      if (!root || !enhancedRoot || !fallback) {
+        useFallback();
+      } else {
         try {
           const { mountListingDetail } = await import("/app.js");
           document.body.classList.add("ld-enhanced");
-          const ok = await mountListingDetail(root, { listingId: id, standalone: true });
+          const ok = await mountListingDetail(enhancedRoot, { listingId: id, standalone: true });
           if (!ok) useFallback();
+          else {
+            enhancedRoot.removeAttribute("hidden");
+            fallback.setAttribute("hidden", "");
+            root.classList.remove("ld-hydrating");
+            document.documentElement.classList.remove("ld-enhancement-pending");
+          }
         } catch (err) {
           console.error("Swift listing view failed to load; showing basic page", err);
           useFallback();
@@ -131,6 +144,9 @@ function renderPage(opts: {
   <meta name="twitter:description" content="${safeDescription}">
   <meta name="twitter:image" content="${safeImage}">
   <link rel="stylesheet" href="/listing-detail.css">
+  <script>
+    document.documentElement.classList.add("ld-enhancement-pending");
+  </script>
   <style>
     body { font-family: -apple-system, Roboto, sans-serif; max-width: 480px; margin: 24px auto; padding: 0 20px; color: #1a1a1a; }
     img { width: 100%; max-width: 420px; aspect-ratio: 1; object-fit: cover; border-radius: 12px; margin-bottom: 18px; background: #eee; }
@@ -147,13 +163,25 @@ function renderPage(opts: {
   </style>
 </head>
 <body data-share-page="true">
-  <div id="swift-listing-root">
-  ${safeImage ? `<img src="${safeImage}" alt="${safeTitle}" loading="eager">` : ""}
-  <h1>${safeTitle}</h1>
-  <p>${safeDescription}</p>
-  ${commerceButtons}
-  ${deepLink ? `<a class="btn" href="${escapeHtml(deepLink)}">Open in SwiftShop app</a>` : ""}
-  <a class="btn" href="${PLAY_STORE_URL}">Get the SwiftShop app</a>
+  <div id="swift-listing-root" class="ld-hydrating">
+    <div data-listing-enhanced class="ld-loading-shell" aria-busy="true" aria-live="polite">
+      <div class="ld-loading-media">${safeImage ? `<img src="${safeImage}" alt="" aria-hidden="true">` : ""}</div>
+      <div class="ld-loading-info">
+        <div class="ld-loading-line ld-loading-price"></div>
+        <div class="ld-loading-line ld-loading-title"></div>
+        <div class="ld-loading-line ld-loading-copy"></div>
+        <div class="ld-loading-line ld-loading-copy short"></div>
+        <div class="ld-loading-actions"></div>
+      </div>
+    </div>
+    <div data-listing-fallback class="ld-fallback" hidden>
+      ${safeImage ? `<img src="${safeImage}" alt="${safeTitle}" loading="eager">` : ""}
+      <h1>${safeTitle}</h1>
+      <p>${safeDescription}</p>
+      ${commerceButtons}
+      ${deepLink ? `<a class="btn" href="${escapeHtml(deepLink)}">Open in SwiftShop app</a>` : ""}
+      <a class="btn" href="${PLAY_STORE_URL}">Get the SwiftShop app</a>
+    </div>
   </div>
   ${commerceScript}
 </body>
