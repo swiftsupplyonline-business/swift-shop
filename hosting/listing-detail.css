@@ -3,7 +3,7 @@
 
 .ld{--ld-ink:#13202b;--ld-muted:#667482;--ld-line:#dfeaf1;--ld-blue:#0875aa;--ld-blue2:#1c92ca;--ld-soft:#eaf8ff;--ld-navy:#10283a;--ld-ok:#17803d;--ld-bad:#b3261e;--ld-card:#fff;
   color:var(--ld-ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  display:grid;gap:18px;max-width:1280px;width:100%;margin:0 auto;align-items:start;
+  display:grid;gap:24px;max-width:1180px;width:100%;margin:0 auto;align-items:start;
   grid-template-columns:minmax(0,1fr);
   grid-template-areas:"top" "media" "info" "buy" "seller" "body" "rails"}
 .ld *{box-sizing:border-box}
@@ -21,7 +21,7 @@
 .ld-muted{color:var(--ld-muted)}
 
 /* Gallery */
-.ld-media{grid-area:media;position:sticky;top:16px;min-width:0}
+.ld-media{grid-area:media;position:relative;min-width:0}
 .ld-gallery{position:relative;border-radius:24px;overflow:hidden;background:#edf7fb;aspect-ratio:1/1;border:1px solid var(--ld-line)}
 .ld-track{display:flex;height:100%;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;outline-offset:-3px}
 .ld-track::-webkit-scrollbar{display:none}
@@ -40,11 +40,11 @@
 
 /* Info */
 .ld-info{grid-area:info;min-width:0;display:grid;gap:12px}
-.ld-pricerow{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.ld-pricerow{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:2px}
 .ld-price{font-size:32px;font-weight:900;letter-spacing:-.03em;color:var(--ld-blue)}
 .ld-stock{font-size:13px;font-weight:800}
 .ld-stock.is-ok{color:var(--ld-ok)}.ld-stock.is-out{color:var(--ld-bad)}
-.ld-title{font-size:28px;line-height:1.15;letter-spacing:-.03em;color:var(--ld-navy)}
+.ld-title{font-size:clamp(28px,3vw,40px);line-height:1.1;letter-spacing:-.035em;color:var(--ld-navy);max-width:900px}
 .ld-stats{display:flex;align-items:center;gap:14px;flex-wrap:wrap;color:var(--ld-muted);font-weight:700;font-size:14px}
 .ld-share{margin-left:auto;border:1px solid var(--ld-line);background:#fff;color:var(--ld-navy);border-radius:999px;padding:8px 16px;font:inherit;font-weight:800;cursor:pointer}
 .ld-share:hover{background:var(--ld-soft)}
@@ -83,7 +83,7 @@
 .ld-place-text{flex:1;min-width:0}
 
 /* Body */
-.ld-body{grid-area:body;display:grid;gap:18px;background:#fff;border:1px solid var(--ld-line);border-radius:22px;padding:22px;min-width:0}
+.ld-body{grid-area:body;display:grid;gap:22px;background:#fff;border:1px solid var(--ld-line);border-radius:22px;padding:26px;min-width:0}
 .ld-section h2,.ld-rail h2{font-size:18px;letter-spacing:-.02em;color:var(--ld-navy);margin-bottom:8px}
 .ld-desc{line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
 .ld-options{margin:0;padding-left:18px;display:grid;gap:6px;line-height:1.5}
@@ -93,8 +93,15 @@
 
 .listing-detail-route .utility-rail{display:none!important}
 .listing-detail-route main{margin-right:28px}
-.listing-detail-route .ld-media{width:100%;max-width:760px;margin:0 auto}
-@media(min-width:851px){.listing-detail-route .ld-media{width:min(82vw,1180px);max-width:100%}}
+.listing-detail-route .ld-media{width:100%;max-width:900px;margin:0 auto}
+@media(min-width:851px){
+  .listing-detail-route .ld-media{width:min(100%,900px);max-width:900px}
+  .listing-detail-route .ld-gallery{aspect-ratio:4/3}
+  .listing-detail-route .ld-info{background:#fff;border:1px solid var(--ld-line);border-radius:22px;padding:22px 24px;box-shadow:0 8px 28px rgba(16,40,58,.06)}
+  .listing-detail-route .ld-buy{position:sticky;bottom:18px;z-index:20;max-width:900px;margin:0 auto;width:100%;box-shadow:0 14px 36px rgba(16,40,58,.14)}
+  .listing-detail-route .ld-sellerbox{max-width:900px;width:100%;margin:0 auto}
+  .listing-detail-route .ld-body{max-width:900px;width:100%;margin:0 auto}
+}
 
 /* Rails reuse the site's .card component */
 .ld-rails{grid-area:rails;grid-column:1 / -1;display:grid;gap:22px;min-width:0;width:100%;overflow:hidden}
@@ -153,3 +160,13 @@ body.ld-enhanced .ld .btn.secondary{background:#eaf7fc;color:#15506d;border:1px 
 .ld-rail-track .card-body{padding:12px 14px}
 .ld-rail-track .card-title{font-weight:850;font-size:14px;margin-bottom:4px;color:#203643;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ld-rail-track .card-price{font-weight:900;color:var(--ld-blue)}
+
+/* Desktop UX pass: keep the single-column listing calm, readable and action-first. */
+@media(min-width:851px){
+  .listing-detail-route .ld{gap:26px}
+  .listing-detail-route .ld-top{padding-bottom:2px}
+  .listing-detail-route .ld-back{font-size:14px}
+  .listing-detail-route .ld-thumbs{max-width:900px;margin-left:auto;margin-right:auto}
+  .listing-detail-route .ld-appnote{max-width:760px}
+  .listing-detail-route .ld-rails{max-width:900px;margin:0 auto}
+}
