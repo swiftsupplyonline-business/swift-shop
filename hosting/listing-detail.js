@@ -192,6 +192,13 @@ export function renderListingDetailHTML(ctx) {
       </div>
     </section>
 
+    <div class="ld-buy" data-ld-buy>
+      ${qtyBlock}
+      <button type="button" class="ld-cta" data-ld-cta data-kind="${esc(cta.kind)}" ${canAct ? "" : "disabled"}>
+        <span aria-hidden="true">${cta.icon}</span> ${esc(!canAct && purchasable ? "Out of stock" : cta.label)}
+      </button>
+    </div>
+
     <section class="ld-sellerbox">${sellerHTML(l, shop, isDelivery)}</section>
 
     <section class="ld-body">
@@ -205,13 +212,6 @@ export function renderListingDetailHTML(ctx) {
     <div class="ld-rails">
       ${railHTML("More from this shop", moreFromShop, cardHTML)}
       ${railHTML("You might also like", similar, cardHTML)}
-    </div>
-
-    <div class="ld-buy" data-ld-buy>
-      ${qtyBlock}
-      <button type="button" class="ld-cta" data-ld-cta data-kind="${esc(cta.kind)}" ${canAct ? "" : "disabled"}>
-        <span aria-hidden="true">${cta.icon}</span> ${esc(!canAct && purchasable ? "Out of stock" : cta.label)}
-      </button>
     </div>
     <div class="ld-toast" data-ld-toast role="status" aria-live="polite"></div>
   </div>`;
