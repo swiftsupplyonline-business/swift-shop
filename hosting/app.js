@@ -596,16 +596,17 @@ async function renderOrderDetail(root, orderId) {
 function renderRailCart() {
   const items = getCart();
   const count = cartCount();
-  const badge = document.getElementById("railCartBadge");
-  const summary = document.getElementById("railCartSummary");
+  const badges = [document.getElementById("railCartBadge"), document.getElementById("railCartBadgeMobile")].filter(Boolean);
+  const summaries = [document.getElementById("railCartSummary"), document.getElementById("railCartSummaryMobile")].filter(Boolean);
   const list = document.getElementById("railCartItems");
-  if (badge) badge.textContent = count ? String(count) : "";
-  if (summary) summary.textContent = count ? `${count} item${count === 1 ? "" : "s"} in your bag` : "Your bag is empty.";
+  const summaryText = count ? count + " item" + (count === 1 ? "" : "s") + " in your bag" : "Your bag is empty.";
+  badges.forEach(el => { el.textContent = count ? String(count) : ""; });
+  summaries.forEach(el => { el.textContent = summaryText; });
   if (list) {
     list.innerHTML = items.slice(0, 3).map(item =>
-      `<div class="rail-cart-item">${escapeHtml(item.title || item.listingId)} × ${Number(item.quantity || 1)}</div>`
+      '<div class="rail-cart-item">' + escapeHtml(item.title || item.listingId) + " × " + Number(item.quantity || 1) + "</div>"
     ).join("");
-    if (items.length > 3) list.insertAdjacentHTML("beforeend", `<div class="rail-muted">+ ${items.length - 3} more</div>`);
+    if (items.length > 3) list.insertAdjacentHTML("beforeend", '<div class="rail-muted">+ ' + (items.length - 3) + ' more</div>');
   }
 }
 
@@ -628,9 +629,28 @@ function renderCartDrawer() {
     <div class="actions"><a class="btn primary" href="/cart">View full bag</a><a class="btn secondary" href="/checkout">Checkout</a></div>`;
 }
 
+function openUtilitySheet() {
+  const sheet = document.getElementById("utilitySheet");
+  const trigger = document.querySelector("[data-open-utility]");
+  if (!sheet) return;
+  sheet.classList.add("is-open");
+  sheet.setAttribute("aria-hidden", "false");
+  if (trigger) trigger.setAttribute("aria-expanded", "true");
+}
+
+function closeUtilitySheet() {
+  const sheet = document.getElementById("utilitySheet");
+  const trigger = document.querySelector("[data-open-utility]");
+  if (!sheet) return;
+  sheet.classList.remove("is-open");
+  sheet.setAttribute("aria-hidden", "true");
+  if (trigger) trigger.setAttribute("aria-expanded", "false");
+}
+
 function openCartDrawer() {
   const drawer = document.getElementById("cartDrawer");
   if (!drawer) return;
+  closeUtilitySheet();
   renderCartDrawer();
   drawer.classList.add("is-open");
   drawer.setAttribute("aria-hidden", "false");
@@ -645,36 +665,63 @@ function closeCartDrawer() {
 
 async function loadUtilityRail() {
   renderRailCart();
-  const account = document.getElementById("profileSummary");
-  const status = document.getElementById("profileStatus");
-  if (account || status) {
-    onAuthStateChanged(auth, user => {
-      const guest = !user || user.isAnonymous;
-      if (account) account.textContent = guest ? "Guest shopper" : (user.displayName || user.email || "Swift shopper");
-      if (status) status.textContent = guest ? "Browsing Swift as a guest." : "Signed in to your Swift account.";
+  const accountTargets = [
+    [document.getElementById("profileSummary"), document.getElementById("profileStatus")],
+    [document.getElementById("profileSummaryMobile"), document.getElementById("profileStatusMobile")]
+  ];
+  onAuthStateChanged(auth, user => {
+    const guest = !user || user.isAnonymous;
+    const name = guest ? "Guest shopper" : (user.displayName || user.email || "Swift shopper");
+    const copy = guest ? "Browsing Swift as a guest." : "Signed in to your Swift account.";
+    accountTargets.forEach(([summary, status]) => {
+      if (summary) summary.textContent = name;
+      if (status) status.textContent = copy;
     });
-  }
+  });
 
-  const providerCount = document.getElementById("providerCount");
-  const providerList = document.getElementById("providerList");
-  if (!providerCount || !providerList) return;
-  providerCount.textContent = "Checking availability…";
+  const providerTargets = [
+    [document.getElementById("providerCount"), document.getElementById("providerList")],
+    [document.getElementById("providerCountMobile"), document.getElementById("providerListMobile")]
+  ].filter(([count, list]) => count || list);
+  if (!providerTargets.length) return;
+  providerTargets.forEach(([count]) => { if (count) count.textContent = "Checking availability…"; });
   try {
     await ensureSignedIn();
     const getDeliveryOptions = httpsCallable(functions, "getDeliveryOptions");
     const result = await getDeliveryOptions({});
     const options = Array.isArray(result.data?.options) ? result.data.options : [];
-    providerCount.textContent = options.length ? `${options.length} active provider${options.length === 1 ? "" : "s"}` : "No active providers right now.";
-    providerList.innerHTML = options.slice(0, 3).map(option =>
-      `<div class="delivery-option"><strong>${escapeHtml(option.title || "Delivery provider")}</strong><span>${LSL(Number(option.priceMinorUnits || 0))} · available</span></div>`
-    ).join("") || "";
+    providerTargets.forEach(([count, list]) => {
+      if (count) count.textContent = options.length
+        ? options.length + " active provider" + (options.length === 1 ? "" : "s")
+        : "No active providers right now.";
+      if (list) {
+        list.innerHTML = options.slice(0, 3).map(option =>
+          '<div class="delivery-option"><strong>' + escapeHtml(option.title || "Delivery provider") + '</strong><span>' +
+          LSL(Number(option.priceMinorUnits || 0)) + ' · available</span></div>'
+        ).join("") || "";
+      }
+    });
   } catch (error) {
-    providerCount.textContent = "Delivery availability is temporarily unavailable.";
-    providerList.innerHTML = "";
+    providerTargets.forEach(([count, list]) => {
+      if (count) count.textContent = "Delivery availability is temporarily unavailable.";
+      if (list) list.innerHTML = "";
+    });
   }
 }
 
 document.addEventListener("click", event => {
+  const openUtility = event.target.closest("[data-open-utility]");
+  if (openUtility) {
+    event.preventDefault();
+    openUtilitySheet();
+    return;
+  }
+  const closeUtility = event.target.closest("[data-close-utility]");
+  if (closeUtility && !event.target.closest("[data-open-cart]")) {
+    event.preventDefault();
+    closeUtilitySheet();
+    return;
+  }
   const open = event.target.closest("[data-open-cart]");
   if (open) {
     event.preventDefault();
@@ -687,6 +734,14 @@ document.addEventListener("click", event => {
     closeCartDrawer();
   }
 });
+
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape") {
+    closeUtilitySheet();
+    closeCartDrawer();
+  }
+});
+
 document.addEventListener("swift:cart-updated", () => {
   renderRailCart();
   const drawer = document.getElementById("cartDrawer");
