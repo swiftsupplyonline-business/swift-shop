@@ -82,7 +82,6 @@ function renderPage(opts: {
     const jsonForScript = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
     const commerceScript = listingId ? `
     <script type="module">
-      import { addToCart, mountListingDetail } from "/app.js";
       const id = ${jsonForScript(listingId)};
       const title = ${jsonForScript(title)};
       const isDelivery = ${isDeliveryListing ? "true" : "false"};
@@ -92,17 +91,23 @@ function renderPage(opts: {
         if (root) root.innerHTML = fallbackHtml;
         document.body.classList.remove("ld-enhanced");
         if (isDelivery) return;
-        document.getElementById("buyNowBtn")?.addEventListener("click", () => {
+        document.getElementById("buyNowBtn")?.addEventListener("click", async () => {
+          const { addToCart } = await import("/app.js");
           addToCart(id, title, 1);
           window.location.href = "/checkout";
         });
       };
       if (!root) { useFallback(); }
       else {
-        document.body.classList.add("ld-enhanced");
-        mountListingDetail(root, { listingId: id, standalone: true })
-          .then((ok) => { if (!ok) useFallback(); })
-          .catch(useFallback);
+        try {
+          const { mountListingDetail } = await import("/app.js");
+          document.body.classList.add("ld-enhanced");
+          const ok = await mountListingDetail(root, { listingId: id, standalone: true });
+          if (!ok) useFallback();
+        } catch (err) {
+          console.error("Swift listing view failed to load; showing basic page", err);
+          useFallback();
+        }
       }
     </script>` : "";
 
