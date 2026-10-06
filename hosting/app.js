@@ -16,10 +16,10 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js";
 import { getFirestore, collection, query, where, onSnapshot, getDoc, doc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
-// Firebase Hosting exposes the configuration for the project serving this page.
-// This keeps Dev, Staging, and Production aligned with their Hosting target.
 import { renderListingDetailHTML, bindListingDetail } from "./listing-detail.js";
 
+// Firebase Hosting exposes the configuration for the project serving this page.
+// This keeps Dev, Staging, and Production aligned with their Hosting target.
 const firebaseConfig = await fetch("/__/firebase/init.json").then(async response => {
   if (!response.ok) {
     throw new Error(`Firebase Hosting config returned HTTP ${response.status}`);
