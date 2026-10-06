@@ -837,6 +837,7 @@ function route() {
   const root = document.getElementById("app");
   if (!root) return;
   const path = location.pathname;
+  document.body.classList.toggle("listing-detail-route", /^\/listing\/[^/]+\/?$/.test(path));
   updateCartBadge();
   document.querySelectorAll(".rail a").forEach(link => {
     const href = link.getAttribute("href");
