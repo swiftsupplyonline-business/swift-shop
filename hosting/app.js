@@ -117,7 +117,7 @@ async function fetchListings({ max = 24 } = {}) {
   return (data.listings || []).slice(0, max);
 }
 
-async function fetchShops({ max = 12 } = {}) {
+async function fetchShops({ max = 100 } = {}) {
   const data = await fetchMarketplace();
   return (data.shops || []).slice(0, max);
 }
@@ -176,13 +176,22 @@ function listingCard(l, shopById) {
 }
 
 function shopCard(s) {
+  const category = String(s.category || "Local shop").trim();
+  const description = String(s.description || "").trim();
   return `
-    <a class="shop-card" href="/shop/${s.id}">
+    <a class="shop-card" href="/shop/${encodeURIComponent(s.id)}" aria-label="Visit ${escapeHtml(s.name || "Shop")}">
       <div class="shop-card-cover" style="background-image:url('${s.coverUrl || ""}')"></div>
       <div class="shop-card-scrim"></div>
       <div class="shop-card-content">
-        <div class="shop-logo" style="background-image:url('${s.logoUrl || ""}')"></div>
-        <div class="shop-name">${escapeHtml(s.name || "Shop")}</div>
+        <div class="shop-card-top">
+          <div class="shop-logo" style="background-image:url('${s.logoUrl || ""}')"></div>
+          <span class="shop-card-category">${escapeHtml(category)}</span>
+        </div>
+        <div class="shop-card-bottom">
+          <div class="shop-name">${escapeHtml(s.name || "Shop")}</div>
+          ${description ? `<div class="shop-description">${escapeHtml(description.length > 78 ? description.slice(0, 75) + "…" : description)}</div>` : ""}
+          <span class="shop-card-link">Visit shop <span aria-hidden="true">→</span></span>
+        </div>
       </div>
     </a>`;
 }
@@ -274,15 +283,20 @@ async function renderBrowse(root) {
         clearInterval(frontDoorTimer);
         frontDoorTimer = null;
       }
+      const featuredShops = shops.slice(0, 6);
       root.innerHTML = `
-        <section class="market-feed">
-          <div class="section-heading"><span class="eyebrow">Swift marketplace</span><h2>Shops</h2></div>
-          <div class="shop-row">${shops.length ? shops.map(shopCard).join("") : "<p class='empty'>No shops yet.</p>"}</div>
+        <section class="market-feed shops-preview">
+          <div class="section-heading section-heading-row">
+            <div><span class="eyebrow">Discover local businesses</span><h2>Shops</h2><p class="section-subtitle">A few places to start. Explore all shops when you're ready.</p></div>
+            <a class="section-link" href="/shops">More shops <span aria-hidden="true">→</span></a>
+          </div>
+          <div class="shop-row">${featuredShops.length ? featuredShops.map(shopCard).join("") : "<p class='empty'>No shops yet.</p>"}</div>
         </section>
         <section class="market-feed">
           <div class="section-heading"><span class="eyebrow">Fresh on Swift</span><h2>Latest listings</h2></div>
           <div class="grid">${listings.length ? listings.map(l => listingCard(l, shopById)).join("") : "<p class='empty'>No listings yet.</p>"}</div>
         </section>`;
+      }
     } catch (err) {
       guestBtn.disabled = false;
       guestBtn.textContent = "Continue as Guest →";
@@ -296,6 +310,27 @@ async function renderBrowse(root) {
   }).catch(() => {
     if (ready) ready.textContent = "The market is taking a moment. Try Continue as Guest again.";
   });
+}
+
+async function renderShops(root) {
+  root.innerHTML = `
+    <section class="rail-page shops-page">
+      <div class="section-heading">
+        <span class="eyebrow">Discover local businesses</span>
+        <h1>All Shops</h1>
+        <p class="section-subtitle">Explore shops on Swift and open a shop to see its listings.</p>
+      </div>
+      <div id="shopsGrid" class="shop-directory"><div class="loading">Loading shops…</div></div>
+    </section>`;
+  try {
+    const shops = await fetchShops({ max: 100 });
+    const grid = root.querySelector("#shopsGrid");
+    grid.innerHTML = shops.length
+      ? shops.map(shopCard).join("")
+      : "<p class='empty'>No shops yet.</p>";
+  } catch (err) {
+    root.querySelector("#shopsGrid").innerHTML = `<div class="error">Couldn't load shops. ${escapeHtml(err.message)}</div>`;
+  }
 }
 
 async function renderShop(root, shopId) {
@@ -780,6 +815,7 @@ function route() {
   if (path === "/market") return renderBrowse(root);
   if (path === "/search") return renderSearch(root, new URLSearchParams(location.search).get("q") || "");
   if (path === "/orders") return renderOrders(root);
+  if (path === "/shops") return renderShops(root);
   if (path === "/cart") return renderCart(root);
   if (path === "/checkout") return renderCheckout(root);
 
