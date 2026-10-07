@@ -219,6 +219,7 @@ async function renderBrowse(root, direct = false) {
   const user = auth.currentUser;
   const signedIn = user && !user.isAnonymous;
   if (direct) {
+    document.body.classList.remove("home-profile-route");
     root.innerHTML = `<div class="loading">Loading market…</div>`;
     try {
       const [listings, shops] = await marketPromise;
@@ -772,8 +773,18 @@ async function renderHomeProfile(root, user, marketPromise) {
     ? `<img class="hp-avatar" src="${escapeHtml(url)}" alt="${escapeHtml(displayName)}" id="hpAvatarImg">`
     : `<div class="hp-avatar hp-avatar-initials" id="hpAvatarImg">${escapeHtml(initial)}</div>`;
 
+  document.body.classList.add("home-profile-route");
   root.innerHTML = `
     <section class="home-profile">
+      <div class="hp-cover" id="hpCover">
+        <img id="hpCoverImg" alt="Cover photo" style="display:none">
+        <label class="hp-cover-edit" for="hpCoverInput">
+          <span aria-hidden="true">🖼</span> Change cover
+          <input type="file" id="hpCoverInput" accept="image/*" style="display:none">
+        </label>
+        <div class="hp-cover-spinner" id="hpCoverSpinner" style="display:none"></div>
+      </div>
+
       <div class="hp-header">
         <div class="hp-avatar-wrap">
           ${avatarImgHTML(avatarUrl)}
@@ -852,6 +863,31 @@ async function renderHomeProfile(root, user, marketPromise) {
     } finally {
       spinner.style.display = "none";
     }
+  });
+
+  // Cover photo upload
+  const _coverImg     = root.querySelector("#hpCoverImg");
+  const _coverSpinner = root.querySelector("#hpCoverSpinner");
+  const _coverInput   = root.querySelector("#hpCoverInput");
+  // Load existing cover
+  getDoc(doc(db, "profiles", uid)).then(snap => {
+    const url = snap.exists() ? snap.data().coverUrl : null;
+    if (url && _coverImg) { _coverImg.src = url; _coverImg.style.display = "block"; }
+  }).catch(() => {});
+  _coverInput?.addEventListener("change", async e => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) { alert("Cover photo must be under 10 MB."); return; }
+    if (_coverSpinner) _coverSpinner.style.display = "flex";
+    try {
+      const ext  = file.name.split(".").pop() || "jpg";
+      const sRef = storageRef(storage, `covers/${uid}/cover.${ext}`);
+      await uploadBytes(sRef, file, { contentType: file.type });
+      const url  = await getDownloadURL(sRef);
+      try { await updateDoc(doc(db, "profiles", uid), { coverUrl: url }); } catch(_) {}
+      if (_coverImg) { _coverImg.src = url; _coverImg.style.display = "block"; }
+    } catch (err) { alert("Couldn't upload cover. " + (err.message || "")); }
+    finally { if (_coverSpinner) _coverSpinner.style.display = "none"; }
   });
 
   // Action buttons
@@ -1316,6 +1352,8 @@ function route() {
 
   // The marketing hero is static markup above #app: show it on Home/Market only.
   document.documentElement.classList.toggle("no-hero", !(path === "/" || path === "" || path === "/market" || path === "/market/"));
+  document.body.classList.toggle("home-profile-route",
+    (path === "/" || path === "") && !!(auth.currentUser && !auth.currentUser.isAnonymous));
   if (path === "/" || path === "") return renderBrowse(root);
   if (path === "/market") return renderBrowse(root, true);
   if (path === "/search") return renderSearch(root, new URLSearchParams(location.search).get("q") || "");

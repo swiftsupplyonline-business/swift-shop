@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/listing-detail.css">
 <link rel="stylesheet" href="/shop-detail.css">
 <script>if(!/^\/(market)?\/?$/.test(location.pathname))document.documentElement.classList.add("no-hero")</script>
-<style>.no-hero main>.hero{display:none}</style>
+<style>.no-hero main>.hero{display:none}.home-profile-route main>.hero{display:none}</style>
 <style>
 :root{--ink:#111318;--muted:#747983;--line:#e8e9ec;--paper:#f7f7f5;--card:#fff}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:inherit;text-decoration:none}button,input{font:inherit}
@@ -190,34 +190,27 @@ main{max-width:1280px}.hero{min-height:470px;border-radius:32px;box-shadow:0 24p
 }
 
 /* ── Home profile screen ─────────────────────────────────────────── */
-.home-profile{display:flex;flex-direction:column;gap:16px;padding:4px 0 24px}
-.hp-header{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
-.hp-avatar-wrap{position:relative;flex:none}
-.hp-avatar,.hp-avatar-initials{width:88px;height:88px;border-radius:50%;object-fit:cover;display:flex;align-items:center;justify-content:center;border:3px solid #d0eaf6;background:linear-gradient(135deg,#1c92ca,#0875aa);color:#fff;font-size:32px;font-weight:900;letter-spacing:-.02em}
+.home-profile{display:flex;flex-direction:column;gap:16px;padding:0 0 24px}
+/* Cover photo */
+.hp-cover{position:relative;width:calc(100% + 48px);margin:0 -24px 0;height:200px;background:linear-gradient(135deg,#0d5c8a,#1c92ca);overflow:hidden;flex:none}
+@media(min-width:501px){.hp-cover{width:calc(100% + 64px);margin:0 -32px;height:220px}}
+@media(min-width:851px){.hp-cover{width:calc(100% + 80px);margin:0 -40px;height:240px}}
+.hp-cover img{width:100%;height:100%;object-fit:cover;display:block}
+.hp-cover-edit{position:absolute;top:12px;right:12px;padding:6px 12px;background:rgba(0,0,0,.42);color:#fff;border:1.5px solid rgba(255,255,255,.3);border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;backdrop-filter:blur(6px);transition:.15s;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.hp-cover-edit:hover{background:rgba(0,0,0,.6)}
+.hp-cover-spinner{position:absolute;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;pointer-events:none}
+.hp-cover-spinner::after{content:"";width:28px;height:28px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* Avatar overlapping cover */
+.hp-header{display:flex;align-items:flex-end;gap:14px;margin-top:-44px;position:relative;z-index:2;flex-wrap:wrap;padding:0 2px}
+.hp-avatar-wrap{position:relative;flex:none;filter:drop-shadow(0 4px 14px rgba(0,0,0,.22))}
+.hp-avatar,.hp-avatar-initials{width:88px;height:88px;border-radius:50%;object-fit:cover;display:flex;align-items:center;justify-content:center;border:4px solid #fff;background:linear-gradient(135deg,#1c92ca,#0875aa);color:#fff;font-size:32px;font-weight:900;letter-spacing:-.02em}
 .hp-avatar{background:var(--swift-sky)}
-.hp-avatar-edit{position:absolute;bottom:0;right:0;width:28px;height:28px;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;border:1.5px solid #d0eaf6;transition:.15s}
+.hp-avatar-edit{position:absolute;bottom:2px;right:2px;width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.22);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;border:1.5px solid #d0eaf6;transition:.15s}
 .hp-avatar-edit:hover{background:var(--swift-sky)}
 .hp-avatar-spinner{position:absolute;inset:0;border-radius:50%;background:rgba(255,255,255,.7);display:flex;align-items:center;justify-content:center}
 .hp-avatar-spinner::after{content:"";width:22px;height:22px;border:3px solid #d0eaf6;border-top-color:#1c92ca;border-radius:50%;animation:spin .7s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.hp-identity{min-width:0;flex:1}
-.hp-name{font-size:20px;font-weight:900;color:var(--swift-navy);margin:0 0 2px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hp-handle{font-size:13px;color:var(--swift-blue-deep);margin:0 0 2px;font-weight:700}
-.hp-email{font-size:12px;color:var(--muted);margin:0}
-.hp-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center}
-.hp-stat{display:flex;flex-direction:column;gap:2px;background:var(--swift-sky);border-radius:14px;padding:12px 6px}
-.hp-stat-val{font-size:18px;font-weight:900;color:var(--swift-navy);line-height:1}
-.hp-stat-label{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
-.hp-wallet{display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,#0d5c8a,#0875aa,#1c92ca);border-radius:18px;padding:16px 18px;gap:12px}
-.hp-wallet-inner{display:flex;flex-direction:column;gap:3px}
-.hp-wallet-label{font-size:11px;font-weight:700;color:rgba(255,255,255,.75);text-transform:uppercase;letter-spacing:.06em}
-.hp-wallet-bal{font-size:22px;font-weight:900;color:#fff;letter-spacing:-.02em}
-.hp-wallet-btn{padding:9px 16px;background:rgba(255,255,255,.18);color:#fff;border:1.5px solid rgba(255,255,255,.35);border-radius:12px;font-size:13px;font-weight:850;cursor:pointer;white-space:nowrap;backdrop-filter:blur(4px);transition:.15s}
-.hp-wallet-btn:hover{background:rgba(255,255,255,.28)}
-.hp-about-wrap{background:var(--swift-sky);border-radius:14px;padding:12px 14px}
-.hp-about{font-size:13px;color:var(--ink);line-height:1.6;margin:0}
-.hp-actions{display:flex;gap:8px}
-.hp-market-preview{display:flex;flex-direction:column;gap:0}
+.hp-identity{min-width:0;flex:1;padding-bottom:4px}
 /* Edit profile modal */
 .ep-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;display:flex;align-items:flex-end;justify-content:center;padding:0 0 env(safe-area-inset-bottom)}
 @media(min-width:501px){.ep-modal-backdrop{align-items:center}}
