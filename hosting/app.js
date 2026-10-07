@@ -14,7 +14,8 @@ import {
 import {
   getFunctions, httpsCallable
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js";
-import { getFirestore, collection, query, where, onSnapshot, getDoc, doc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { getFirestore, collection, query, where, onSnapshot, getDoc, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
 
 import { renderListingDetailHTML, bindListingDetail } from "./listing-detail.js";
 import { renderShopDetailHTML, bindShopDetail } from "./shop-detail.js";
@@ -32,6 +33,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const functions = getFunctions(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 
 const CART_KEY = "swiftshop_cart_v1";
 const LSL = (minorUnits) => `M${(minorUnits / 100).toFixed(2)}`;
@@ -213,10 +215,10 @@ async function renderBrowse(root, direct = false) {
   const marketPromise = Promise.all([fetchListings(), fetchShops()]);
 
   // /market always goes straight to the feed.
-  // / (home) goes straight to the feed if the user is already signed in.
+  // / (home) for signed-in users shows the profile screen.
   const user = auth.currentUser;
   const signedIn = user && !user.isAnonymous;
-  if (direct || signedIn) {
+  if (direct) {
     root.innerHTML = `<div class="loading">Loading market…</div>`;
     try {
       const [listings, shops] = await marketPromise;
@@ -225,6 +227,10 @@ async function renderBrowse(root, direct = false) {
       root.innerHTML = `<div class="error">Couldn't load the market. <button class="btn secondary" type="button" data-retry>Try again</button></div>`;
       root.querySelector("[data-retry]")?.addEventListener("click", () => renderBrowse(root, direct));
     }
+    return;
+  }
+  if (signedIn) {
+    renderHomeProfile(root, user, marketPromise);
     return;
   }
 
@@ -750,6 +756,230 @@ function bindUtilityRailControls() {
 }
 
 
+
+// ── renderHomeProfile ─────────────────────────────────────────────────────────
+// Home screen for signed-in users: profile card with avatar upload, wallet,
+// stats (followers, following, shops, listings), about, and market entry.
+async function renderHomeProfile(root, user, marketPromise) {
+  const uid         = user.uid;
+  const displayName = user.displayName || user.email || "Swift shopper";
+  const email       = user.email || "";
+  const handle      = email ? "@" + email.split("@")[0] : "";
+  const initial     = (displayName[0] || "S").toUpperCase();
+  const avatarUrl   = user.photoURL || null;
+
+  const avatarImgHTML = (url) => url
+    ? `<img class="hp-avatar" src="${escapeHtml(url)}" alt="${escapeHtml(displayName)}" id="hpAvatarImg">`
+    : `<div class="hp-avatar hp-avatar-initials" id="hpAvatarImg">${escapeHtml(initial)}</div>`;
+
+  root.innerHTML = `
+    <section class="home-profile">
+      <div class="hp-header">
+        <div class="hp-avatar-wrap">
+          ${avatarImgHTML(avatarUrl)}
+          <label class="hp-avatar-edit" for="hpAvatarInput" title="Change photo" aria-label="Change profile photo">
+            <span aria-hidden="true">📷</span>
+            <input type="file" id="hpAvatarInput" accept="image/*" style="display:none">
+          </label>
+          <div class="hp-avatar-spinner" id="hpAvatarSpinner" style="display:none"></div>
+        </div>
+        <div class="hp-identity">
+          <h2 class="hp-name">${escapeHtml(displayName)}</h2>
+          <p class="hp-handle">${escapeHtml(handle)}</p>
+          <p class="hp-email">${escapeHtml(email)}</p>
+        </div>
+      </div>
+
+      <div class="hp-stats" id="hpStats">
+        <div class="hp-stat"><span class="hp-stat-val" id="hpFollowers">—</span><span class="hp-stat-label">Followers</span></div>
+        <div class="hp-stat"><span class="hp-stat-val" id="hpFollowing">—</span><span class="hp-stat-label">Following</span></div>
+        <div class="hp-stat"><span class="hp-stat-val" id="hpShops">—</span><span class="hp-stat-label">Shops</span></div>
+        <div class="hp-stat"><span class="hp-stat-val" id="hpListings">—</span><span class="hp-stat-label">Listings</span></div>
+      </div>
+
+      <div class="hp-wallet" id="hpWallet">
+        <div class="hp-wallet-inner">
+          <span class="hp-wallet-label">Swift Wallet</span>
+          <span class="hp-wallet-bal" id="hpWalletBal">M —</span>
+        </div>
+        <button class="hp-wallet-btn" type="button" data-hp-action="wallet">Manage</button>
+      </div>
+
+      <div class="hp-about-wrap" id="hpAboutWrap" style="display:none">
+        <p class="hp-about" id="hpAbout"></p>
+      </div>
+
+      <div class="hp-actions">
+        <button class="profile-action-btn primary" type="button" data-hp-action="market">Browse market</button>
+        <button class="profile-action-btn" type="button" data-hp-action="edit">Edit profile</button>
+      </div>
+
+      <div class="hp-market-preview" id="hpMarketPreview">
+        <div class="loading" style="padding:20px 0">Loading your market…</div>
+      </div>
+    </section>`;
+
+  // Avatar upload
+  const avatarInput = root.querySelector("#hpAvatarInput");
+  const spinner     = root.querySelector("#hpAvatarSpinner");
+  avatarInput?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { alert("Photo must be under 5 MB."); return; }
+    spinner.style.display = "flex";
+    try {
+      const ext      = file.name.split(".").pop() || "jpg";
+      const path     = `avatars/${uid}/profile.${ext}`;
+      const ref      = storageRef(storage, path);
+      await uploadBytes(ref, file, { contentType: file.type });
+      const url      = await getDownloadURL(ref);
+      const { updateProfile } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js");
+      await updateProfile(user, { photoURL: url });
+      // Update Firestore profile
+      try { await updateDoc(doc(db, "profiles", uid), { avatarUrl: url }); } catch(_) {}
+      // Update avatar in DOM
+      const imgWrap = root.querySelector("#hpAvatarImg");
+      if (imgWrap) {
+        const img = document.createElement("img");
+        img.className = "hp-avatar"; img.id = "hpAvatarImg";
+        img.src = url; img.alt = displayName; img.width = 96; img.height = 96;
+        imgWrap.replaceWith(img);
+      }
+      // Update account cards in rail / sheet
+      updateAccountCards({ ...user, photoURL: url });
+    } catch (err) {
+      alert("Couldn't upload photo. " + (err.message || ""));
+    } finally {
+      spinner.style.display = "none";
+    }
+  });
+
+  // Action buttons
+  root.querySelectorAll("[data-hp-action]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const a = btn.dataset.hpAction;
+      if (a === "market")  navigate("/market");
+      if (a === "wallet")  navigate("/wallet");
+      if (a === "edit")    showEditProfileModal(user, root);
+    });
+  });
+
+  // Load Firestore profile (stats + about + wallet) in parallel
+  try {
+    const [profSnap, walletSnap] = await Promise.all([
+      getDoc(doc(db, "profiles", uid)),
+      getDoc(doc(db, "wallets",  uid)),
+    ]);
+
+    if (profSnap.exists()) {
+      const p = profSnap.data();
+      const setText = (id, val) => { const el = root.querySelector("#" + id); if (el) el.textContent = val ?? "0"; };
+      setText("hpFollowers", p.followerCount  ?? 0);
+      setText("hpFollowing", p.followingCount ?? 0);
+      setText("hpShops",     p.shopCount      ?? 0);
+      setText("hpListings",  p.activeListingCount ?? 0);
+      if (p.about) {
+        const aboutEl = root.querySelector("#hpAbout");
+        const wrapEl  = root.querySelector("#hpAboutWrap");
+        if (aboutEl) aboutEl.textContent = p.about;
+        if (wrapEl)  wrapEl.style.display = "";
+      }
+    }
+
+    if (walletSnap.exists()) {
+      const w   = walletSnap.data();
+      const bal = ((w.availableBalanceMinorUnits || 0) / 100).toFixed(2);
+      const el  = root.querySelector("#hpWalletBal");
+      if (el) el.textContent = `M ${bal}`;
+    }
+  } catch (_) {}
+
+  // Market preview beneath profile
+  try {
+    const [listings, shops] = await marketPromise;
+    const preview = root.querySelector("#hpMarketPreview");
+    if (!preview) return;
+    const shopById = new Map(shops.map(s => [s.id, s]));
+    const slice    = listings.slice(0, 6);
+    preview.innerHTML = slice.length
+      ? `<div class="section-heading" style="margin-top:8px"><span class="eyebrow">Fresh on Swift</span><h2>Latest listings</h2></div>
+         <div class="grid">${slice.map(l => listingCard(l, shopById)).join("")}</div>
+         <a class="section-link" href="/market" style="display:block;text-align:center;margin-top:12px">See all listings <span aria-hidden="true">→</span></a>`
+      : `<p class="empty">No listings yet.</p>`;
+  } catch (_) {
+    const p = root.querySelector("#hpMarketPreview");
+    if (p) p.innerHTML = "";
+  }
+}
+
+// ── showEditProfileModal ──────────────────────────────────────────────────────
+function showEditProfileModal(user, root) {
+  const existing = document.getElementById("editProfileModal");
+  if (existing) existing.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "editProfileModal";
+  modal.className = "ep-modal-backdrop";
+  modal.innerHTML = `
+    <div class="ep-modal" role="dialog" aria-modal="true" aria-label="Edit profile">
+      <div class="ep-modal-header">
+        <h3>Edit profile</h3>
+        <button class="ep-close" type="button" aria-label="Close">✕</button>
+      </div>
+      <form class="signup-form ep-form" id="editProfileForm">
+        <input type="text" id="epDisplayName" placeholder="Full name" value="${escapeHtml(user.displayName || "")}" autocomplete="name">
+        <input type="tel"  id="epPhone" placeholder="Phone number" autocomplete="tel">
+        <textarea id="epAbout" placeholder="About me" rows="3"></textarea>
+        <p class="signup-form-error" id="epError" style="display:none"></p>
+        <button class="btn primary" type="submit" id="epSaveBtn">Save changes</button>
+      </form>
+    </div>`;
+  document.body.appendChild(modal);
+
+  // Pre-fill from Firestore
+  getDoc(doc(db, "profiles", user.uid)).then(snap => {
+    if (!snap.exists()) return;
+    const p = snap.data();
+    const ph = modal.querySelector("#epPhone");
+    const ab = modal.querySelector("#epAbout");
+    if (ph && p.phone) ph.value = p.phone;
+    if (ab && p.about) ab.value = p.about;
+  }).catch(() => {});
+
+  modal.querySelector(".ep-close")?.addEventListener("click", () => modal.remove());
+  modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+
+  modal.querySelector("#editProfileForm")?.addEventListener("submit", async e => {
+    e.preventDefault();
+    const btn      = modal.querySelector("#epSaveBtn");
+    const errEl    = modal.querySelector("#epError");
+    const newName  = (modal.querySelector("#epDisplayName")?.value || "").trim();
+    const newPhone = (modal.querySelector("#epPhone")?.value || "").trim();
+    const newAbout = (modal.querySelector("#epAbout")?.value || "").trim();
+    btn.disabled = true; btn.textContent = "Saving…";
+    if (errEl) errEl.style.display = "none";
+    try {
+      const { updateProfile } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js");
+      if (newName && newName !== user.displayName) await updateProfile(user, { displayName: newName });
+      await updateDoc(doc(db, "profiles", user.uid), {
+        displayName: newName || user.displayName,
+        phone: newPhone || null,
+        about: newAbout || null,
+      });
+      updateAccountCards(user);
+      modal.remove();
+      // Re-render home to reflect new name/about
+      const appRoot = document.getElementById("app");
+      if (appRoot && (location.pathname === "/" || location.pathname === "")) {
+        renderHomeProfile(appRoot, auth.currentUser, Promise.all([fetchListings(), fetchShops()]));
+      }
+    } catch (err) {
+      btn.disabled = false; btn.textContent = "Save changes";
+      if (errEl) { errEl.textContent = err.message || "Couldn't save."; errEl.style.display = "block"; }
+    }
+  });
+}
+
 // ─── renderMarketFeed ─────────────────────────────────────────────────────────
 function renderMarketFeed(root, listings, shops) {
   if (typeof frontDoorTimer !== "undefined" && frontDoorTimer) {
@@ -798,7 +1028,7 @@ function updateAccountCards(user) {
     const nameEl    = document.getElementById(nameId);
     const handleEl  = document.getElementById(handleId);
     const actionsEl = document.getElementById(actionsId);
-    if (avEl)      avEl.outerHTML     = avatarHTML;
+    if (avEl)      avEl.outerHTML      = avatarHTML;
     if (nameEl)    nameEl.textContent  = displayName;
     if (handleEl)  handleEl.textContent = handle;
     if (actionsEl) {
@@ -809,12 +1039,33 @@ function updateAccountCards(user) {
           if (a === "signup" || a === "signin") navigate("/");
           if (a === "signout") {
             import("https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js")
-              .then(({ signOut }) => signOut(auth)).catch(() => {});
+              .then(({ signOut }) => signOut(auth).then(() => navigate("/"))).catch(() => {});
           }
         });
       });
     }
   });
+
+  // Reflect updated auth state on the home profile screen if it's active
+  if (!guest) {
+    const onHome = location.pathname === "/" || location.pathname === "";
+    const homeProfile = document.querySelector(".home-profile");
+    if (onHome && homeProfile) {
+      const nameEl   = homeProfile.querySelector(".hp-name");
+      const handleEl = homeProfile.querySelector(".hp-handle");
+      const emailEl  = homeProfile.querySelector(".hp-email");
+      const imgEl    = homeProfile.querySelector("#hpAvatarImg");
+      if (nameEl)   nameEl.textContent   = displayName;
+      if (handleEl) handleEl.textContent = handle;
+      if (emailEl)  emailEl.textContent  = (!guest && user.email) ? user.email : "";
+      if (imgEl && user && user.photoURL) {
+        const img = document.createElement("img");
+        img.className = "hp-avatar"; img.id = "hpAvatarImg";
+        img.src = user.photoURL; img.alt = displayName; img.width = 96; img.height = 96;
+        imgEl.replaceWith(img);
+      }
+    }
+  }
 }
 
 // ─── bindSignupForm ───────────────────────────────────────────────────────────
