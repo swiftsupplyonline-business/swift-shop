@@ -11,6 +11,7 @@
 .ld img{max-width:none;margin:0;border-radius:0;aspect-ratio:auto}
 .ld .ld-logo{border-radius:50%}
 .ld a{color:inherit;text-decoration:none}
+.ld a.ld-link,.ld a.ld-back{color:var(--ld-blue)}
 .ld h1,.ld h2,.ld p{margin:0}
 .ld-top{grid-area:top}
 .ld-back{display:inline-block;font-weight:800;color:var(--ld-blue);padding:6px 0}
@@ -30,7 +31,7 @@
 .ld-nav{position:absolute;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;border:0;background:rgba(255,255,255,.9);color:var(--ld-navy);font-size:26px;line-height:1;cursor:pointer;box-shadow:0 4px 14px rgba(16,40,58,.2);display:none}
 .ld-prev{left:12px}.ld-next{right:12px}
 @media (hover:hover) and (pointer:fine){.ld-nav{display:block}}
-.ld-dots{position:absolute;left:0;right:0;bottom:12px;display:flex;justify-content:center;gap:5px;pointer-events:none}
+.ld-dots{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);display:flex;justify-content:center;gap:6px;padding:5px 9px;border-radius:999px;background:rgba(16,40,58,.45);pointer-events:none}
 .ld-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.55);box-shadow:0 0 0 1px rgba(16,40,58,.15)}
 .ld-dot.is-on{width:8px;height:8px;background:#fff}
 .ld-thumbs{display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:2px}
@@ -76,7 +77,7 @@
 .ld-logo-fallback{display:grid;place-items:center;background:var(--ld-blue2);color:#fff}
 .ld-seller-text{flex:1;min-width:0;display:grid}
 .ld-eyebrow{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--ld-muted)}
-.ld-seller-name{font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ld-seller-name{font-weight:850;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .ld-verified{color:var(--ld-blue2);font-size:12px}
 .ld-visit{font-weight:800;color:var(--ld-blue);white-space:nowrap}
 .ld-place{display:flex;align-items:center;gap:8px;padding:0 6px;font-size:14px;color:var(--ld-muted)}
@@ -117,6 +118,8 @@ html.ld-enhancement-pending body{max-width:none;margin:0;padding:12px 20px 40px;
 body.ld-enhanced{max-width:none;margin:0;padding:12px 20px 40px;background:linear-gradient(180deg,#f8fdff 0%,#f4f9fc 100%)}
 .ld-hydrating{min-height:clamp(520px,72vh,860px);width:100%;max-width:1080px;margin:0 auto}
 .ld-fallback[hidden],.ld-loading-shell[hidden]{display:none!important}
+/* Safety net: the mounted view always spans the loading shell's full width */
+.ld-loading-shell>.ld{grid-column:1 / -1;width:100%}
 .ld-loading-shell{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:18px 36px;width:100%;max-width:1080px;margin:0 auto;align-items:start}
 .ld-loading-media{aspect-ratio:1/1;border-radius:24px;overflow:hidden;background:#edf7fb;border:1px solid var(--ld-line)}
 .ld-loading-media img{width:100%;height:100%;object-fit:cover;display:block}
@@ -176,4 +179,13 @@ body.ld-enhanced .ld .btn.secondary{background:#eaf7fc;color:#15506d;border:1px 
 }
 @media(min-width:1201px){
   .listing-detail-route .ld{width:100%;max-width:none;margin:0}
+}
+
+/* Server-rendered share pages (no app shell): match the SPA's central-canvas proportions on desktop,
+   otherwise the gallery stretches to the full viewport width and pushes Buy far below the fold. */
+@media(min-width:851px){
+  .ld-standalone{max-width:880px}
+  .ld-standalone .ld-gallery{aspect-ratio:4/3}
+  .ld-standalone .ld-thumbs{max-width:880px}
+  .ld-standalone .ld-buy{position:sticky;bottom:18px;z-index:20;box-shadow:0 14px 36px rgba(16,40,58,.14)}
 }

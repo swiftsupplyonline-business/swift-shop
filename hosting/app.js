@@ -846,6 +846,8 @@ function route() {
     if (active) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current");
   });
 
+  // The marketing hero is static markup above #app: show it on Home/Market only.
+  document.documentElement.classList.toggle("no-hero", !(path === "/" || path === "" || path === "/market" || path === "/market/"));
   if (path === "/" || path === "") return renderBrowse(root);
   if (path === "/market") return renderBrowse(root);
   if (path === "/search") return renderSearch(root, new URLSearchParams(location.search).get("q") || "");
@@ -882,13 +884,18 @@ document.addEventListener("click", (e) => {
   navigate(href);
 });
 window.addEventListener("popstate", route);
-document.addEventListener("DOMContentLoaded", () => {
+// This module uses top-level await (Firebase config fetch), so DOMContentLoaded may already have fired
+// by the time we get here; a bare DOMContentLoaded listener would then never run and the router would
+// never start. Boot immediately if the document is already parsed.
+function boot() {
   updateCartBadge();
   loadUtilityRail();
   bindUtilityRailControls();
   if ((location.pathname.startsWith("/s/") || location.pathname.startsWith("/d/"))
       && document.body.dataset.sharePage === "true") return;
   route();
-});
+}
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+else boot();
 
 export { addToCart, cartCount, mountListingDetail };
