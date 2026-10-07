@@ -112,6 +112,8 @@ function renderPage(opts: {
           const ok = await mountListingDetail(enhancedRoot, { listingId: id, standalone: true });
           if (!ok) useFallback();
           else {
+            enhancedRoot.classList.remove("ld-loading-shell");
+            enhancedRoot.removeAttribute("aria-busy");
             enhancedRoot.removeAttribute("hidden");
             fallback.setAttribute("hidden", "");
             root.classList.remove("ld-hydrating");
