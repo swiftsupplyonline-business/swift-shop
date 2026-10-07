@@ -297,6 +297,35 @@ main{max-width:1280px}.hero{min-height:470px;border-radius:32px;box-shadow:0 24p
 }
 /* Authoritative desktop shell: left rail | full central canvas | right utility rail */
 @media(min-width:1201px){main{margin-left:218px;margin-right:300px;width:auto;max-width:none}}
+/* ── Posts feed timeline ─────────────────────────────────────────── */
+.feed-page{max-width:760px}
+.feed-heading{margin-bottom:18px}
+.post-timeline{display:grid;gap:16px}
+.post-card{background:#fff;border:1px solid #dcebf2;border-radius:20px;overflow:hidden;box-shadow:0 8px 24px rgba(16,40,58,.055)}
+.post-card-head{display:flex;align-items:center;gap:11px;padding:15px 16px 10px}
+.post-avatar{width:42px;height:42px;flex:none;border-radius:50%;object-fit:cover;background:#eaf4f8}
+.post-avatar-initials{display:grid;place-items:center;font-weight:900;color:var(--swift-navy);background:#e7f3f8}
+.post-author{min-width:0;display:grid;gap:2px}
+.post-author strong{font-size:13px;color:var(--swift-navy)}
+.post-author span{font-size:11px;color:var(--muted)}
+.post-sponsored{margin-left:auto;font-size:10px;font-weight:850;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.post-caption{margin:0;padding:4px 16px 10px;color:#263b47;font-size:14px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.post-tags{padding:0 16px 11px;color:var(--swift-blue-deep);font-size:12px;font-weight:750}
+.post-media{display:grid;gap:2px;background:#eef5f8}
+.post-media img{display:block;width:100%;height:min(520px,68vw);object-fit:cover;background:#eef5f8}
+.post-media.is-carousel{grid-template-columns:repeat(2,minmax(0,1fr))}
+.post-media.is-carousel img{height:270px}
+.post-card-foot{display:flex;gap:22px;padding:11px 16px 14px;color:var(--muted);font-size:12px;font-weight:750;border-top:1px solid #edf3f6}
+@media(max-width:600px){
+  .feed-page{max-width:none}
+  .post-card{border-radius:16px}
+  .post-card-head{padding:13px 13px 8px}
+  .post-caption{padding:4px 13px 9px}
+  .post-tags{padding:0 13px 9px}
+  .post-card-foot{padding:10px 13px 12px}
+  .post-media img{height:min(440px,100vw)}
+  .post-media.is-carousel img{height:200px}
+}
 /* ── Home profile polish ───────────────────────────────────────── */
 .home-profile{max-width:920px;margin:0 auto;padding:0 0 34px;gap:14px}
 .home-profile .hp-cover{border-radius:0 0 24px 24px;box-shadow:0 14px 34px rgba(16,40,58,.10)}
@@ -355,7 +384,7 @@ main{max-width:1280px}.hero{min-height:470px;border-radius:32px;box-shadow:0 24p
 <nav class="rail" aria-label="Swift primary navigation">
   <a href="/" aria-label="Home"><span aria-hidden="true">⌂</span><span class="rail-label">Home</span></a>
   <a href="/market" aria-label="Market"><span aria-hidden="true">▦</span><span class="rail-label">Market</span></a>
-  <a href="/search" aria-label="Search"><span aria-hidden="true">⌕</span><span class="rail-label">Search</span></a>
+  <a href="/search" aria-label="Feed"><span aria-hidden="true">⌕</span><span class="rail-label">Feed</span></a>
   <a href="/orders" aria-label="Orders"><span aria-hidden="true">▤</span><span class="rail-label">Orders</span></a>
   <button class="rail-more" type="button" aria-label="More Swift utilities" aria-expanded="false" data-open-utility><span aria-hidden="true">⋯</span><span class="rail-label">More</span></button>
 </nav>

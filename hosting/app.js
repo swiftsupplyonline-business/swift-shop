@@ -521,7 +521,70 @@ async function renderCheckout(root) {
 
 // ---------- Search ----------
 
-async function renderSearch(root, initialQuery = "") {
+function formatPostTime(timestamp) {
+  if (!timestamp) return "";
+  const date = new Date(Number(timestamp));
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
+}
+
+function postCard(post) {
+  const media = Array.isArray(post.mediaUrls) ? post.mediaUrls.filter(Boolean) : [];
+  const type = String(post.type || "IMAGE").toUpperCase();
+  if (type === "REEL") return "";
+  const author = String(post.authorName || "Swift user").trim() || "Swift user";
+  const avatar = String(post.authorAvatarUrl || "").trim();
+  const avatarHtml = avatar
+    ? `<img class="post-avatar" src="${escapeHtml(avatar)}" alt="" loading="lazy">`
+    : `<div class="post-avatar post-avatar-initials" aria-hidden="true">${escapeHtml((author[0] || "S").toUpperCase())}</div>`;
+  const mediaHtml = media.length
+    ? `<div class="post-media ${type === "CAROUSEL" && media.length > 1 ? "is-carousel" : ""}">${media.slice(0, 4).map(url => `<img src="${escapeHtml(url)}" alt="" loading="lazy">`).join("")}</div>`
+    : "";
+  const caption = String(post.caption || "").trim();
+  const hashtags = Array.isArray(post.hashtags) ? post.hashtags.filter(Boolean).slice(0, 8) : [];
+  const tagHtml = hashtags.length ? `<div class="post-tags">${hashtags.map(tag => `#${escapeHtml(String(tag).replace(/^#/, ""))}`).join(" ")}</div>` : "";
+  const meta = formatPostTime(post.createdAt);
+  return `
+    <article class="post-card">
+      <header class="post-card-head">
+        ${avatarHtml}
+        <div class="post-author">
+          <strong>${escapeHtml(author)}</strong>
+          ${meta ? `<span>${escapeHtml(meta)}</span>` : ""}
+        </div>
+        ${post.isSponsored ? '<span class="post-sponsored">Sponsored</span>' : ""}
+      </header>
+      ${caption ? `<p class="post-caption">${escapeHtml(caption)}</p>` : ""}
+      ${tagHtml}
+      ${mediaHtml}
+      <footer class="post-card-foot">
+        <span>♡ ${Number(post.likeCount || 0)}</span>
+        <span>◌ ${Number(post.commentCount || 0)}</span>
+        <span>↗ ${Number(post.reshareCount || 0)}</span>
+      </footer>
+    </article>`;
+}
+
+function renderPostTimeline(root, posts = []) {
+  const timelinePosts = posts.filter(post => String(post.type || "IMAGE").toUpperCase() !== "REEL");
+  root.innerHTML = `
+    <section class="rail-page feed-page">
+      <div class="section-heading feed-heading">
+        <div>
+          <span class="eyebrow">Swift community</span>
+          <h1>Posts</h1>
+          <p class="section-subtitle">See what people and local businesses are sharing on Swift.</p>
+        </div>
+      </div>
+      <div class="post-timeline">
+        ${timelinePosts.length
+          ? timelinePosts.map(postCard).join("")
+          : "<div class='empty'>No posts yet. Check back soon.</div>"}
+      </div>
+    </section>`;
+}
+
+async function renderSearchResults(root, initialQuery = "") {
   root.innerHTML = `
     <section class="rail-page">
       <div class="section-heading"><span class="eyebrow">Swift search</span><h1>Search the Market</h1></div>
@@ -556,9 +619,21 @@ async function renderSearch(root, initialQuery = "") {
       results.innerHTML = `<div class="error">Couldn't search the market. ${escapeHtml(err.message)}</div>`;
     }
   };
-  root.querySelector("#marketSearchBtn").addEventListener("click", run);
-  input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
-  if (initialQuery) run();
+  root.querySelector("#marketSearchBtn")?.addEventListener("click", run);
+  input?.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+  run();
+}
+
+async function renderSearch(root, initialQuery = "") {
+  if (initialQuery.trim()) return renderSearchResults(root, initialQuery);
+  root.innerHTML = "<div class='loading'>Loading posts…</div>";
+  try {
+    const data = await fetchMarketplace();
+    renderPostTimeline(root, data.posts || []);
+  } catch (err) {
+    root.innerHTML = `<div class="error">Couldn't load posts. ${escapeHtml(err.message)} <button class="btn secondary" type="button" data-retry>Try again</button></div>`;
+    root.querySelector("[data-retry]")?.addEventListener("click", () => renderSearch(root, ""));
+  }
 }
 
 function formatOrderDate(value) {
@@ -768,8 +843,9 @@ async function renderHomeProfile(root, user, marketPromise) {
     getDoc(doc(db, "wallets", uid)).catch(() => null),
   ]);
   const profile = profSnap?.exists() ? profSnap.data() : {};
-  const displayName = profile.displayName || user.displayName || user.email || "Swift shopper";
-  const handle = email ? "@" + email.split("@")[0] : "";
+  const displayName = profile.displayName || user.displayName || "Swift shopper";
+  const handleSource = profile.displayName_lowercase || displayName;
+  const handle = handleSource && handleSource !== "Swift shopper" ? "@" + normalizeShareSlug(handleSource) : "";
   const initial = (displayName[0] || "S").toUpperCase();
   const avatarUrl = profile.avatarUrl || user.photoURL || null;
   const coverUrl = profile.coverUrl || null;
@@ -1368,8 +1444,20 @@ window.addEventListener("popstate", route);
 // This module uses top-level await (Firebase config fetch), so DOMContentLoaded may already have fired
 // by the time we get here; a bare DOMContentLoaded listener would then never run and the router would
 // never start. Boot immediately if the document is already parsed.
+function bindGlobalSearch() {
+  const input = document.getElementById("search");
+  if (!input || input.dataset.bound === "true") return;
+  input.dataset.bound = "true";
+  input.addEventListener("keydown", event => {
+    if (event.key !== "Enter") return;
+    const term = input.value.trim();
+    navigate(term ? "/search?q=" + encodeURIComponent(term) : "/search");
+  });
+}
+
 function boot() {
   updateCartBadge();
+  bindGlobalSearch();
   loadUtilityRail();
   bindUtilityRailControls();
   if ((location.pathname.startsWith("/s/") || location.pathname.startsWith("/d/"))
