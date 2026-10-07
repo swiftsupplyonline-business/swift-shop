@@ -206,14 +206,28 @@ function escapeHtml(s) {
 
 // ---------- Views ----------
 
-async function renderBrowse(root) {
-  if (frontDoorTimer) {
-    clearInterval(frontDoorTimer);
-    frontDoorTimer = null;
-  }
+async function renderBrowse(root, direct = false) {
+  if (frontDoorTimer) { clearInterval(frontDoorTimer); frontDoorTimer = null; }
 
   const marketPromise = Promise.all([fetchListings(), fetchShops()]);
 
+  // /market always goes straight to the feed.
+  // / (home) goes straight to the feed if the user is already signed in.
+  const user = auth.currentUser;
+  const signedIn = user && !user.isAnonymous;
+  if (direct || signedIn) {
+    root.innerHTML = `<div class="loading">Loading market…</div>`;
+    try {
+      const [listings, shops] = await marketPromise;
+      renderMarketFeed(root, listings, shops);
+    } catch (err) {
+      root.innerHTML = `<div class="error">Couldn't load the market. <button class="btn secondary" type="button" data-retry>Try again</button></div>`;
+      root.querySelector("[data-retry]")?.addEventListener("click", () => renderBrowse(root, direct));
+    }
+    return;
+  }
+
+  // Home for guests: front-door with signup form
   root.innerHTML = `
     <section class="market-front-door" aria-label="Swift marketplace welcome">
       <div class="ad-slot" data-ad-provider="google-meta" aria-label="Advertisement">
@@ -251,35 +265,49 @@ async function renderBrowse(root) {
           <h2 id="guestEntryTitle">Ready to shop?</h2>
           <p id="guestEntrySubtitle">Create your account to buy, track orders and follow shops.</p>
         </div>
-        <form class="signup-form" id="signupForm" data-mode="signup" novalidate>
-          <div class="signup-form-row">
-            <input type="text" id="signupFirstName" placeholder="First name" autocomplete="given-name">
-            <input type="text" id="signupLastName" placeholder="Last name" autocomplete="family-name">
-          </div>
-          <input type="email" id="signupEmail" placeholder="Email address" autocomplete="email" required>
-          <input type="tel" id="signupPhone" placeholder="Phone number (optional)" autocomplete="tel">
-          <input type="password" id="signupPassword" placeholder="Create a password" autocomplete="new-password" required>
-          <textarea id="signupAbout" placeholder="About me (optional)" rows="2"></textarea>
-          <p class="signup-form-error" id="signupError" style="display:none"></p>
-          <button class="btn primary guest-btn" type="submit" id="signupSubmitBtn">Create account <span aria-hidden="true">→</span></button>
-          <p class="signup-form-note">Already have Swift? <button type="button" class="text-btn" id="switchToSignin">Sign in</button></p>
-        </form>
+        <div id="formWrap">
+          <form class="signup-form" id="signupForm" data-mode="signup" novalidate>
+            <div class="signup-form-row" id="nameRow">
+              <input type="text" id="signupFirstName" placeholder="First name" autocomplete="given-name">
+              <input type="text" id="signupLastName" placeholder="Last name" autocomplete="family-name">
+            </div>
+            <input type="email" id="signupEmail" placeholder="Email address" autocomplete="email" required>
+            <input type="tel" id="signupPhone" placeholder="Phone number (optional)" autocomplete="tel" id="phoneRow">
+            <input type="password" id="signupPassword" placeholder="Create a password" autocomplete="new-password" required>
+            <textarea id="signupAbout" placeholder="About me (optional)" rows="2"></textarea>
+            <p class="signup-form-error" id="signupError" style="display:none"></p>
+            <button class="btn primary guest-btn" type="submit" id="signupSubmitBtn">Create account <span aria-hidden="true">→</span></button>
+            <p class="signup-form-note">Already have Swift? <button type="button" class="text-btn" id="switchToSignin">Sign in</button></p>
+            <p class="signup-form-note" style="margin-top:4px"><button type="button" class="text-btn" id="browseGuestBtn">Browse as guest →</button></p>
+          </form>
+        </div>
         <div id="marketReady" role="status" aria-live="polite" style="font-size:13px;color:var(--muted);margin-top:6px;min-height:18px"></div>
       </div>
     </section>`;
 
   const slides = [...root.querySelectorAll("[data-house-slide]")];
-  const dots = [...root.querySelectorAll("[data-house-dot]")];
-  let active = 0;
+  const dots   = [...root.querySelectorAll("[data-house-dot]")];
+  let active   = 0;
   const showSlide = (index) => {
     active = index % slides.length;
-    slides.forEach((slide, i) => slide.classList.toggle("is-active", i === active));
-    dots.forEach((dot, i) => dot.classList.toggle("is-active", i === active));
+    slides.forEach((s, i) => s.classList.toggle("is-active", i === active));
+    dots.forEach((d, i) => d.classList.toggle("is-active", i === active));
   };
   frontDoorTimer = setInterval(() => showSlide(active + 1), 4200);
 
+  // Browse as guest — load feed without auth
+  root.querySelector("#browseGuestBtn")?.addEventListener("click", async () => {
+    const btn = root.querySelector("#browseGuestBtn");
+    if (btn) { btn.disabled = true; btn.textContent = "Loading market…"; }
+    try {
+      const [listings, shops] = await marketPromise;
+      if (frontDoorTimer) { clearInterval(frontDoorTimer); frontDoorTimer = null; }
+      renderMarketFeed(root, listings, shops);
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = "Browse as guest →"; }
+    }
+  });
 
-  // Bind the signup/sign-in form
   bindSignupForm(root, marketPromise);
 }
 
@@ -771,30 +799,68 @@ function updateAccountCards(user) {
 }
 
 // ─── bindSignupForm ───────────────────────────────────────────────────────────
+function bindGuestBtn(btn, marketPromise, root) {
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.textContent = "Loading market…";
+    try {
+      const [listings, shops] = await marketPromise;
+      if (typeof frontDoorTimer !== "undefined" && frontDoorTimer) {
+        clearInterval(frontDoorTimer); frontDoorTimer = null;
+      }
+      renderMarketFeed(root, listings, shops);
+    } catch (_) {
+      btn.disabled = false;
+      btn.textContent = "Browse as guest →";
+    }
+  });
+}
+
 function bindSignupForm(root, marketPromise) {
   const form     = root.querySelector("#signupForm");
   const statusEl = root.querySelector("#marketReady");
   if (!form) return;
 
-  // Switch to sign-in mode
-  root.querySelector("#switchToSignin")?.addEventListener("click", () => {
+  // Switch to sign-in mode — swap form contents cleanly
+  const switchToSigninMode = () => {
     form.dataset.mode = "signin";
-    root.querySelector("#guestEntryTitle")  && (root.querySelector("#guestEntryTitle").textContent  = "Welcome back");
-    root.querySelector("#guestEntrySubtitle") && (root.querySelector("#guestEntrySubtitle").textContent = "Sign in to your Swift account.");
-    // Hide signup-only fields
-    ["signupFirstName","signupLastName","signupPhone","signupAbout"].forEach(id => {
-      const el = root.querySelector("#" + id);
-      if (el) el.closest(".signup-form-row,div") && (el.parentElement.style.display = "none");
-      if (el) el.style.display = "none";
+    const titleEl    = root.querySelector("#guestEntryTitle");
+    const subtitleEl = root.querySelector("#guestEntrySubtitle");
+    if (titleEl)    titleEl.textContent    = "Welcome back";
+    if (subtitleEl) subtitleEl.textContent = "Sign in to your Swift account.";
+    form.innerHTML = `
+      <input type="email" id="signupEmail" placeholder="Email address" autocomplete="email" required>
+      <input type="password" id="signupPassword" placeholder="Password" autocomplete="current-password" required>
+      <p class="signup-form-error" id="signupError" style="display:none"></p>
+      <button class="btn primary guest-btn" type="submit" id="signupSubmitBtn">Sign in <span aria-hidden="true">→</span></button>
+      <p class="signup-form-note">New to Swift? <button type="button" class="text-btn" id="switchToSignup">Create an account</button></p>
+      <p class="signup-form-note" style="margin-top:4px"><button type="button" class="text-btn" id="browseGuestBtn2">Browse as guest →</button></p>`;
+    form.querySelector("#switchToSignup")?.addEventListener("click", () => {
+      form.dataset.mode = "signup";
+      if (titleEl)    titleEl.textContent    = "Ready to shop?";
+      if (subtitleEl) subtitleEl.textContent = "Create your account to buy, track orders and follow shops.";
+      // Re-render signup fields without a full page reload
+      form.innerHTML = `
+        <div class="signup-form-row" id="nameRow">
+          <input type="text" id="signupFirstName" placeholder="First name" autocomplete="given-name">
+          <input type="text" id="signupLastName" placeholder="Last name" autocomplete="family-name">
+        </div>
+        <input type="email" id="signupEmail" placeholder="Email address" autocomplete="email" required>
+        <input type="tel" id="signupPhone" placeholder="Phone number (optional)" autocomplete="tel">
+        <input type="password" id="signupPassword" placeholder="Create a password" autocomplete="new-password" required>
+        <textarea id="signupAbout" placeholder="About me (optional)" rows="2"></textarea>
+        <p class="signup-form-error" id="signupError" style="display:none"></p>
+        <button class="btn primary guest-btn" type="submit" id="signupSubmitBtn">Create account <span aria-hidden="true">→</span></button>
+        <p class="signup-form-note">Already have Swift? <button type="button" class="text-btn" id="switchToSignin2">Sign in</button></p>
+        <p class="signup-form-note" style="margin-top:4px"><button type="button" class="text-btn" id="browseGuestBtn3">Browse as guest →</button></p>`;
+      form.querySelector("#switchToSignin2")?.addEventListener("click", switchToSigninMode);
+      bindGuestBtn(form.querySelector("#browseGuestBtn3"), marketPromise, root);
     });
-    const nameRow = form.querySelector(".signup-form-row");
-    if (nameRow) nameRow.style.display = "none";
-    const submitEl = form.querySelector("#signupSubmitBtn");
-    if (submitEl) submitEl.textContent = "Sign in →";
-    const note = form.querySelector(".signup-form-note");
-    if (note) note.innerHTML = 'New to Swift? <button type="button" class="text-btn" id="switchToSignup">Create an account</button>';
-    note?.querySelector("#switchToSignup")?.addEventListener("click", () => location.reload());
-  });
+    bindGuestBtn(form.querySelector("#browseGuestBtn2"), marketPromise, root);
+  };
+  root.querySelector("#switchToSignin")?.addEventListener("click", switchToSigninMode);
+  bindGuestBtn(root.querySelector("#browseGuestBtn"), marketPromise, root);
 
   form.addEventListener("submit", async e => {
     e.preventDefault();
@@ -981,7 +1047,7 @@ function route() {
   // The marketing hero is static markup above #app: show it on Home/Market only.
   document.documentElement.classList.toggle("no-hero", !(path === "/" || path === "" || path === "/market" || path === "/market/"));
   if (path === "/" || path === "") return renderBrowse(root);
-  if (path === "/market") return renderBrowse(root);
+  if (path === "/market") return renderBrowse(root, true);
   if (path === "/search") return renderSearch(root, new URLSearchParams(location.search).get("q") || "");
   if (path === "/orders") return renderOrders(root);
   if (path === "/shops") return renderShops(root);
