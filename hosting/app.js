@@ -245,15 +245,26 @@ async function renderBrowse(root) {
         </div>
       </div>
 
-      <div class="guest-entry">
-        <div>
+      <div class="guest-entry guest-entry-form">
+        <div class="guest-entry-header">
           <span class="eyebrow">Swift marketplace</span>
-          <h2>Ready to shop?</h2>
-          <p>Browse the market as a guest. No account needed.</p>
+          <h2 id="guestEntryTitle">Ready to shop?</h2>
+          <p id="guestEntrySubtitle">Create your account to buy, track orders and follow shops.</p>
         </div>
-        <button class="btn primary guest-btn" id="continueGuestBtn" type="button">Continue as Guest <span aria-hidden="true">→</span></button>
-        <div class="signin-note">Already have Swift? <button type="button" class="text-btn" id="signInBtn">Sign in</button></div>
-        <div class="market-ready" id="marketReady" role="status" aria-live="polite">Preparing the market…</div>
+        <form class="signup-form" id="signupForm" data-mode="signup" novalidate>
+          <div class="signup-form-row">
+            <input type="text" id="signupFirstName" placeholder="First name" autocomplete="given-name">
+            <input type="text" id="signupLastName" placeholder="Last name" autocomplete="family-name">
+          </div>
+          <input type="email" id="signupEmail" placeholder="Email address" autocomplete="email" required>
+          <input type="tel" id="signupPhone" placeholder="Phone number (optional)" autocomplete="tel">
+          <input type="password" id="signupPassword" placeholder="Create a password" autocomplete="new-password" required>
+          <textarea id="signupAbout" placeholder="About me (optional)" rows="2"></textarea>
+          <p class="signup-form-error" id="signupError" style="display:none"></p>
+          <button class="btn primary guest-btn" type="submit" id="signupSubmitBtn">Create account <span aria-hidden="true">→</span></button>
+          <p class="signup-form-note">Already have Swift? <button type="button" class="text-btn" id="switchToSignin">Sign in</button></p>
+        </form>
+        <div id="marketReady" role="status" aria-live="polite" style="font-size:13px;color:var(--muted);margin-top:6px;min-height:18px"></div>
       </div>
     </section>`;
 
@@ -267,50 +278,9 @@ async function renderBrowse(root) {
   };
   frontDoorTimer = setInterval(() => showSlide(active + 1), 4200);
 
-  const guestBtn = root.querySelector("#continueGuestBtn");
-  const ready = root.querySelector("#marketReady");
-  const signInBtn = root.querySelector("#signInBtn");
 
-  signInBtn?.addEventListener("click", () => {
-    ready.textContent = "Sign-in is coming soon. You can keep browsing as a guest.";
-  });
-
-  guestBtn?.addEventListener("click", async () => {
-    guestBtn.disabled = true;
-    guestBtn.textContent = "Opening market…";
-    try {
-      const [listings, shops] = await marketPromise;
-      const shopById = new Map(shops.map(shop => [shop.id, shop]));
-      if (frontDoorTimer) {
-        clearInterval(frontDoorTimer);
-        frontDoorTimer = null;
-      }
-      const featuredShops = shops.slice(0, 6);
-      root.innerHTML = `
-        <section class="market-feed shops-preview">
-          <div class="section-heading section-heading-row">
-            <div><span class="eyebrow">Discover local businesses</span><h2>Shops</h2><p class="section-subtitle">A few places to start. Explore all shops when you're ready.</p></div>
-            <a class="section-link" href="/shops">More shops <span aria-hidden="true">→</span></a>
-          </div>
-          <div class="shop-row">${featuredShops.length ? featuredShops.map(shopCard).join("") : "<p class='empty'>No shops yet.</p>"}</div>
-        </section>
-        <section class="market-feed">
-          <div class="section-heading"><span class="eyebrow">Fresh on Swift</span><h2>Latest listings</h2></div>
-          <div class="grid">${listings.length ? listings.map(l => listingCard(l, shopById)).join("") : "<p class='empty'>No listings yet.</p>"}</div>
-        </section>`;
-    } catch (err) {
-      guestBtn.disabled = false;
-      guestBtn.textContent = "Continue as Guest →";
-      ready.textContent = `Couldn't open the market: ${err.message}`;
-      ready.classList.add("error-text");
-    }
-  });
-
-  marketPromise.then(() => {
-    if (ready) ready.textContent = "Market ready — jump in whenever you're ready.";
-  }).catch(() => {
-    if (ready) ready.textContent = "The market is taking a moment. Try Continue as Guest again.";
-  });
+  // Bind the signup/sign-in form
+  bindSignupForm(root, marketPromise);
 }
 
 async function renderShops(root) {
@@ -732,21 +702,183 @@ function bindUtilityRailControls() {
   });
 }
 
+
+// ─── renderMarketFeed ─────────────────────────────────────────────────────────
+function renderMarketFeed(root, listings, shops) {
+  if (typeof frontDoorTimer !== "undefined" && frontDoorTimer) {
+    clearInterval(frontDoorTimer); frontDoorTimer = null;
+  }
+  const shopById      = new Map(shops.map(s => [s.id, s]));
+  const featuredShops = shops.slice(0, 6);
+  root.innerHTML = `
+    <section class="market-feed shops-preview">
+      <div class="section-heading section-heading-row">
+        <div><span class="eyebrow">Discover local businesses</span><h2>Shops</h2>
+          <p class="section-subtitle">A few places to start. Explore all shops when you're ready.</p></div>
+        <a class="section-link" href="/shops">More shops <span aria-hidden="true">→</span></a>
+      </div>
+      <div class="shop-row">${featuredShops.length ? featuredShops.map(shopCard).join("") : "<p class='empty'>No shops yet.</p>"}</div>
+    </section>
+    <section class="market-feed">
+      <div class="section-heading"><span class="eyebrow">Fresh on Swift</span><h2>Latest listings</h2></div>
+      <div class="grid">${listings.length ? listings.map(l => listingCard(l, shopById)).join("") : "<p class='empty'>No listings yet.</p>"}</div>
+    </section>`;
+}
+
+// ─── updateAccountCards ───────────────────────────────────────────────────────
+function updateAccountCards(user) {
+  const guest       = !user || user.isAnonymous;
+  const displayName = guest ? "Guest shopper" : (user.displayName || user.email || "Swift shopper");
+  const handle      = (!guest && user.email) ? "@" + user.email.split("@")[0] : "";
+  const initial     = (displayName[0] || "G").toUpperCase();
+  const avatarUrl   = (!guest && user.photoURL) ? user.photoURL : null;
+
+  const avatarHTML = avatarUrl
+    ? `<img class="profile-avatar" src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(displayName)}" width="48" height="48">`
+    : `<div class="profile-avatar-initials">${escapeHtml(initial)}</div>`;
+
+  const guestActions = `
+    <button class="profile-action-btn primary" type="button" data-profile-action="signup">Create account</button>
+    <button class="profile-action-btn" type="button" data-profile-action="signin">Sign in</button>`;
+  const userActions = `
+    <button class="profile-action-btn" type="button" data-profile-action="signout">Sign out</button>`;
+
+  [
+    ["railProfileAvatar", "profileSummary", "profileHandle", "railProfileActions"],
+    ["sheetProfileAvatar", "profileSummaryMobile", "profileHandleMobile", "sheetProfileActions"],
+  ].forEach(([avId, nameId, handleId, actionsId]) => {
+    const avEl      = document.getElementById(avId);
+    const nameEl    = document.getElementById(nameId);
+    const handleEl  = document.getElementById(handleId);
+    const actionsEl = document.getElementById(actionsId);
+    if (avEl)      avEl.outerHTML     = avatarHTML;
+    if (nameEl)    nameEl.textContent  = displayName;
+    if (handleEl)  handleEl.textContent = handle;
+    if (actionsEl) {
+      actionsEl.innerHTML = guest ? guestActions : userActions;
+      actionsEl.querySelectorAll("[data-profile-action]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const a = btn.dataset.profileAction;
+          if (a === "signup" || a === "signin") navigate("/");
+          if (a === "signout") {
+            import("https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js")
+              .then(({ signOut }) => signOut(auth)).catch(() => {});
+          }
+        });
+      });
+    }
+  });
+}
+
+// ─── bindSignupForm ───────────────────────────────────────────────────────────
+function bindSignupForm(root, marketPromise) {
+  const form     = root.querySelector("#signupForm");
+  const statusEl = root.querySelector("#marketReady");
+  if (!form) return;
+
+  // Switch to sign-in mode
+  root.querySelector("#switchToSignin")?.addEventListener("click", () => {
+    form.dataset.mode = "signin";
+    root.querySelector("#guestEntryTitle")  && (root.querySelector("#guestEntryTitle").textContent  = "Welcome back");
+    root.querySelector("#guestEntrySubtitle") && (root.querySelector("#guestEntrySubtitle").textContent = "Sign in to your Swift account.");
+    // Hide signup-only fields
+    ["signupFirstName","signupLastName","signupPhone","signupAbout"].forEach(id => {
+      const el = root.querySelector("#" + id);
+      if (el) el.closest(".signup-form-row,div") && (el.parentElement.style.display = "none");
+      if (el) el.style.display = "none";
+    });
+    const nameRow = form.querySelector(".signup-form-row");
+    if (nameRow) nameRow.style.display = "none";
+    const submitEl = form.querySelector("#signupSubmitBtn");
+    if (submitEl) submitEl.textContent = "Sign in →";
+    const note = form.querySelector(".signup-form-note");
+    if (note) note.innerHTML = 'New to Swift? <button type="button" class="text-btn" id="switchToSignup">Create an account</button>';
+    note?.querySelector("#switchToSignup")?.addEventListener("click", () => location.reload());
+  });
+
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    const mode     = form.dataset.mode || "signup";
+    const emailEl  = form.querySelector("#signupEmail");
+    const passEl   = form.querySelector("#signupPassword");
+    const errorEl  = form.querySelector("#signupError");
+    const submitEl = form.querySelector("#signupSubmitBtn");
+    if (!emailEl || !passEl) return;
+
+    const email    = emailEl.value.trim();
+    const password = passEl.value;
+
+    if (!email) { showFormError(errorEl, "Please enter your email address."); return; }
+    if (!password) { showFormError(errorEl, "Please enter a password."); return; }
+    if (mode === "signup" && password.length < 6) { showFormError(errorEl, "Password must be at least 6 characters."); return; }
+
+    submitEl.disabled = true;
+    submitEl.textContent = mode === "signin" ? "Signing in…" : "Creating account…";
+    if (errorEl) errorEl.style.display = "none";
+
+    try {
+      const { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile }
+        = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js");
+
+      let user;
+      if (mode === "signin") {
+        ({ user } = await signInWithEmailAndPassword(auth, email, password));
+      } else {
+        const firstName = (form.querySelector("#signupFirstName")?.value || "").trim();
+        const lastName  = (form.querySelector("#signupLastName")?.value  || "").trim();
+        const phone     = (form.querySelector("#signupPhone")?.value     || "").trim();
+        const about     = (form.querySelector("#signupAbout")?.value     || "").trim();
+        const fullName  = [firstName, lastName].filter(Boolean).join(" ") || email.split("@")[0];
+        ({ user } = await createUserWithEmailAndPassword(auth, email, password));
+        await updateProfile(user, { displayName: fullName });
+        // Write extended profile (best-effort)
+        try {
+          const { doc: fsDoc, setDoc, serverTimestamp }
+            = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js");
+          await setDoc(fsDoc(db, "profiles", user.uid), {
+            id: user.uid, displayName: fullName, email,
+            phone: phone || null, about: about || null, avatarUrl: null,
+            followerCount: 0, followingCount: 0, shopCount: 0, activeListingCount: 0,
+            createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+          }, { merge: true });
+        } catch (_) {}
+      }
+
+      updateAccountCards(user);
+      if (statusEl) { statusEl.textContent = mode === "signin" ? "Welcome back!" : "Account created! Welcome to Swift."; }
+      const [listings, shops] = await marketPromise;
+      renderMarketFeed(root, listings, shops);
+
+    } catch (err) {
+      submitEl.disabled = false;
+      submitEl.textContent = mode === "signin" ? "Sign in →" : "Create account →";
+      showFormError(errorEl, friendlyAuthError(err.code));
+    }
+  });
+}
+
+function showFormError(el, msg) {
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = "block";
+}
+
+function friendlyAuthError(code) {
+  return ({
+    "auth/email-already-in-use":   "An account with this email already exists. Try signing in.",
+    "auth/invalid-email":          "That doesn't look like a valid email.",
+    "auth/weak-password":          "Password must be at least 6 characters.",
+    "auth/user-not-found":         "No account found with this email.",
+    "auth/wrong-password":         "Incorrect password.",
+    "auth/invalid-credential":     "Incorrect email or password.",
+    "auth/too-many-requests":      "Too many attempts — please wait a moment.",
+    "auth/network-request-failed": "Connection error. Check your network.",
+  })[code] || "Something went wrong. Please try again.";
+}
+
 async function loadUtilityRail() {
   renderRailCart();
-  const accountTargets = [
-    [document.getElementById("profileSummary"), document.getElementById("profileStatus")],
-    [document.getElementById("profileSummaryMobile"), document.getElementById("profileStatusMobile")]
-  ];
-  onAuthStateChanged(auth, user => {
-    const guest = !user || user.isAnonymous;
-    const name = guest ? "Guest shopper" : (user.displayName || user.email || "Swift shopper");
-    const copy = guest ? "Browsing Swift as a guest." : "Signed in to your Swift account.";
-    accountTargets.forEach(([summary, status]) => {
-      if (summary) summary.textContent = name;
-      if (status) status.textContent = copy;
-    });
-  });
+  onAuthStateChanged(auth, user => updateAccountCards(user));
 
   const providerTargets = [
     [document.getElementById("providerCount"), document.getElementById("providerList")],
