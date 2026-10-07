@@ -636,6 +636,202 @@ async function renderSearch(root, initialQuery = "") {
   }
 }
 
+function formatOrderDate(value) {
+  if (!value) return "Date unavailable";
+  const date = value?.toDate ? value.toDate() : new Date(value);
+  return Number.isNaN(date.getTime()) ? "Date unavailable" : date.toLocaleString();
+}
+
+function orderStatusLabel(value) {
+  return String(value || "PENDING").replaceAll("_", " ").toLowerCase().replace(/(^|\\s)\\S/g, c => c.toUpperCase());
+}
+
+function orderCard(order) {
+  const items = Array.isArray(order.items) ? order.items : [];
+  const itemSummary = items.slice(0, 2).map(i => `${escapeHtml(i.title || "Item")} × ${Number(i.quantity || 1)}`).join(", ");
+  const more = items.length > 2 ? ` + ${items.length - 2} more` : "";
+  return `
+    <a class="order-card" href="/orders/${encodeURIComponent(order.id)}">
+      <div class="order-card-top"><strong>Order ${escapeHtml(order.id.slice(0, 8))}</strong><span>${escapeHtml(formatOrderDate(order.createdAt))}</span></div>
+      <div class="order-items">${itemSummary || "Order items"}${more}</div>
+      <div class="order-card-bottom"><span class="status-pill">${escapeHtml(orderStatusLabel(order.status))}</span><strong>${LSL(Number(order.totalMinorUnits || 0))}</strong></div>
+    </a>`;
+}
+
+function subscribeBuyerOrders(userId, onData, onError) {
+  const q = query(collection(db, "orders"), where("buyerId", "==", userId));
+  return onSnapshot(q, snapshot => {
+    const orders = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, z) => {
+        const at = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
+        const zt = z.createdAt?.toMillis ? z.createdAt.toMillis() : new Date(z.createdAt || 0).getTime();
+        return zt - at;
+      });
+    onData(orders);
+  }, onError);
+}
+
+async function renderOrders(root) {
+  root.innerHTML = `
+    <section class="rail-page">
+      <div class="section-heading"><span class="eyebrow">Swift account</span><h1>My Orders</h1></div>
+      <div id="ordersState" class="loading">Checking your Swift account…</div>
+    </section>`;
+  const state = root.querySelector("#ordersState");
+  const user = auth.currentUser;
+  if (!user) {
+    state.innerHTML = `<div class="empty"><h2>Sign in to see your orders</h2><p>Your orders are private to your Swift account.</p></div>`;
+    return;
+  }
+  state.innerHTML = "<div class='loading'>Loading your orders…</div>";
+  let unsubscribe;
+  try {
+    unsubscribe = subscribeBuyerOrders(user.uid, orders => {
+      state.innerHTML = orders.length
+        ? `<div class="orders-list">${orders.map(orderCard).join("")}</div>`
+        : `<div class="empty"><h2>No orders yet</h2><p>When you buy something on Swift, it will appear here.</p><a class="btn primary" href="/market">Shop the Market</a></div>`;
+    }, err => {
+      state.innerHTML = `<div class="error">Couldn't load your orders. ${escapeHtml(err.message)}</div>`;
+    });
+  } catch (err) {
+    state.innerHTML = `<div class="error">Couldn't load your orders. ${escapeHtml(err.message)}</div>`;
+  }
+  root._ordersUnsubscribe = unsubscribe;
+}
+
+async function renderOrderDetail(root, orderId) {
+  root.innerHTML = "<div class='loading'>Loading order…</div>";
+  const user = auth.currentUser;
+  if (!user) {
+    root.innerHTML = `<div class="empty"><h2>Sign in to view this order</h2><a class="btn primary" href="/orders">Back to Orders</a></div>`;
+    return;
+  }
+  try {
+    const snap = await getDoc(doc(db, "orders", orderId));
+    if (!snap.exists()) {
+      root.innerHTML = "<div class='error'>Order not found.</div>";
+      return;
+    }
+    const order = { id: snap.id, ...snap.data() };
+    if (order.buyerId !== user.uid && order.sellerId !== user.uid) {
+      root.innerHTML = "<div class='error'>You do not have access to this order.</div>";
+      return;
+    }
+    const items = Array.isArray(order.items) ? order.items : [];
+    root.innerHTML = `
+      <section class="rail-page order-detail">
+        <a class="back-link" href="/orders">← Orders</a>
+        <div class="section-heading"><span class="eyebrow">Order ${escapeHtml(order.id.slice(0, 8))}</span><h1>${escapeHtml(orderStatusLabel(order.status))}</h1></div>
+        <div class="order-detail-grid">
+          <div class="order-panel"><h2>Items</h2>${items.map(i => `<div class="order-line"><span>${escapeHtml(i.title || "Item")} × ${Number(i.quantity || 1)}</span><strong>${LSL(Number(i.unitPriceMinorUnits || 0) * Number(i.quantity || 1))}</strong></div>`).join("") || "<p>No items recorded.</p>"}</div>
+          <div class="order-panel"><h2>Summary</h2>
+            <div class="order-line"><span>Subtotal</span><span>${LSL(Number(order.subtotalMinorUnits || 0))}</span></div>
+            <div class="order-line"><span>Platform fee</span><span>${LSL(Number(order.platformFeeMinorUnits || 0))}</span></div>
+            <div class="order-line"><span>Delivery fee</span><span>${LSL(Number(order.deliveryFeeMinorUnits || 0))}</span></div>
+            <div class="order-line total-line"><strong>Total</strong><strong>${LSL(Number(order.totalMinorUnits || 0))}</strong></div>
+          </div>
+          <div class="order-panel"><h2>Progress</h2>
+            <p><strong>Payment:</strong> ${escapeHtml(order.paymentId ? "Recorded" : "Pending")}</p>
+            <p><strong>Order:</strong> ${escapeHtml(orderStatusLabel(order.status))}</p>
+            <p><strong>Inventory:</strong> ${escapeHtml(orderStatusLabel(order.inventoryStatus))}</p>
+            <p><strong>Fulfillment:</strong> ${escapeHtml(orderStatusLabel(order.fulfillmentStatus))}</p>
+            ${order.requiresDelivery ? "<p><strong>Delivery:</strong> Delivery requested/required for this order.</p>" : "<p><strong>Delivery:</strong> Pickup / no delivery requested.</p>"}
+          </div>
+        </div>
+      </section>`;
+  } catch (err) {
+    root.innerHTML = `<div class="error">Couldn't load this order. ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+
+// ---------- Utility rail ----------
+
+function renderRailCart() {
+  const items = getCart();
+  const count = cartCount();
+  const badges = [document.getElementById("railCartBadge"), document.getElementById("railCartBadgeMobile")].filter(Boolean);
+  const summaries = [document.getElementById("railCartSummary"), document.getElementById("railCartSummaryMobile")].filter(Boolean);
+  const list = document.getElementById("railCartItems");
+  const summaryText = count ? count + " item" + (count === 1 ? "" : "s") + " in your bag" : "Your bag is empty.";
+  badges.forEach(el => { el.textContent = count ? String(count) : ""; });
+  summaries.forEach(el => { el.textContent = summaryText; });
+  if (list) {
+    list.innerHTML = items.slice(0, 3).map(item =>
+      '<div class="rail-cart-item">' + escapeHtml(item.title || item.listingId) + " × " + Number(item.quantity || 1) + "</div>"
+    ).join("");
+    if (items.length > 3) list.insertAdjacentHTML("beforeend", '<div class="rail-muted">+ ' + (items.length - 3) + ' more</div>');
+  }
+}
+
+function renderCartDrawer() {
+  const root = document.getElementById("cartDrawerContent");
+  if (!root) return;
+  const items = getCart();
+  if (!items.length) {
+    root.innerHTML = `<p class="rail-muted">Your bag is empty.</p><a class="rail-action" href="/market">Browse Market</a>`;
+    return;
+  }
+  root.innerHTML = `
+    <div class="cart-list">
+      ${items.map(item => `
+        <div class="cart-row">
+          <span class="cart-title">${escapeHtml(item.title || item.listingId)}</span>
+          <strong>× ${Number(item.quantity || 1)}</strong>
+        </div>`).join("")}
+    </div>
+    <div class="actions"><a class="btn primary" href="/cart">View full bag</a><a class="btn secondary" href="/checkout">Checkout</a></div>`;
+}
+
+function openUtilitySheet() {
+  const sheet = document.getElementById("utilitySheet");
+  const trigger = document.querySelector("[data-open-utility]");
+  if (!sheet) return;
+  sheet.classList.add("is-open");
+  sheet.setAttribute("aria-hidden", "false");
+  if (trigger) trigger.setAttribute("aria-expanded", "true");
+}
+
+function closeUtilitySheet() {
+  const sheet = document.getElementById("utilitySheet");
+  const trigger = document.querySelector("[data-open-utility]");
+  if (!sheet) return;
+  sheet.classList.remove("is-open");
+  sheet.setAttribute("aria-hidden", "true");
+  if (trigger) trigger.setAttribute("aria-expanded", "false");
+}
+
+function openCartDrawer() {
+  const drawer = document.getElementById("cartDrawer");
+  if (!drawer) return;
+  closeUtilitySheet();
+  renderCartDrawer();
+  drawer.classList.add("is-open");
+  drawer.setAttribute("aria-hidden", "false");
+}
+
+function closeCartDrawer() {
+  const drawer = document.getElementById("cartDrawer");
+  if (!drawer) return;
+  drawer.classList.remove("is-open");
+  drawer.setAttribute("aria-hidden", "true");
+}
+
+// Bind the mobile More control directly as well as through the delegated handler below.
+// This keeps the primary rail interaction reliable on mobile browsers after route/render changes.
+function bindUtilityRailControls() {
+  const moreButton = document.querySelector("[data-open-utility]");
+  if (!moreButton || moreButton.dataset.utilityBound === "true") return;
+  moreButton.dataset.utilityBound = "true";
+  moreButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    openUtilitySheet();
+  });
+}
+
+
+
 // ── renderHomeProfile ─────────────────────────────────────────────────────────
 // Home screen for signed-in users: profile card with avatar upload, wallet,
 // stats (followers, following, shops, listings), about, and market entry.
