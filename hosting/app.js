@@ -521,7 +521,70 @@ async function renderCheckout(root) {
 
 // ---------- Search ----------
 
-async function renderSearch(root, initialQuery = "") {
+function formatPostTime(timestamp) {
+  if (!timestamp) return "";
+  const date = new Date(Number(timestamp));
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
+}
+
+function postCard(post) {
+  const media = Array.isArray(post.mediaUrls) ? post.mediaUrls.filter(Boolean) : [];
+  const type = String(post.type || "IMAGE").toUpperCase();
+  if (type === "REEL") return "";
+  const author = String(post.authorName || "Swift user").trim() || "Swift user";
+  const avatar = String(post.authorAvatarUrl || "").trim();
+  const avatarHtml = avatar
+    ? `<img class="post-avatar" src="${escapeHtml(avatar)}" alt="" loading="lazy">`
+    : `<div class="post-avatar post-avatar-initials" aria-hidden="true">${escapeHtml((author[0] || "S").toUpperCase())}</div>`;
+  const mediaHtml = media.length
+    ? `<div class="post-media ${type === "CAROUSEL" && media.length > 1 ? "is-carousel" : ""}">${media.slice(0, 4).map(url => `<img src="${escapeHtml(url)}" alt="" loading="lazy">`).join("")}</div>`
+    : "";
+  const caption = String(post.caption || "").trim();
+  const hashtags = Array.isArray(post.hashtags) ? post.hashtags.filter(Boolean).slice(0, 8) : [];
+  const tagHtml = hashtags.length ? `<div class="post-tags">${hashtags.map(tag => `#${escapeHtml(String(tag).replace(/^#/, ""))}`).join(" ")}</div>` : "";
+  const meta = formatPostTime(post.createdAt);
+  return `
+    <article class="post-card">
+      <header class="post-card-head">
+        ${avatarHtml}
+        <div class="post-author">
+          <strong>${escapeHtml(author)}</strong>
+          ${meta ? `<span>${escapeHtml(meta)}</span>` : ""}
+        </div>
+        ${post.isSponsored ? '<span class="post-sponsored">Sponsored</span>' : ""}
+      </header>
+      ${caption ? `<p class="post-caption">${escapeHtml(caption)}</p>` : ""}
+      ${tagHtml}
+      ${mediaHtml}
+      <footer class="post-card-foot">
+        <span>♡ ${Number(post.likeCount || 0)}</span>
+        <span>◌ ${Number(post.commentCount || 0)}</span>
+        <span>↗ ${Number(post.reshareCount || 0)}</span>
+      </footer>
+    </article>`;
+}
+
+function renderPostTimeline(root, posts = []) {
+  const timelinePosts = posts.filter(post => String(post.type || "IMAGE").toUpperCase() !== "REEL");
+  root.innerHTML = `
+    <section class="rail-page feed-page">
+      <div class="section-heading feed-heading">
+        <div>
+          <span class="eyebrow">Swift community</span>
+          <h1>Posts</h1>
+          <p class="section-subtitle">See what people and local businesses are sharing on Swift.</p>
+        </div>
+      </div>
+      <div class="post-timeline">
+        ${timelinePosts.length
+          ? timelinePosts.map(postCard).join("")
+          : "<div class='empty'>No posts yet. Check back soon.</div>"}
+      </div>
+    </section>`;
+}
+
+async function renderSearchResults(root, initialQuery = "") {
   root.innerHTML = `
     <section class="rail-page">
       <div class="section-heading"><span class="eyebrow">Swift search</span><h1>Search the Market</h1></div>
@@ -556,450 +619,21 @@ async function renderSearch(root, initialQuery = "") {
       results.innerHTML = `<div class="error">Couldn't search the market. ${escapeHtml(err.message)}</div>`;
     }
   };
-  root.querySelector("#marketSearchBtn").addEventListener("click", run);
-  input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
-  if (initialQuery) run();
+  root.querySelector("#marketSearchBtn")?.addEventListener("click", run);
+  input?.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+  run();
 }
 
-function formatOrderDate(value) {
-  if (!value) return "Date unavailable";
-  const date = value?.toDate ? value.toDate() : new Date(value);
-  return Number.isNaN(date.getTime()) ? "Date unavailable" : date.toLocaleString();
-}
-
-function orderStatusLabel(value) {
-  return String(value || "PENDING").replaceAll("_", " ").toLowerCase().replace(/(^|\\s)\\S/g, c => c.toUpperCase());
-}
-
-function orderCard(order) {
-  const items = Array.isArray(order.items) ? order.items : [];
-  const itemSummary = items.slice(0, 2).map(i => `${escapeHtml(i.title || "Item")} × ${Number(i.quantity || 1)}`).join(", ");
-  const more = items.length > 2 ? ` + ${items.length - 2} more` : "";
-  return `
-    <a class="order-card" href="/orders/${encodeURIComponent(order.id)}">
-      <div class="order-card-top"><strong>Order ${escapeHtml(order.id.slice(0, 8))}</strong><span>${escapeHtml(formatOrderDate(order.createdAt))}</span></div>
-      <div class="order-items">${itemSummary || "Order items"}${more}</div>
-      <div class="order-card-bottom"><span class="status-pill">${escapeHtml(orderStatusLabel(order.status))}</span><strong>${LSL(Number(order.totalMinorUnits || 0))}</strong></div>
-    </a>`;
-}
-
-function subscribeBuyerOrders(userId, onData, onError) {
-  const q = query(collection(db, "orders"), where("buyerId", "==", userId));
-  return onSnapshot(q, snapshot => {
-    const orders = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
-      .sort((a, z) => {
-        const at = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
-        const zt = z.createdAt?.toMillis ? z.createdAt.toMillis() : new Date(z.createdAt || 0).getTime();
-        return zt - at;
-      });
-    onData(orders);
-  }, onError);
-}
-
-async function renderOrders(root) {
-  root.innerHTML = `
-    <section class="rail-page">
-      <div class="section-heading"><span class="eyebrow">Swift account</span><h1>My Orders</h1></div>
-      <div id="ordersState" class="loading">Checking your Swift account…</div>
-    </section>`;
-  const state = root.querySelector("#ordersState");
-  const user = auth.currentUser;
-  if (!user) {
-    state.innerHTML = `<div class="empty"><h2>Sign in to see your orders</h2><p>Your orders are private to your Swift account.</p></div>`;
-    return;
-  }
-  state.innerHTML = "<div class='loading'>Loading your orders…</div>";
-  let unsubscribe;
+async function renderSearch(root, initialQuery = "") {
+  if (initialQuery.trim()) return renderSearchResults(root, initialQuery);
+  root.innerHTML = "<div class='loading'>Loading posts…</div>";
   try {
-    unsubscribe = subscribeBuyerOrders(user.uid, orders => {
-      state.innerHTML = orders.length
-        ? `<div class="orders-list">${orders.map(orderCard).join("")}</div>`
-        : `<div class="empty"><h2>No orders yet</h2><p>When you buy something on Swift, it will appear here.</p><a class="btn primary" href="/market">Shop the Market</a></div>`;
-    }, err => {
-      state.innerHTML = `<div class="error">Couldn't load your orders. ${escapeHtml(err.message)}</div>`;
-    });
+    const data = await fetchMarketplace();
+    renderPostTimeline(root, data.posts || []);
   } catch (err) {
-    state.innerHTML = `<div class="error">Couldn't load your orders. ${escapeHtml(err.message)}</div>`;
+    root.innerHTML = `<div class="error">Couldn't load posts. ${escapeHtml(err.message)} <button class="btn secondary" type="button" data-retry>Try again</button></div>`;
+    root.querySelector("[data-retry]")?.addEventListener("click", () => renderSearch(root, ""));
   }
-  root._ordersUnsubscribe = unsubscribe;
-}
-
-async function renderOrderDetail(root, orderId) {
-  root.innerHTML = "<div class='loading'>Loading order…</div>";
-  const user = auth.currentUser;
-  if (!user) {
-    root.innerHTML = `<div class="empty"><h2>Sign in to view this order</h2><a class="btn primary" href="/orders">Back to Orders</a></div>`;
-    return;
-  }
-  try {
-    const snap = await getDoc(doc(db, "orders", orderId));
-    if (!snap.exists()) {
-      root.innerHTML = "<div class='error'>Order not found.</div>";
-      return;
-    }
-    const order = { id: snap.id, ...snap.data() };
-    if (order.buyerId !== user.uid && order.sellerId !== user.uid) {
-      root.innerHTML = "<div class='error'>You do not have access to this order.</div>";
-      return;
-    }
-    const items = Array.isArray(order.items) ? order.items : [];
-    root.innerHTML = `
-      <section class="rail-page order-detail">
-        <a class="back-link" href="/orders">← Orders</a>
-        <div class="section-heading"><span class="eyebrow">Order ${escapeHtml(order.id.slice(0, 8))}</span><h1>${escapeHtml(orderStatusLabel(order.status))}</h1></div>
-        <div class="order-detail-grid">
-          <div class="order-panel"><h2>Items</h2>${items.map(i => `<div class="order-line"><span>${escapeHtml(i.title || "Item")} × ${Number(i.quantity || 1)}</span><strong>${LSL(Number(i.unitPriceMinorUnits || 0) * Number(i.quantity || 1))}</strong></div>`).join("") || "<p>No items recorded.</p>"}</div>
-          <div class="order-panel"><h2>Summary</h2>
-            <div class="order-line"><span>Subtotal</span><span>${LSL(Number(order.subtotalMinorUnits || 0))}</span></div>
-            <div class="order-line"><span>Platform fee</span><span>${LSL(Number(order.platformFeeMinorUnits || 0))}</span></div>
-            <div class="order-line"><span>Delivery fee</span><span>${LSL(Number(order.deliveryFeeMinorUnits || 0))}</span></div>
-            <div class="order-line total-line"><strong>Total</strong><strong>${LSL(Number(order.totalMinorUnits || 0))}</strong></div>
-          </div>
-          <div class="order-panel"><h2>Progress</h2>
-            <p><strong>Payment:</strong> ${escapeHtml(order.paymentId ? "Recorded" : "Pending")}</p>
-            <p><strong>Order:</strong> ${escapeHtml(orderStatusLabel(order.status))}</p>
-            <p><strong>Inventory:</strong> ${escapeHtml(orderStatusLabel(order.inventoryStatus))}</p>
-            <p><strong>Fulfillment:</strong> ${escapeHtml(orderStatusLabel(order.fulfillmentStatus))}</p>
-            ${order.requiresDelivery ? "<p><strong>Delivery:</strong> Delivery requested/required for this order.</p>" : "<p><strong>Delivery:</strong> Pickup / no delivery requested.</p>"}
-          </div>
-        </div>
-      </section>`;
-  } catch (err) {
-    root.innerHTML = `<div class="error">Couldn't load this order. ${escapeHtml(err.message)}</div>`;
-  }
-}
-
-
-// ---------- Utility rail ----------
-
-function renderRailCart() {
-  const items = getCart();
-  const count = cartCount();
-  const badges = [document.getElementById("railCartBadge"), document.getElementById("railCartBadgeMobile")].filter(Boolean);
-  const summaries = [document.getElementById("railCartSummary"), document.getElementById("railCartSummaryMobile")].filter(Boolean);
-  const list = document.getElementById("railCartItems");
-  const summaryText = count ? count + " item" + (count === 1 ? "" : "s") + " in your bag" : "Your bag is empty.";
-  badges.forEach(el => { el.textContent = count ? String(count) : ""; });
-  summaries.forEach(el => { el.textContent = summaryText; });
-  if (list) {
-    list.innerHTML = items.slice(0, 3).map(item =>
-      '<div class="rail-cart-item">' + escapeHtml(item.title || item.listingId) + " × " + Number(item.quantity || 1) + "</div>"
-    ).join("");
-    if (items.length > 3) list.insertAdjacentHTML("beforeend", '<div class="rail-muted">+ ' + (items.length - 3) + ' more</div>');
-  }
-}
-
-function renderCartDrawer() {
-  const root = document.getElementById("cartDrawerContent");
-  if (!root) return;
-  const items = getCart();
-  if (!items.length) {
-    root.innerHTML = `<p class="rail-muted">Your bag is empty.</p><a class="rail-action" href="/market">Browse Market</a>`;
-    return;
-  }
-  root.innerHTML = `
-    <div class="cart-list">
-      ${items.map(item => `
-        <div class="cart-row">
-          <span class="cart-title">${escapeHtml(item.title || item.listingId)}</span>
-          <strong>× ${Number(item.quantity || 1)}</strong>
-        </div>`).join("")}
-    </div>
-    <div class="actions"><a class="btn primary" href="/cart">View full bag</a><a class="btn secondary" href="/checkout">Checkout</a></div>`;
-}
-
-function openUtilitySheet() {
-  const sheet = document.getElementById("utilitySheet");
-  const trigger = document.querySelector("[data-open-utility]");
-  if (!sheet) return;
-  sheet.classList.add("is-open");
-  sheet.setAttribute("aria-hidden", "false");
-  if (trigger) trigger.setAttribute("aria-expanded", "true");
-}
-
-function closeUtilitySheet() {
-  const sheet = document.getElementById("utilitySheet");
-  const trigger = document.querySelector("[data-open-utility]");
-  if (!sheet) return;
-  sheet.classList.remove("is-open");
-  sheet.setAttribute("aria-hidden", "true");
-  if (trigger) trigger.setAttribute("aria-expanded", "false");
-}
-
-function openCartDrawer() {
-  const drawer = document.getElementById("cartDrawer");
-  if (!drawer) return;
-  closeUtilitySheet();
-  renderCartDrawer();
-  drawer.classList.add("is-open");
-  drawer.setAttribute("aria-hidden", "false");
-}
-
-function closeCartDrawer() {
-  const drawer = document.getElementById("cartDrawer");
-  if (!drawer) return;
-  drawer.classList.remove("is-open");
-  drawer.setAttribute("aria-hidden", "true");
-}
-
-// Bind the mobile More control directly as well as through the delegated handler below.
-// This keeps the primary rail interaction reliable on mobile browsers after route/render changes.
-function bindUtilityRailControls() {
-  const moreButton = document.querySelector("[data-open-utility]");
-  if (!moreButton || moreButton.dataset.utilityBound === "true") return;
-  moreButton.dataset.utilityBound = "true";
-  moreButton.addEventListener("click", event => {
-    event.preventDefault();
-    event.stopPropagation();
-    openUtilitySheet();
-  });
-}
-
-
-
-// ── renderHomeProfile ─────────────────────────────────────────────────────────
-// Home screen for signed-in users: profile card with avatar upload, wallet,
-// stats (followers, following, shops, listings), about, and market entry.
-async function renderHomeProfile(root, user, marketPromise) {
-  const uid = user.uid;
-  const email = user.email || "";
-  const [profSnap, walletSnap] = await Promise.all([
-    getDoc(doc(db, "profiles", uid)).catch(() => null),
-    getDoc(doc(db, "wallets", uid)).catch(() => null),
-  ]);
-  const profile = profSnap?.exists() ? profSnap.data() : {};
-  const displayName = profile.displayName || user.displayName || user.email || "Swift shopper";
-  const handle = email ? "@" + email.split("@")[0] : "";
-  const initial = (displayName[0] || "S").toUpperCase();
-  const avatarUrl = profile.avatarUrl || user.photoURL || null;
-  const coverUrl = profile.coverUrl || null;
-
-  const avatarImgHTML = (url) => url
-    ? `<img class="hp-avatar" src="${escapeHtml(url)}" alt="${escapeHtml(displayName)}" id="hpAvatarImg">`
-    : `<div class="hp-avatar hp-avatar-initials" id="hpAvatarImg">${escapeHtml(initial)}</div>`;
-
-  document.body.classList.add("home-profile-route");
-  root.innerHTML = `
-    <section class="home-profile">
-      <div class="hp-cover" id="hpCover">
-        <img id="hpCoverImg" alt="Cover photo" style="display:none">
-        <label class="hp-cover-edit" for="hpCoverInput">
-          <span aria-hidden="true">🖼</span> Change cover
-          <input type="file" id="hpCoverInput" accept="image/*" style="display:none">
-        </label>
-        <div class="hp-cover-spinner" id="hpCoverSpinner" style="display:none"></div>
-      </div>
-
-      <div class="hp-header">
-        <div class="hp-avatar-wrap">
-          ${avatarImgHTML(avatarUrl)}
-          <label class="hp-avatar-edit" for="hpAvatarInput" title="Change photo" aria-label="Change profile photo">
-            <span aria-hidden="true">📷</span>
-            <input type="file" id="hpAvatarInput" accept="image/*" style="display:none">
-          </label>
-          <div class="hp-avatar-spinner" id="hpAvatarSpinner" style="display:none"></div>
-        </div>
-        <div class="hp-identity">
-          <h2 class="hp-name">${escapeHtml(displayName)}</h2>
-          <p class="hp-handle">${escapeHtml(handle)}</p>
-          <p class="hp-email">${escapeHtml(email)}</p>\n          <p class="hp-location" id="hpLocation">${escapeHtml(profile.location || "")}</p>
-        </div>
-      </div>
-
-      <div class="hp-stats" id="hpStats">
-        <div class="hp-stat"><span class="hp-stat-val" id="hpFollowers">—</span><span class="hp-stat-label">Followers</span></div>
-        <div class="hp-stat"><span class="hp-stat-val" id="hpFollowing">—</span><span class="hp-stat-label">Following</span></div>
-        <div class="hp-stat"><span class="hp-stat-val" id="hpShops">—</span><span class="hp-stat-label">Shops</span></div>
-        <div class="hp-stat"><span class="hp-stat-val" id="hpListings">—</span><span class="hp-stat-label">Listings</span></div>
-      </div>
-
-      <div class="hp-wallet" id="hpWallet">
-        <div class="hp-wallet-inner">
-          <span class="hp-wallet-label">Swift Wallet</span>
-          <span class="hp-wallet-bal" id="hpWalletBal">M —</span>
-        </div>
-        <button class="hp-wallet-btn" type="button" data-hp-action="wallet">Manage</button>
-      </div>
-
-      <div class="hp-about-wrap" id="hpAboutWrap" style="display:none">
-        <p class="hp-about" id="hpAbout"></p>
-      </div>
-
-      <div class="hp-actions">
-        <button class="profile-action-btn primary" type="button" data-hp-action="market">Browse market</button>
-        <button class="profile-action-btn" type="button" data-hp-action="edit">Edit profile</button>
-      </div>
-
-      <div class="hp-market-preview" id="hpMarketPreview">
-        <div class="loading" style="padding:20px 0">Loading your market…</div>
-      </div>
-    </section>`;
-
-  // Avatar upload
-  const avatarInput = root.querySelector("#hpAvatarInput");
-  const spinner     = root.querySelector("#hpAvatarSpinner");
-  avatarInput?.addEventListener("change", async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { alert("Photo must be under 5 MB."); return; }
-    spinner.style.display = "flex";
-    try {
-      const ext      = file.name.split(".").pop() || "jpg";
-      const path     = `media/${uid}/profile-avatar`;
-      const ref      = storageRef(storage, path);
-      await uploadBytes(ref, file, { contentType: file.type });
-      const url      = await getDownloadURL(ref);
-      const { updateProfile } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js");
-      await updateProfile(user, { photoURL: url });
-      // Update Firestore profile
-      try { await updateDoc(doc(db, "profiles", uid), { avatarUrl: url }); } catch(_) {}
-      // Update avatar in DOM
-      const imgWrap = root.querySelector("#hpAvatarImg");
-      if (imgWrap) {
-        const img = document.createElement("img");
-        img.className = "hp-avatar"; img.id = "hpAvatarImg";
-        img.src = url; img.alt = displayName; img.width = 96; img.height = 96;
-        imgWrap.replaceWith(img);
-      }
-      // Update account cards in rail / sheet
-      updateAccountCards({ ...user, photoURL: url });
-    } catch (err) {
-      alert("Couldn't upload photo. " + (err.message || ""));
-    } finally {
-      spinner.style.display = "none";
-    }
-  });
-
-  // Cover photo upload
-  const _coverImg     = root.querySelector("#hpCoverImg");
-  const _coverSpinner = root.querySelector("#hpCoverSpinner");
-  const _coverInput   = root.querySelector("#hpCoverInput");
-  if (coverUrl && _coverImg) {
-    _coverImg.src = coverUrl;
-    _coverImg.style.display = "block";
-  }
-  _coverInput?.addEventListener("change", async e => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { alert("Cover photo must be under 5 MB."); return; }
-    if (_coverSpinner) _coverSpinner.style.display = "flex";
-    try {
-      const ext  = file.name.split(".").pop() || "jpg";
-      const sRef = storageRef(storage, `media/${uid}/profile-cover`);
-      await uploadBytes(sRef, file, { contentType: file.type });
-      const url  = await getDownloadURL(sRef);
-      try { await updateDoc(doc(db, "profiles", uid), { coverUrl: url }); } catch(_) {}
-      if (_coverImg) { _coverImg.src = url; _coverImg.style.display = "block"; }
-    } catch (err) { alert("Couldn't upload cover. " + (err.message || "")); }
-    finally { if (_coverSpinner) _coverSpinner.style.display = "none"; }
-  });
-
-  // Action buttons
-  root.querySelectorAll("[data-hp-action]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const a = btn.dataset.hpAction;
-      if (a === "market")  navigate("/market");
-      if (a === "wallet")  navigate("/wallet");
-      if (a === "edit")    showEditProfileModal(user, root);
-    });
-  });
-
-  const setText = (id, val) => {
-    const el = root.querySelector("#" + id);
-    if (el) el.textContent = val ?? "0";
-  };
-  setText("hpFollowers", profile.followerCount ?? 0);
-  setText("hpFollowing", profile.followingCount ?? 0);
-  setText("hpShops", profile.shopCount ?? 0);
-  setText("hpListings", profile.activeListingCount ?? 0);
-  if (profile.bio) {
-    const aboutEl = root.querySelector("#hpAbout");
-    const wrapEl = root.querySelector("#hpAboutWrap");
-    if (aboutEl) aboutEl.textContent = profile.bio;
-    if (wrapEl) wrapEl.style.display = "";
-  }
-  if (profile.location) {
-    const locationEl = root.querySelector("#hpLocation");
-    if (locationEl) locationEl.textContent = profile.location;
-  }
-  if (walletSnap?.exists()) {
-    const w = walletSnap.data();
-    const bal = ((w.availableBalanceMinorUnits || 0) / 100).toFixed(2);
-    const el = root.querySelector("#hpWalletBal");
-    if (el) el.textContent = `M ${bal}`;
-  }
-
-  // Market preview beneath profile
-  try {
-    const [listings, shops] = await marketPromise;
-    const preview = root.querySelector("#hpMarketPreview");
-    if (!preview) return;
-    const shopById = new Map(shops.map(s => [s.id, s]));
-    const slice    = listings.slice(0, 6);
-    preview.innerHTML = slice.length
-      ? `<div class="section-heading" style="margin-top:8px"><span class="eyebrow">Fresh on Swift</span><h2>Latest listings</h2></div>
-         <div class="grid">${slice.map(l => listingCard(l, shopById)).join("")}</div>
-         <a class="section-link" href="/market" style="display:block;text-align:center;margin-top:12px">See all listings <span aria-hidden="true">→</span></a>`
-      : `<p class="empty">No listings yet.</p>`;
-  } catch (_) {
-    const p = root.querySelector("#hpMarketPreview");
-    if (p) p.innerHTML = "";
-  }
-}
-
-// ── showEditProfileModal ──────────────────────────────────────────────────────
-function showEditProfileModal(user, root) {
-  const existing = document.getElementById("editProfileModal");
-  if (existing) existing.remove();
-  const modal = document.createElement("div");
-  modal.id = "editProfileModal";
-  modal.className = "ep-modal-backdrop";
-  modal.innerHTML = `
-    <div class="ep-modal" role="dialog" aria-modal="true" aria-label="Edit profile">
-      <div class="ep-modal-header"><h3>Edit profile</h3><button class="ep-close" type="button" aria-label="Close">✕</button></div>
-      <form class="signup-form ep-form" id="editProfileForm">
-        <input type="text" id="epDisplayName" placeholder="Full name" autocomplete="name">
-        <input type="text" id="epLocation" placeholder="Location" autocomplete="address-level2">
-        <textarea id="epBio" placeholder="Bio" rows="3"></textarea>
-        <p class="signup-form-error" id="epError" style="display:none"></p>
-        <button class="btn primary" type="submit" id="epSaveBtn">Save changes</button>
-      </form>
-    </div>`;
-  document.body.appendChild(modal);
-  getDoc(doc(db, "profiles", user.uid)).then(snap => {
-    const p = snap.exists() ? snap.data() : {};
-    modal.querySelector("#epDisplayName").value = p.displayName || user.displayName || "";
-    modal.querySelector("#epLocation").value = p.location || "";
-    modal.querySelector("#epBio").value = p.bio || "";
-  }).catch(() => { modal.querySelector("#epDisplayName").value = user.displayName || ""; });
-  modal.querySelector(".ep-close")?.addEventListener("click", () => modal.remove());
-  modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
-  modal.querySelector("#editProfileForm")?.addEventListener("submit", async e => {
-    e.preventDefault();
-    const btn = modal.querySelector("#epSaveBtn"), errEl = modal.querySelector("#epError");
-    const newName = (modal.querySelector("#epDisplayName").value || "").trim();
-    const newLocation = (modal.querySelector("#epLocation").value || "").trim();
-    const newBio = (modal.querySelector("#epBio").value || "").trim();
-    btn.disabled = true; btn.textContent = "Saving…"; if (errEl) errEl.style.display = "none";
-    try {
-      const { updateProfile } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js");
-      if (newName && newName !== user.displayName) await updateProfile(user, { displayName: newName });
-      await updateDoc(doc(db, "profiles", user.uid), {
-        displayName: newName || user.displayName || null,
-        displayName_lowercase: (newName || user.displayName || "").toLowerCase(),
-        location: newLocation || null,
-        bio: newBio || null,
-      });
-      modal.remove();
-      if (location.pathname === "/" || location.pathname === "") {
-        await renderHomeProfile(document.getElementById("app"), auth.currentUser, Promise.all([fetchListings(), fetchShops()]));
-      }
-      updateAccountCards(auth.currentUser);
-    } catch (err) {
-      btn.disabled = false; btn.textContent = "Save changes";
-      if (errEl) { errEl.textContent = err.message || "Couldn't save your profile."; errEl.style.display = "block"; }
-    }
-  });
 }
 
 function renderMarketFeed(root, listings, shops) {
@@ -1368,8 +1002,20 @@ window.addEventListener("popstate", route);
 // This module uses top-level await (Firebase config fetch), so DOMContentLoaded may already have fired
 // by the time we get here; a bare DOMContentLoaded listener would then never run and the router would
 // never start. Boot immediately if the document is already parsed.
+function bindGlobalSearch() {
+  const input = document.getElementById("search");
+  if (!input || input.dataset.bound === "true") return;
+  input.dataset.bound = "true";
+  input.addEventListener("keydown", event => {
+    if (event.key !== "Enter") return;
+    const term = input.value.trim();
+    navigate(term ? "/search?q=" + encodeURIComponent(term) : "/search");
+  });
+}
+
 function boot() {
   updateCartBadge();
+  bindGlobalSearch();
   loadUtilityRail();
   bindUtilityRailControls();
   if ((location.pathname.startsWith("/s/") || location.pathname.startsWith("/d/"))
