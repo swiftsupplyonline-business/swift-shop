@@ -9,6 +9,8 @@
 // account, which the Web does not have yet, so they are shown as read-only counts with a
 // pointer to the app instead of fake buttons.
 
+import { railHTML, bindRails } from "./ui-kit.js";
+
 const esc = (s) => String(s ?? "")
   .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
   .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -125,11 +127,6 @@ function tagsHTML(tags) {
   return `<div class="ld-tags">${list.map(t => `<span class="ld-tag">#${esc(String(t).replace(/^#/, ""))}</span>`).join("")}</div>`;
 }
 
-function railHTML(title, items, cardHTML) {
-  if (!items || !items.length || typeof cardHTML !== "function") return "";
-  return `<section class="ld-rail"><h2>${esc(title)}</h2><div class="ld-rail-track">${items.map(cardHTML).join("")}</div></section>`;
-}
-
 export function renderListingDetailHTML(ctx) {
   const { listing: l, shop = null, moreFromShop = [], similar = [], cardHTML, standalone = false } = ctx;
   const cta = ctaFor(l.listingType);
@@ -210,8 +207,9 @@ export function renderListingDetailHTML(ctx) {
     </section>
 
     <div class="ld-rails">
-      ${railHTML("More from this shop", moreFromShop, cardHTML)}
-      ${railHTML("You might also like", similar, cardHTML)}
+      ${railHTML({ id: "more-from-shop", title: "More from this shop", subtitle: shop?.name ? `By ${shop.name}` : "", items: moreFromShop, renderItem: cardHTML,
+        seeAllHref: shop ? `/shop/${encodeURIComponent(l.shopId)}` : "", seeAllLabel: "Visit shop" })}
+      ${railHTML({ id: "similar-listings", title: "You might also like", subtitle: l.category ? `More in ${l.category}` : "", items: similar, renderItem: cardHTML })}
     </div>
     <div class="ld-toast" data-ld-toast role="status" aria-live="polite"></div>
   </div>`;
@@ -310,4 +308,6 @@ export function bindListingDetail(root, ctx, actions) {
   root.querySelector("[data-ld-share]")?.addEventListener("click", () => {
     share(root, { url: ctx.shareUrl, title: l.title || "SwiftShop" });
   });
+
+  bindRails(root);
 }

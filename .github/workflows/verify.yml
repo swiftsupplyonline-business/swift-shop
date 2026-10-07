@@ -94,9 +94,16 @@ jobs:
           echo "✅ hosting/app.js syntax OK"
           acorn --ecma2022 --module hosting/listing-detail.js > /dev/null
           echo "✅ hosting/listing-detail.js syntax OK"
+          acorn --ecma2022 --module hosting/ui-kit.js > /dev/null
+          echo "✅ hosting/ui-kit.js syntax OK"
+          acorn --ecma2022 --module hosting/shop-detail.js > /dev/null
+          echo "✅ hosting/shop-detail.js syntax OK"
 
       - name: P6b — Listing Detail view unit tests
         run: node scripts/web-listing-detail.test.mjs
+
+      - name: P6c — Shop Detail view + UI kit unit tests
+        run: node scripts/web-shop-detail.test.mjs
 
       - name: P7 — Structural integrity check (no duplicate declarations)
         run: |

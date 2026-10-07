@@ -17,6 +17,7 @@ import {
 import { getFirestore, collection, query, where, onSnapshot, getDoc, doc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 import { renderListingDetailHTML, bindListingDetail } from "./listing-detail.js";
+import { renderShopDetailHTML, bindShopDetail } from "./shop-detail.js";
 
 // Firebase Hosting exposes the configuration for the project serving this page.
 // This keeps Dev, Staging, and Production aligned with their Hosting target.
@@ -334,21 +335,39 @@ async function renderShops(root) {
 
 async function renderShop(root, shopId) {
   root.innerHTML = `<div class="loading">Loading shop…</div>`;
+  await mountShopDetail(root, { shopId });
+}
+
+// Mounts the Shop Detail view into `root`. Used by the SPA (/shop/:id) and by the server-rendered
+// /shop/:id share page (standalone). Returns false when the shop can't be shown so the caller can fall back.
+async function mountShopDetail(root, { shopId, standalone = false } = {}) {
   try {
-    const [shop, listings] = await Promise.all([fetchShop(shopId), fetchShopListings(shopId)]);
+    const data = await fetchMarketplace();
+    const shops = data.shops || [];
+    const shop = shops.find(s => s.id === shopId);
     if (!shop) {
       root.innerHTML = `<div class="error">Shop not found.</div>`;
-      return;
+      return false;
     }
-    root.innerHTML = `
-      <div class="shop-header">
-        <div class="shop-cover" style="background-image:url('${shop.coverUrl || ""}')"></div>
-        <h1>${escapeHtml(shop.name || "Shop")}</h1>
-        <p>${escapeHtml(shop.description || "")}</p>
-      </div>
-      <div class="grid">${listings.length ? listings.map(l => listingCard(l, new Map([[shop.id, shop]]))).join("") : "<p class='empty'>No listings yet.</p>"}</div>`;
+    const shopById = new Map(shops.map(s => [s.id, s]));
+    const listings = (data.listings || []).filter(l => l.shopId === shopId);
+    const otherShops = shops.filter(s => s.id !== shopId && s.isActive !== false).slice(0, 12);
+    const ctx = {
+      shop, listings, otherShops, standalone,
+      cardHTML: (l) => listingCard(l, shopById),
+      shareUrl: location.origin + "/shop/" + encodeURIComponent(shop.id)
+    };
+    root.innerHTML = renderShopDetailHTML(ctx);
+    bindShopDetail(root, ctx);
+    if (!standalone && shop.name) document.title = `${shop.name} — SwiftShop`;
+    return true;
   } catch (err) {
-    root.innerHTML = `<div class="error">Couldn't load this shop. ${escapeHtml(err.message)}</div>`;
+    root.innerHTML = `<div class="error">Couldn't load this shop. ${escapeHtml(err.message)} <button class="btn secondary" type="button" data-retry>Try again</button></div>`;
+    root.querySelector("[data-retry]")?.addEventListener("click", () => {
+      root.innerHTML = `<div class="loading">Loading shop…</div>`;
+      mountShopDetail(root, { shopId, standalone });
+    });
+    return false;
   }
 }
 
@@ -1096,4 +1115,4 @@ function boot() {
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
 else boot();
 
-export { addToCart, cartCount, mountListingDetail };
+export { addToCart, cartCount, mountListingDetail, mountShopDetail };
