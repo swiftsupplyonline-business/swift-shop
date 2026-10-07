@@ -762,12 +762,18 @@ function bindUtilityRailControls() {
 // Home screen for signed-in users: profile card with avatar upload, wallet,
 // stats (followers, following, shops, listings), about, and market entry.
 async function renderHomeProfile(root, user, marketPromise) {
-  const uid         = user.uid;
-  const displayName = user.displayName || user.email || "Swift shopper";
-  const email       = user.email || "";
-  const handle      = email ? "@" + email.split("@")[0] : "";
-  const initial     = (displayName[0] || "S").toUpperCase();
-  const avatarUrl   = user.photoURL || null;
+  const uid = user.uid;
+  const email = user.email || "";
+  const [profSnap, walletSnap] = await Promise.all([
+    getDoc(doc(db, "profiles", uid)).catch(() => null),
+    getDoc(doc(db, "wallets", uid)).catch(() => null),
+  ]);
+  const profile = profSnap?.exists() ? profSnap.data() : {};
+  const displayName = profile.displayName || user.displayName || user.email || "Swift shopper";
+  const handle = email ? "@" + email.split("@")[0] : "";
+  const initial = (displayName[0] || "S").toUpperCase();
+  const avatarUrl = profile.avatarUrl || user.photoURL || null;
+  const coverUrl = profile.coverUrl || null;
 
   const avatarImgHTML = (url) => url
     ? `<img class="hp-avatar" src="${escapeHtml(url)}" alt="${escapeHtml(displayName)}" id="hpAvatarImg">`
@@ -797,7 +803,7 @@ async function renderHomeProfile(root, user, marketPromise) {
         <div class="hp-identity">
           <h2 class="hp-name">${escapeHtml(displayName)}</h2>
           <p class="hp-handle">${escapeHtml(handle)}</p>
-          <p class="hp-email">${escapeHtml(email)}</p>
+          <p class="hp-email">${escapeHtml(email)}</p>\n          <p class="hp-location" id="hpLocation">${escapeHtml(profile.location || "")}</p>
         </div>
       </div>
 
@@ -840,7 +846,7 @@ async function renderHomeProfile(root, user, marketPromise) {
     spinner.style.display = "flex";
     try {
       const ext      = file.name.split(".").pop() || "jpg";
-      const path     = `avatars/${uid}/profile.${ext}`;
+      const path     = `media/${uid}/profile-avatar`;
       const ref      = storageRef(storage, path);
       await uploadBytes(ref, file, { contentType: file.type });
       const url      = await getDownloadURL(ref);
@@ -869,19 +875,18 @@ async function renderHomeProfile(root, user, marketPromise) {
   const _coverImg     = root.querySelector("#hpCoverImg");
   const _coverSpinner = root.querySelector("#hpCoverSpinner");
   const _coverInput   = root.querySelector("#hpCoverInput");
-  // Load existing cover
-  getDoc(doc(db, "profiles", uid)).then(snap => {
-    const url = snap.exists() ? snap.data().coverUrl : null;
-    if (url && _coverImg) { _coverImg.src = url; _coverImg.style.display = "block"; }
-  }).catch(() => {});
+  if (coverUrl && _coverImg) {
+    _coverImg.src = coverUrl;
+    _coverImg.style.display = "block";
+  }
   _coverInput?.addEventListener("change", async e => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { alert("Cover photo must be under 10 MB."); return; }
+    if (file.size > 5 * 1024 * 1024) { alert("Cover photo must be under 5 MB."); return; }
     if (_coverSpinner) _coverSpinner.style.display = "flex";
     try {
       const ext  = file.name.split(".").pop() || "jpg";
-      const sRef = storageRef(storage, `covers/${uid}/cover.${ext}`);
+      const sRef = storageRef(storage, `media/${uid}/profile-cover`);
       await uploadBytes(sRef, file, { contentType: file.type });
       const url  = await getDownloadURL(sRef);
       try { await updateDoc(doc(db, "profiles", uid), { coverUrl: url }); } catch(_) {}
@@ -900,35 +905,30 @@ async function renderHomeProfile(root, user, marketPromise) {
     });
   });
 
-  // Load Firestore profile (stats + about + wallet) in parallel
-  try {
-    const [profSnap, walletSnap] = await Promise.all([
-      getDoc(doc(db, "profiles", uid)),
-      getDoc(doc(db, "wallets",  uid)),
-    ]);
-
-    if (profSnap.exists()) {
-      const p = profSnap.data();
-      const setText = (id, val) => { const el = root.querySelector("#" + id); if (el) el.textContent = val ?? "0"; };
-      setText("hpFollowers", p.followerCount  ?? 0);
-      setText("hpFollowing", p.followingCount ?? 0);
-      setText("hpShops",     p.shopCount      ?? 0);
-      setText("hpListings",  p.activeListingCount ?? 0);
-      if (p.about) {
-        const aboutEl = root.querySelector("#hpAbout");
-        const wrapEl  = root.querySelector("#hpAboutWrap");
-        if (aboutEl) aboutEl.textContent = p.about;
-        if (wrapEl)  wrapEl.style.display = "";
-      }
-    }
-
-    if (walletSnap.exists()) {
-      const w   = walletSnap.data();
-      const bal = ((w.availableBalanceMinorUnits || 0) / 100).toFixed(2);
-      const el  = root.querySelector("#hpWalletBal");
-      if (el) el.textContent = `M ${bal}`;
-    }
-  } catch (_) {}
+  const setText = (id, val) => {
+    const el = root.querySelector("#" + id);
+    if (el) el.textContent = val ?? "0";
+  };
+  setText("hpFollowers", profile.followerCount ?? 0);
+  setText("hpFollowing", profile.followingCount ?? 0);
+  setText("hpShops", profile.shopCount ?? 0);
+  setText("hpListings", profile.activeListingCount ?? 0);
+  if (profile.bio) {
+    const aboutEl = root.querySelector("#hpAbout");
+    const wrapEl = root.querySelector("#hpAboutWrap");
+    if (aboutEl) aboutEl.textContent = profile.bio;
+    if (wrapEl) wrapEl.style.display = "";
+  }
+  if (profile.location) {
+    const locationEl = root.querySelector("#hpLocation");
+    if (locationEl) locationEl.textContent = profile.location;
+  }
+  if (walletSnap?.exists()) {
+    const w = walletSnap.data();
+    const bal = ((w.availableBalanceMinorUnits || 0) / 100).toFixed(2);
+    const el = root.querySelector("#hpWalletBal");
+    if (el) el.textContent = `M ${bal}`;
+  }
 
   // Market preview beneath profile
   try {
@@ -952,71 +952,57 @@ async function renderHomeProfile(root, user, marketPromise) {
 function showEditProfileModal(user, root) {
   const existing = document.getElementById("editProfileModal");
   if (existing) existing.remove();
-
   const modal = document.createElement("div");
   modal.id = "editProfileModal";
   modal.className = "ep-modal-backdrop";
   modal.innerHTML = `
     <div class="ep-modal" role="dialog" aria-modal="true" aria-label="Edit profile">
-      <div class="ep-modal-header">
-        <h3>Edit profile</h3>
-        <button class="ep-close" type="button" aria-label="Close">✕</button>
-      </div>
+      <div class="ep-modal-header"><h3>Edit profile</h3><button class="ep-close" type="button" aria-label="Close">✕</button></div>
       <form class="signup-form ep-form" id="editProfileForm">
-        <input type="text" id="epDisplayName" placeholder="Full name" value="${escapeHtml(user.displayName || "")}" autocomplete="name">
-        <input type="tel"  id="epPhone" placeholder="Phone number" autocomplete="tel">
-        <textarea id="epAbout" placeholder="About me" rows="3"></textarea>
+        <input type="text" id="epDisplayName" placeholder="Full name" autocomplete="name">
+        <input type="text" id="epLocation" placeholder="Location" autocomplete="address-level2">
+        <textarea id="epBio" placeholder="Bio" rows="3"></textarea>
         <p class="signup-form-error" id="epError" style="display:none"></p>
         <button class="btn primary" type="submit" id="epSaveBtn">Save changes</button>
       </form>
     </div>`;
   document.body.appendChild(modal);
-
-  // Pre-fill from Firestore
   getDoc(doc(db, "profiles", user.uid)).then(snap => {
-    if (!snap.exists()) return;
-    const p = snap.data();
-    const ph = modal.querySelector("#epPhone");
-    const ab = modal.querySelector("#epAbout");
-    if (ph && p.phone) ph.value = p.phone;
-    if (ab && p.about) ab.value = p.about;
-  }).catch(() => {});
-
+    const p = snap.exists() ? snap.data() : {};
+    modal.querySelector("#epDisplayName").value = p.displayName || user.displayName || "";
+    modal.querySelector("#epLocation").value = p.location || "";
+    modal.querySelector("#epBio").value = p.bio || "";
+  }).catch(() => { modal.querySelector("#epDisplayName").value = user.displayName || ""; });
   modal.querySelector(".ep-close")?.addEventListener("click", () => modal.remove());
   modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
-
   modal.querySelector("#editProfileForm")?.addEventListener("submit", async e => {
     e.preventDefault();
-    const btn      = modal.querySelector("#epSaveBtn");
-    const errEl    = modal.querySelector("#epError");
-    const newName  = (modal.querySelector("#epDisplayName")?.value || "").trim();
-    const newPhone = (modal.querySelector("#epPhone")?.value || "").trim();
-    const newAbout = (modal.querySelector("#epAbout")?.value || "").trim();
-    btn.disabled = true; btn.textContent = "Saving…";
-    if (errEl) errEl.style.display = "none";
+    const btn = modal.querySelector("#epSaveBtn"), errEl = modal.querySelector("#epError");
+    const newName = (modal.querySelector("#epDisplayName").value || "").trim();
+    const newLocation = (modal.querySelector("#epLocation").value || "").trim();
+    const newBio = (modal.querySelector("#epBio").value || "").trim();
+    btn.disabled = true; btn.textContent = "Saving…"; if (errEl) errEl.style.display = "none";
     try {
       const { updateProfile } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js");
       if (newName && newName !== user.displayName) await updateProfile(user, { displayName: newName });
       await updateDoc(doc(db, "profiles", user.uid), {
-        displayName: newName || user.displayName,
-        phone: newPhone || null,
-        about: newAbout || null,
+        displayName: newName || user.displayName || null,
+        displayName_lowercase: (newName || user.displayName || "").toLowerCase(),
+        location: newLocation || null,
+        bio: newBio || null,
       });
-      updateAccountCards(user);
       modal.remove();
-      // Re-render home to reflect new name/about
-      const appRoot = document.getElementById("app");
-      if (appRoot && (location.pathname === "/" || location.pathname === "")) {
-        renderHomeProfile(appRoot, auth.currentUser, Promise.all([fetchListings(), fetchShops()]));
+      if (location.pathname === "/" || location.pathname === "") {
+        await renderHomeProfile(document.getElementById("app"), auth.currentUser, Promise.all([fetchListings(), fetchShops()]));
       }
+      updateAccountCards(auth.currentUser);
     } catch (err) {
       btn.disabled = false; btn.textContent = "Save changes";
-      if (errEl) { errEl.textContent = err.message || "Couldn't save."; errEl.style.display = "block"; }
+      if (errEl) { errEl.textContent = err.message || "Couldn't save your profile."; errEl.style.display = "block"; }
     }
   });
 }
 
-// ─── renderMarketFeed ─────────────────────────────────────────────────────────
 function renderMarketFeed(root, listings, shops) {
   if (typeof frontDoorTimer !== "undefined" && frontDoorTimer) {
     clearInterval(frontDoorTimer); frontDoorTimer = null;
@@ -1203,17 +1189,7 @@ function bindSignupForm(root, marketPromise) {
         const fullName  = [firstName, lastName].filter(Boolean).join(" ") || email.split("@")[0];
         ({ user } = await createUserWithEmailAndPassword(auth, email, password));
         await updateProfile(user, { displayName: fullName });
-        // Write extended profile (best-effort)
-        try {
-          const { doc: fsDoc, setDoc, serverTimestamp }
-            = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js");
-          await setDoc(fsDoc(db, "profiles", user.uid), {
-            id: user.uid, displayName: fullName, email,
-            phone: phone || null, about: about || null, avatarUrl: null,
-            followerCount: 0, followingCount: 0, shopCount: 0, activeListingCount: 0,
-            createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-          }, { merge: true });
-        } catch (_) {}
+
       }
 
       updateAccountCards(user);
@@ -1250,7 +1226,10 @@ function friendlyAuthError(code) {
 
 async function loadUtilityRail() {
   renderRailCart();
-  onAuthStateChanged(auth, user => updateAccountCards(user));
+  onAuthStateChanged(auth, user => {
+    updateAccountCards(user);
+    if (location.pathname === "/" || location.pathname === "") route();
+  });
 
   const providerTargets = [
     [document.getElementById("providerCount"), document.getElementById("providerList")],
