@@ -636,6 +636,252 @@ async function renderSearch(root, initialQuery = "") {
   }
 }
 
+// ── renderHomeProfile ─────────────────────────────────────────────────────────
+// Home screen for signed-in users: profile card with avatar upload, wallet,
+// stats (followers, following, shops, listings), about, and market entry.
+async function renderHomeProfile(root, user, marketPromise) {
+  const uid = user.uid;
+  const email = user.email || "";
+  const [profSnap, walletSnap] = await Promise.all([
+    getDoc(doc(db, "profiles", uid)).catch(() => null),
+    getDoc(doc(db, "wallets", uid)).catch(() => null),
+  ]);
+  const profile = profSnap?.exists() ? profSnap.data() : {};
+  const displayName = profile.displayName || user.displayName || "Swift shopper";
+  const handleSource = profile.displayName_lowercase || displayName;
+  const handle = handleSource && handleSource !== "Swift shopper" ? "@" + normalizeShareSlug(handleSource) : "";
+  const initial = (displayName[0] || "S").toUpperCase();
+  const avatarUrl = profile.avatarUrl || user.photoURL || null;
+  const coverUrl = profile.coverUrl || null;
+
+  const avatarImgHTML = (url) => url
+    ? `<img class="hp-avatar" src="${escapeHtml(url)}" alt="${escapeHtml(displayName)}" id="hpAvatarImg">`
+    : `<div class="hp-avatar hp-avatar-initials" id="hpAvatarImg">${escapeHtml(initial)}</div>`;
+
+  document.body.classList.add("home-profile-route");
+  root.innerHTML = `
+    <section class="home-profile">
+      <div class="hp-cover" id="hpCover">
+        <img id="hpCoverImg" alt="Cover photo" style="display:none">
+        <label class="hp-cover-edit" for="hpCoverInput">
+          <span aria-hidden="true">🖼</span> Change cover
+          <input type="file" id="hpCoverInput" accept="image/*" style="display:none">
+        </label>
+        <div class="hp-cover-spinner" id="hpCoverSpinner" style="display:none"></div>
+      </div>
+
+      <div class="hp-header">
+        <div class="hp-avatar-wrap">
+          ${avatarImgHTML(avatarUrl)}
+          <label class="hp-avatar-edit" for="hpAvatarInput" title="Change photo" aria-label="Change profile photo">
+            <span aria-hidden="true">📷</span>
+            <input type="file" id="hpAvatarInput" accept="image/*" style="display:none">
+          </label>
+          <div class="hp-avatar-spinner" id="hpAvatarSpinner" style="display:none"></div>
+        </div>
+        <div class="hp-identity">
+          <h2 class="hp-name">${escapeHtml(displayName)}</h2>
+          <p class="hp-handle">${escapeHtml(handle)}</p>
+          <p class="hp-email">${escapeHtml(email)}</p>\n          <p class="hp-location" id="hpLocation">${escapeHtml(profile.location || "")}</p>
+        </div>
+      </div>
+
+      <div class="hp-stats" id="hpStats">
+        <div class="hp-stat"><span class="hp-stat-val" id="hpFollowers">—</span><span class="hp-stat-label">Followers</span></div>
+        <div class="hp-stat"><span class="hp-stat-val" id="hpFollowing">—</span><span class="hp-stat-label">Following</span></div>
+        <div class="hp-stat"><span class="hp-stat-val" id="hpShops">—</span><span class="hp-stat-label">Shops</span></div>
+        <div class="hp-stat"><span class="hp-stat-val" id="hpListings">—</span><span class="hp-stat-label">Listings</span></div>
+      </div>
+
+      <div class="hp-wallet" id="hpWallet">
+        <div class="hp-wallet-inner">
+          <span class="hp-wallet-label">Swift Wallet</span>
+          <span class="hp-wallet-bal" id="hpWalletBal">M —</span>
+        </div>
+        <button class="hp-wallet-btn" type="button" data-hp-action="wallet">Manage</button>
+      </div>
+
+      <div class="hp-about-wrap" id="hpAboutWrap" style="display:none">
+        <p class="hp-about" id="hpAbout"></p>
+      </div>
+
+      <div class="hp-actions">
+        <button class="profile-action-btn primary" type="button" data-hp-action="market">Browse market</button>
+        <button class="profile-action-btn" type="button" data-hp-action="edit">Edit profile</button>
+      </div>
+
+      <div class="hp-market-preview" id="hpMarketPreview">
+        <div class="loading" style="padding:20px 0">Loading your market…</div>
+      </div>
+    </section>`;
+
+  // Avatar upload
+  const avatarInput = root.querySelector("#hpAvatarInput");
+  const spinner     = root.querySelector("#hpAvatarSpinner");
+  avatarInput?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { alert("Photo must be under 5 MB."); return; }
+    spinner.style.display = "flex";
+    try {
+      const ext      = file.name.split(".").pop() || "jpg";
+      const path     = `media/${uid}/profile-avatar`;
+      const ref      = storageRef(storage, path);
+      await uploadBytes(ref, file, { contentType: file.type });
+      const url      = await getDownloadURL(ref);
+      const { updateProfile } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js");
+      await updateProfile(user, { photoURL: url });
+      // Update Firestore profile
+      try { await updateDoc(doc(db, "profiles", uid), { avatarUrl: url }); } catch(_) {}
+      // Update avatar in DOM
+      const imgWrap = root.querySelector("#hpAvatarImg");
+      if (imgWrap) {
+        const img = document.createElement("img");
+        img.className = "hp-avatar"; img.id = "hpAvatarImg";
+        img.src = url; img.alt = displayName; img.width = 96; img.height = 96;
+        imgWrap.replaceWith(img);
+      }
+      // Update account cards in rail / sheet
+      updateAccountCards({ ...user, photoURL: url });
+    } catch (err) {
+      alert("Couldn't upload photo. " + (err.message || ""));
+    } finally {
+      spinner.style.display = "none";
+    }
+  });
+
+  // Cover photo upload
+  const _coverImg     = root.querySelector("#hpCoverImg");
+  const _coverSpinner = root.querySelector("#hpCoverSpinner");
+  const _coverInput   = root.querySelector("#hpCoverInput");
+  if (coverUrl && _coverImg) {
+    _coverImg.src = coverUrl;
+    _coverImg.style.display = "block";
+  }
+  _coverInput?.addEventListener("change", async e => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { alert("Cover photo must be under 5 MB."); return; }
+    if (_coverSpinner) _coverSpinner.style.display = "flex";
+    try {
+      const ext  = file.name.split(".").pop() || "jpg";
+      const sRef = storageRef(storage, `media/${uid}/profile-cover`);
+      await uploadBytes(sRef, file, { contentType: file.type });
+      const url  = await getDownloadURL(sRef);
+      try { await updateDoc(doc(db, "profiles", uid), { coverUrl: url }); } catch(_) {}
+      if (_coverImg) { _coverImg.src = url; _coverImg.style.display = "block"; }
+    } catch (err) { alert("Couldn't upload cover. " + (err.message || "")); }
+    finally { if (_coverSpinner) _coverSpinner.style.display = "none"; }
+  });
+
+  // Action buttons
+  root.querySelectorAll("[data-hp-action]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const a = btn.dataset.hpAction;
+      if (a === "market")  navigate("/market");
+      if (a === "wallet")  navigate("/wallet");
+      if (a === "edit")    showEditProfileModal(user, root);
+    });
+  });
+
+  const setText = (id, val) => {
+    const el = root.querySelector("#" + id);
+    if (el) el.textContent = val ?? "0";
+  };
+  setText("hpFollowers", profile.followerCount ?? 0);
+  setText("hpFollowing", profile.followingCount ?? 0);
+  setText("hpShops", profile.shopCount ?? 0);
+  setText("hpListings", profile.activeListingCount ?? 0);
+  if (profile.bio) {
+    const aboutEl = root.querySelector("#hpAbout");
+    const wrapEl = root.querySelector("#hpAboutWrap");
+    if (aboutEl) aboutEl.textContent = profile.bio;
+    if (wrapEl) wrapEl.style.display = "";
+  }
+  if (profile.location) {
+    const locationEl = root.querySelector("#hpLocation");
+    if (locationEl) locationEl.textContent = profile.location;
+  }
+  if (walletSnap?.exists()) {
+    const w = walletSnap.data();
+    const bal = ((w.availableBalanceMinorUnits || 0) / 100).toFixed(2);
+    const el = root.querySelector("#hpWalletBal");
+    if (el) el.textContent = `M ${bal}`;
+  }
+
+  // Market preview beneath profile
+  try {
+    const [listings, shops] = await marketPromise;
+    const preview = root.querySelector("#hpMarketPreview");
+    if (!preview) return;
+    const shopById = new Map(shops.map(s => [s.id, s]));
+    const slice    = listings.slice(0, 6);
+    preview.innerHTML = slice.length
+      ? `<div class="section-heading" style="margin-top:8px"><span class="eyebrow">Fresh on Swift</span><h2>Latest listings</h2></div>
+         <div class="grid">${slice.map(l => listingCard(l, shopById)).join("")}</div>
+         <a class="section-link" href="/market" style="display:block;text-align:center;margin-top:12px">See all listings <span aria-hidden="true">→</span></a>`
+      : `<p class="empty">No listings yet.</p>`;
+  } catch (_) {
+    const p = root.querySelector("#hpMarketPreview");
+    if (p) p.innerHTML = "";
+  }
+}
+
+// ── showEditProfileModal ──────────────────────────────────────────────────────
+function showEditProfileModal(user, root) {
+  const existing = document.getElementById("editProfileModal");
+  if (existing) existing.remove();
+  const modal = document.createElement("div");
+  modal.id = "editProfileModal";
+  modal.className = "ep-modal-backdrop";
+  modal.innerHTML = `
+    <div class="ep-modal" role="dialog" aria-modal="true" aria-label="Edit profile">
+      <div class="ep-modal-header"><h3>Edit profile</h3><button class="ep-close" type="button" aria-label="Close">✕</button></div>
+      <form class="signup-form ep-form" id="editProfileForm">
+        <input type="text" id="epDisplayName" placeholder="Full name" autocomplete="name">
+        <input type="text" id="epLocation" placeholder="Location" autocomplete="address-level2">
+        <textarea id="epBio" placeholder="Bio" rows="3"></textarea>
+        <p class="signup-form-error" id="epError" style="display:none"></p>
+        <button class="btn primary" type="submit" id="epSaveBtn">Save changes</button>
+      </form>
+    </div>`;
+  document.body.appendChild(modal);
+  getDoc(doc(db, "profiles", user.uid)).then(snap => {
+    const p = snap.exists() ? snap.data() : {};
+    modal.querySelector("#epDisplayName").value = p.displayName || user.displayName || "";
+    modal.querySelector("#epLocation").value = p.location || "";
+    modal.querySelector("#epBio").value = p.bio || "";
+  }).catch(() => { modal.querySelector("#epDisplayName").value = user.displayName || ""; });
+  modal.querySelector(".ep-close")?.addEventListener("click", () => modal.remove());
+  modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+  modal.querySelector("#editProfileForm")?.addEventListener("submit", async e => {
+    e.preventDefault();
+    const btn = modal.querySelector("#epSaveBtn"), errEl = modal.querySelector("#epError");
+    const newName = (modal.querySelector("#epDisplayName").value || "").trim();
+    const newLocation = (modal.querySelector("#epLocation").value || "").trim();
+    const newBio = (modal.querySelector("#epBio").value || "").trim();
+    btn.disabled = true; btn.textContent = "Saving…"; if (errEl) errEl.style.display = "none";
+    try {
+      const { updateProfile } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js");
+      if (newName && newName !== user.displayName) await updateProfile(user, { displayName: newName });
+      await updateDoc(doc(db, "profiles", user.uid), {
+        displayName: newName || user.displayName || null,
+        displayName_lowercase: (newName || user.displayName || "").toLowerCase(),
+        location: newLocation || null,
+        bio: newBio || null,
+      });
+      modal.remove();
+      if (location.pathname === "/" || location.pathname === "") {
+        await renderHomeProfile(document.getElementById("app"), auth.currentUser, Promise.all([fetchListings(), fetchShops()]));
+      }
+      updateAccountCards(auth.currentUser);
+    } catch (err) {
+      btn.disabled = false; btn.textContent = "Save changes";
+      if (errEl) { errEl.textContent = err.message || "Couldn't save your profile."; errEl.style.display = "block"; }
+    }
+  });
+}
+
 function renderMarketFeed(root, listings, shops) {
   if (typeof frontDoorTimer !== "undefined" && frontDoorTimer) {
     clearInterval(frontDoorTimer); frontDoorTimer = null;
