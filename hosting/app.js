@@ -282,8 +282,7 @@ async function renderBrowse(root, direct = false) {
             <input type="email" id="signupEmail" placeholder="Email address" autocomplete="email" required>
             <input type="tel" id="signupPhone" placeholder="Phone number (optional)" autocomplete="tel" id="phoneRow">
             <input type="password" id="signupPassword" placeholder="Create a password" autocomplete="new-password" required>
-            <textarea id="signupAbout" placeholder="About me (optional)" rows="2"></textarea>
-            <p class="signup-form-error" id="signupError" style="display:none"></p>
+                <p class="signup-form-error" id="signupError" style="display:none"></p>
             <button class="btn primary guest-btn" type="submit" id="signupSubmitBtn">Create account <span aria-hidden="true">→</span></button>
             <p class="signup-form-note">Already have Swift? <button type="button" class="text-btn" id="switchToSignin">Sign in</button></p>
             <p class="signup-form-note" style="margin-top:4px"><button type="button" class="text-btn" id="browseGuestBtn">Browse as guest →</button></p>
@@ -1139,7 +1138,6 @@ function bindSignupForm(root, marketPromise) {
           <input type="text" id="signupLastName" placeholder="Last name" autocomplete="family-name">
         </div>
         <input type="email" id="signupEmail" placeholder="Email address" autocomplete="email" required>
-        <input type="tel" id="signupPhone" placeholder="Phone number (optional)" autocomplete="tel">
         <input type="password" id="signupPassword" placeholder="Create a password" autocomplete="new-password" required>
         <textarea id="signupAbout" placeholder="About me (optional)" rows="2"></textarea>
         <p class="signup-form-error" id="signupError" style="display:none"></p>
@@ -1184,8 +1182,6 @@ function bindSignupForm(root, marketPromise) {
       } else {
         const firstName = (form.querySelector("#signupFirstName")?.value || "").trim();
         const lastName  = (form.querySelector("#signupLastName")?.value  || "").trim();
-        const phone     = (form.querySelector("#signupPhone")?.value     || "").trim();
-        const about     = (form.querySelector("#signupAbout")?.value     || "").trim();
         const fullName  = [firstName, lastName].filter(Boolean).join(" ") || email.split("@")[0];
         ({ user } = await createUserWithEmailAndPassword(auth, email, password));
         await updateProfile(user, { displayName: fullName });
