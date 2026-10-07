@@ -51,10 +51,11 @@ function renderPage(opts: {
     inStock: boolean;
     shopName: string | null;
     whatsappUrl: string | null;
+    shopId?: string | null;
 }): string {
     const {
         title, description, imageUrl, pageUrl, deepLink, listingId, listingType,
-        priceDisplay, priceAmount, priceCurrency, inStock, shopName, whatsappUrl
+        priceDisplay, priceAmount, priceCurrency, inStock, shopName, whatsappUrl, shopId = null
     } = opts;
 
     const safeTitle = escapeHtml(title);
@@ -80,9 +81,11 @@ function renderPage(opts: {
     // The browser module replaces it with the full Android-parity listing view (hosting/listing-detail.js);
     // if anything fails, the original markup is restored and the basic Buy button keeps working.
     const jsonForScript = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
-    const commerceScript = listingId ? `
+    const mountKind = listingId ? "listing" : shopId ? "shop" : null;
+    const commerceScript = mountKind ? `
     <script type="module">
-      const id = ${jsonForScript(listingId)};
+      const kind = ${jsonForScript(mountKind)};
+      const id = ${jsonForScript(listingId || shopId)};
       const title = ${jsonForScript(title)};
       const isDelivery = ${isDeliveryListing ? "true" : "false"};
       const root = document.getElementById("swift-listing-root");
@@ -96,7 +99,7 @@ function renderPage(opts: {
         }
         document.body.classList.remove("ld-enhanced");
         document.documentElement.classList.remove("ld-enhancement-pending");
-        if (isDelivery) return;
+        if (isDelivery || kind !== "listing") return;
         document.getElementById("buyNowBtn")?.addEventListener("click", async () => {
           const { addToCart } = await import("/app.js");
           addToCart(id, title, 1);
@@ -107,9 +110,11 @@ function renderPage(opts: {
         useFallback();
       } else {
         try {
-          const { mountListingDetail } = await import("/app.js");
+          const mod = await import("/app.js");
           document.body.classList.add("ld-enhanced");
-          const ok = await mountListingDetail(enhancedRoot, { listingId: id, standalone: true });
+          const ok = kind === "shop"
+            ? await mod.mountShopDetail(enhancedRoot, { shopId: id, standalone: true })
+            : await mod.mountListingDetail(enhancedRoot, { listingId: id, standalone: true });
           if (!ok) useFallback();
           else {
             enhancedRoot.classList.remove("ld-loading-shell");
@@ -120,7 +125,7 @@ function renderPage(opts: {
             document.documentElement.classList.remove("ld-enhancement-pending");
           }
         } catch (err) {
-          console.error("Swift listing view failed to load; showing basic page", err);
+          console.error("Swift page view failed to load; showing basic page", err);
           useFallback();
         }
       }
@@ -145,10 +150,12 @@ function renderPage(opts: {
   <meta name="twitter:title" content="${safeTitle}">
   <meta name="twitter:description" content="${safeDescription}">
   <meta name="twitter:image" content="${safeImage}">
+  <link rel="stylesheet" href="/ui-kit.css">
   <link rel="stylesheet" href="/listing-detail.css">
-  <script>
+  <link rel="stylesheet" href="/shop-detail.css">
+  ${mountKind ? `<script>
     document.documentElement.classList.add("ld-enhancement-pending");
-  </script>
+  </script>` : ""}
   <style>
     body { font-family: -apple-system, Roboto, sans-serif; max-width: 480px; margin: 24px auto; padding: 0 20px; color: #1a1a1a; }
     img { width: 100%; max-width: 420px; aspect-ratio: 1; object-fit: cover; border-radius: 12px; margin-bottom: 18px; background: #eee; }
@@ -165,8 +172,8 @@ function renderPage(opts: {
   </style>
 </head>
 <body data-share-page="true">
-  <div id="swift-listing-root" class="ld-hydrating">
-    <div data-listing-enhanced class="ld-loading-shell" aria-busy="true" aria-live="polite">
+  <div id="swift-listing-root"${mountKind ? ' class="ld-hydrating"' : ""}>
+    ${mountKind ? `<div data-listing-enhanced class="ld-loading-shell${mountKind === "shop" ? " is-shop" : ""}" aria-busy="true" aria-live="polite">
       <div class="ld-loading-media">${safeImage ? `<img src="${safeImage}" alt="" aria-hidden="true">` : ""}</div>
       <div class="ld-loading-info">
         <div class="ld-loading-line ld-loading-price"></div>
@@ -175,8 +182,8 @@ function renderPage(opts: {
         <div class="ld-loading-line ld-loading-copy short"></div>
         <div class="ld-loading-actions"></div>
       </div>
-    </div>
-    <div data-listing-fallback class="ld-fallback" hidden>
+    </div>` : ""}
+    <div data-listing-fallback class="ld-fallback"${mountKind ? " hidden" : ""}>
       ${safeImage ? `<img src="${safeImage}" alt="${safeTitle}" loading="eager">` : ""}
       <h1>${safeTitle}</h1>
       <p>${safeDescription}</p>
@@ -394,6 +401,7 @@ export const renderShopPreview = functions.onRequest({ invoker: "public" }, asyn
             pageUrl: `${SITE_ORIGIN}/shop/${shopId}`,
             deepLink: `swiftshop://shop/${shopId}`,
             listingId: null,
+            shopId,
             listingType: null,
             priceDisplay: null,
             priceAmount: null,
