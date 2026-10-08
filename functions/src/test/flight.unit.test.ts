@@ -14,21 +14,10 @@ const {
     initialFlightState,
 } = require("../flight") as typeof import("../flight");
 
-let passed = 0;
-let failed = 0;
-
-function test(name: string, fn: () => void) {
-    try {
-        fn();
-        console.log(`  ✅ ${name}`);
-        passed++;
-    } catch (error: any) {
-        console.error(`  ❌ ${name}: ${error.message}`);
-        failed++;
+describe("Swift Flight — pure unit tests", () => {
+    function test(name: string, fn: () => void) {
+        it(name, fn);
     }
-}
-
-console.log("\nSwift Flight — pure unit tests\n");
 
 // ── Altitude ──────────────────────────────────────────────────────────────────
 
@@ -159,5 +148,4 @@ test("altitude table contains exactly ten levels", () => {
     assert.strictEqual(ALTITUDE_LEVELS.length, 10);
 });
 
-console.log(`\n${passed + failed} tests — ${passed} passed, ${failed} failed\n`);
-if (failed > 0) process.exit(1);
+});
