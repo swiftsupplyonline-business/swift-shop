@@ -1,22 +1,14 @@
 /**
- * SWIFT FLIGHT ENGINE — flight.ts
+ * Swift Flight — server-authoritative game engine.
  *
- * Server-authoritative game engine. The client NEVER controls:
- *   points / altitude / flightNumber / redemption / event eligibility
+ * The client can request a marketplace event be evaluated, but cannot
+ * manufacture the event, points, altitude, redemption or wallet credit.
  *
- * Security model:
- *   - Every callable verifies: (a) user is authenticated, (b) user is NOT
- *     anonymous, (c) the claimed marketplace event actually exists in
- *     Firestore and belongs to this user.
- *   - Anonymous detection uses sign_in_provider, not is_anonymous flag.
- *   - All state mutations happen inside Firestore transactions.
- *   - Event idempotency key = `{uid}:{sourceType}:{sourceId}` so the same
- *     event can only reward the same user once.
- *
- * Firestore collections:
- *   flightState/{uid}          — live game state (server-owned)
- *   flightEvents/{eventKey}    — processed-event ledger (idempotency)
- *   flightHistory/{historyId}  — completed flight records
+ * Game-owned collections:
+ *   flightState/{uid}
+ *   flightEvents/{eventKey}
+ *   flightRateLimits/{uid}:{sourceType}
+ *   flightHistory/{historyId}
  */
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
@@ -24,90 +16,143 @@ import * as admin from "firebase-admin";
 
 const db = admin.firestore();
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+export const REDEMPTION_THRESHOLD = 100_000;
+export const REDEMPTION_AMOUNT_MINOR = 20_000; // M200
+export const FEED_COST = 20;
+export const STARTING_POINTS = 10;
 
-const REDEMPTION_THRESHOLD = 100_000;
-const REDEMPTION_AMOUNT_MINOR = 20_000; // M200 in lisente
-const FEED_COST = 20;
-const STARTING_POINTS = 10;
-
-/** Base point values per verified event type. */
-const BASE_REWARDS: Record<string, number> = {
-    FOLLOW:          10,
-    NEW_FOLLOWER:    10,
-    SMART_LINK:      40,
-    CREATE_POST:     80,
+export const BASE_REWARDS: Record<string, number> = {
+    FOLLOW: 10,
+    NEW_FOLLOWER: 10,
+    CREATE_POST: 80,
     CREATE_LISTING: 150,
     SUCCESSFUL_SALE: 800,
 };
 
 /**
- * Altitude levels 1–10 with multiplier and display label.
- * Level is derived from totalPointsEarned lifetime (not spendable points),
- * so feeding the bird doesn't reset the player's progression tier.
+ * These are economic guardrails, not the source of truth for whether an
+ * event is genuine. verifyEvent() remains authoritative for that.
+ *
+ * FOLLOW and NEW_FOLLOWER also get a stable relationship idempotency key,
+ * so unfollow/refollow cannot create a fresh reward.
  */
-const ALTITUDE_LEVELS = [
-    { level: 1,  minLifetime: 0,       multiplier: 1.0, label: "Ground",       env: "Rooftops" },
-    { level: 2,  minLifetime: 2_000,   multiplier: 1.0, label: "Rooftops",     env: "Rooftops" },
-    { level: 3,  minLifetime: 6_000,   multiplier: 1.5, label: "Low sky",      env: "Above rooftops" },
-    { level: 4,  minLifetime: 14_000,  multiplier: 1.5, label: "Rising",       env: "Above rooftops" },
-    { level: 5,  minLifetime: 28_000,  multiplier: 2.0, label: "Clouds",       env: "Clouds" },
-    { level: 6,  minLifetime: 48_000,  multiplier: 2.0, label: "High clouds",  env: "Clouds" },
-    { level: 7,  minLifetime: 65_000,  multiplier: 3.0, label: "Storm",        env: "Storm" },
-    { level: 8,  minLifetime: 80_000,  multiplier: 3.0, label: "Thunder",      env: "Storm" },
-    { level: 9,  minLifetime: 92_000,  multiplier: 5.0, label: "Open sky",     env: "Open sky" },
-    { level: 10, minLifetime: 98_000,  multiplier: 5.0, label: "Summit",       env: "Open sky" },
-];
+export const ANTI_FARMING: Record<string, { maxPerDay: number }> = {
+    FOLLOW: { maxPerDay: 20 },
+    NEW_FOLLOWER: { maxPerDay: 200 },
+    CREATE_POST: { maxPerDay: 5 },
+    CREATE_LISTING: { maxPerDay: 10 },
+    SUCCESSFUL_SALE: { maxPerDay: 500 },
+};
 
-function altitudeForLifetime(lifetime: number) {
+export const ALTITUDE_LEVELS = [
+    { level: 1, minFlight: 0, multiplier: 1.0, label: "Ground", env: "Rooftops" },
+    { level: 2, minFlight: 2_000, multiplier: 1.0, label: "Rooftops", env: "Rooftops" },
+    { level: 3, minFlight: 6_000, multiplier: 1.5, label: "Low sky", env: "Above rooftops" },
+    { level: 4, minFlight: 14_000, multiplier: 1.5, label: "Rising", env: "Above rooftops" },
+    { level: 5, minFlight: 28_000, multiplier: 2.0, label: "Clouds", env: "Clouds" },
+    { level: 6, minFlight: 48_000, multiplier: 2.0, label: "High clouds", env: "Clouds" },
+    { level: 7, minFlight: 65_000, multiplier: 3.0, label: "Storm", env: "Storm" },
+    { level: 8, minFlight: 80_000, multiplier: 3.0, label: "Thunder", env: "Storm" },
+    { level: 9, minFlight: 92_000, multiplier: 5.0, label: "Open sky", env: "Open sky" },
+    { level: 10, minFlight: 98_000, multiplier: 5.0, label: "Summit", env: "Open sky" },
+] as const;
+
+export function altitudeForFlight(flightPoints: number) {
     let result = ALTITUDE_LEVELS[0];
-    for (const lvl of ALTITUDE_LEVELS) {
-        if (lifetime >= lvl.minLifetime) result = lvl;
+    for (const level of ALTITUDE_LEVELS) {
+        if (flightPoints >= level.minFlight) result = level;
     }
     return result;
 }
 
-// ─── Auth guard ───────────────────────────────────────────────────────────────
+export function eventIdempotencyKey(
+    uid: string,
+    sourceType: string,
+    sourceId: string,
+    relationshipId?: string,
+): string {
+    // Relationship rewards use a stable target/follower identity rather than
+    // a disposable follows/{id}, preventing unfollow/refollow farming.
+    return relationshipId
+        ? `${uid}:${sourceType}:relationship:${relationshipId}`
+        : `${uid}:${sourceType}:${sourceId}`;
+}
 
-/**
- * Asserts the caller is a real, non-anonymous Firebase user.
- * Uses sign_in_provider — the correct field — not the is_anonymous flag
- * which can be absent or unreliable on custom tokens.
- */
-function assertRealUser(auth: { uid: string; token: admin.auth.DecodedIdToken } | undefined): string {
+function assertRealUser(
+    auth: { uid: string; token: admin.auth.DecodedIdToken } | undefined,
+): string {
     if (!auth?.uid) {
         throw new HttpsError("unauthenticated", "Authentication required for Swift Flight.");
     }
+
     const provider = auth.token?.firebase?.sign_in_provider;
     if (!provider || provider === "anonymous") {
         throw new HttpsError(
             "permission-denied",
-            "Swift Flight requires a real account. Please sign in or create an account."
+            "Swift Flight requires a real account. Please sign in or create an account.",
         );
     }
+
     return auth.uid;
 }
 
-// ─── State initialiser ────────────────────────────────────────────────────────
-
-function initialState(uid: string, now: FirebaseFirestore.FieldValue) {
+export function initialFlightState(uid: string, now: FirebaseFirestore.FieldValue) {
     return {
         uid,
-        currentPoints:     STARTING_POINTS,
-        totalPointsEarned: STARTING_POINTS,
-        altitudeLevel:     1,
-        altitudeLabel:     "Ground",
-        altitudeEnv:       "Rooftops",
-        multiplier:        1.0,
-        flightNumber:      1,
-        highestLevel:      1,
+        currentPoints: STARTING_POINTS,
+        flightPointsEarned: STARTING_POINTS,
+        altitudeLevel: 1,
+        altitudeLabel: "Ground",
+        altitudeEnv: "Rooftops",
+        multiplier: 1.0,
+        flightNumber: 1,
+        highestLevel: 1,
         isEligibleToRedeem: false,
-        createdAt:         now,
-        updatedAt:         now,
+        createdAt: now,
+        updatedAt: now,
     };
 }
 
-// ─── getFlightState ───────────────────────────────────────────────────────────
+/**
+ * Atomically enforces a rolling 24-hour reward cap without requiring a
+ * Firestore composite index. The counter belongs to Flight and is never
+ * client-writable.
+ */
+async function assertWithinDailyLimit(
+    tx: FirebaseFirestore.Transaction,
+    uid: string,
+    sourceType: string,
+): Promise<void> {
+    const rule = ANTI_FARMING[sourceType];
+    if (!rule) return;
+
+    const ref = db.collection("flightRateLimits").doc(`${uid}:${sourceType}`);
+    const snap = await tx.get(ref);
+    const nowMs = Date.now();
+
+    if (!snap.exists) {
+        tx.set(ref, { uid, sourceType, windowStartMs: nowMs, count: 1 });
+        return;
+    }
+
+    const data = snap.data()!;
+    const windowStartMs = Number(data.windowStartMs || 0);
+    const count = Number(data.count || 0);
+
+    if (nowMs - windowStartMs >= 24 * 60 * 60 * 1000) {
+        tx.set(ref, { uid, sourceType, windowStartMs: nowMs, count: 1 });
+        return;
+    }
+
+    if (count >= rule.maxPerDay) {
+        throw new HttpsError(
+            "resource-exhausted",
+            `Daily limit reached for ${sourceType} rewards (${rule.maxPerDay}/24h).`,
+        );
+    }
+
+    tx.update(ref, { count: count + 1 });
+}
 
 export const getFlightState = onCall(async (request) => {
     const uid = assertRealUser(request.auth as any);
@@ -116,212 +161,237 @@ export const getFlightState = onCall(async (request) => {
 
     const snap = await ref.get();
     if (!snap.exists) {
-        // First visit: create initial state
-        const state = initialState(uid, now);
+        const state = initialFlightState(uid, now);
         await ref.set(state);
-        return { ...state, currentPoints: STARTING_POINTS, isNew: true };
+        return { ...state, isNew: true };
     }
+
     return snap.data();
 });
 
-// ─── processFlightEvent ───────────────────────────────────────────────────────
-//
-// The ONLY way points are awarded. The client names an event; the server
-// independently verifies the event in Firestore before awarding anything.
-//
-// sourceType: "SUCCESSFUL_SALE" | "CREATE_LISTING" | "CREATE_POST" |
-//             "FOLLOW" | "NEW_FOLLOWER" | "SMART_LINK"
-// sourceId:   the Firestore document ID of the actual event
-
 export const processFlightEvent = onCall(async (request) => {
     const uid = assertRealUser(request.auth as any);
-    const { sourceType, sourceId } = request.data;
+    const { sourceType, sourceId } = request.data ?? {};
 
-    if (!sourceType || !sourceId || typeof sourceType !== "string" || typeof sourceId !== "string") {
+    if (
+        typeof sourceType !== "string" ||
+        typeof sourceId !== "string" ||
+        !sourceType ||
+        !sourceId
+    ) {
         throw new HttpsError("invalid-argument", "sourceType and sourceId are required.");
     }
-    if (!BASE_REWARDS[sourceType]) {
-        throw new HttpsError("invalid-argument", `Unknown event type: ${sourceType}`);
+
+    if (!(sourceType in BASE_REWARDS)) {
+        throw new HttpsError(
+            "invalid-argument",
+            `Unknown or unsupported event type: ${sourceType}`,
+        );
     }
 
-    // Idempotency key scoped to this user — prevents cross-user claims
-    const eventKey = `${uid}:${sourceType}:${sourceId}`;
-    const eventRef  = db.collection("flightEvents").doc(eventKey);
-    const stateRef  = db.collection("flightState").doc(uid);
-    const now       = admin.firestore.FieldValue.serverTimestamp();
+    const stateRef = db.collection("flightState").doc(uid);
+    const now = admin.firestore.FieldValue.serverTimestamp();
 
     return db.runTransaction(async (tx) => {
-        // 1. Idempotency check
+        /*
+         * Verify the marketplace event first. The returned relationshipId is
+         * used to make FOLLOW/NEW_FOLLOWER rewards relationship-scoped.
+         */
+        const relationshipId = await verifyEvent(tx, uid, sourceType, sourceId);
+        const eventKey = eventIdempotencyKey(uid, sourceType, sourceId, relationshipId);
+        const eventRef = db.collection("flightEvents").doc(eventKey);
+
         const eventSnap = await tx.get(eventRef);
         if (eventSnap.exists) {
             return { duplicate: true, awardedPoints: 0 };
         }
 
-        // 2. Server-side event verification — the client claim must match Firestore reality
-        await verifyEvent(tx, uid, sourceType, sourceId);
+        await assertWithinDailyLimit(tx, uid, sourceType);
 
-        // 3. Load or initialise flight state
         const stateSnap = await tx.get(stateRef);
         const state = stateSnap.exists
             ? stateSnap.data()!
-            : initialState(uid, now);
+            : initialFlightState(uid, now);
 
-        // 4. Calculate reward
-        const altitude   = altitudeForLifetime(state.totalPointsEarned || 0);
-        const basePoints = BASE_REWARDS[sourceType];
-        const awarded    = Math.round(basePoints * altitude.multiplier);
+        const flightPoints = Number(state.flightPointsEarned || 0);
+        const altitude = altitudeForFlight(flightPoints);
+        const awarded = Math.round(BASE_REWARDS[sourceType] * altitude.multiplier);
 
-        const newCurrent   = (state.currentPoints  || 0) + awarded;
-        const newLifetime  = (state.totalPointsEarned || 0) + awarded;
-        const newAltitude  = altitudeForLifetime(newLifetime);
-        const newHighest   = Math.max(state.highestLevel || 1, newAltitude.level);
-        const eligible     = newCurrent >= REDEMPTION_THRESHOLD;
+        const newCurrent = Number(state.currentPoints || 0) + awarded;
+        const newFlightPoints = flightPoints + awarded;
+        const newAltitude = altitudeForFlight(newFlightPoints);
+        const newHighest = Math.max(Number(state.highestLevel || 1), newAltitude.level);
 
-        const newState = {
-            ...state,
-            currentPoints:      newCurrent,
-            totalPointsEarned:  newLifetime,
-            altitudeLevel:      newAltitude.level,
-            altitudeLabel:      newAltitude.label,
-            altitudeEnv:        newAltitude.env,
-            multiplier:         newAltitude.multiplier,
-            highestLevel:       newHighest,
-            isEligibleToRedeem: eligible,
-            updatedAt:          now,
+        const updates = {
+            currentPoints: newCurrent,
+            flightPointsEarned: newFlightPoints,
+            altitudeLevel: newAltitude.level,
+            altitudeLabel: newAltitude.label,
+            altitudeEnv: newAltitude.env,
+            multiplier: newAltitude.multiplier,
+            highestLevel: newHighest,
+            isEligibleToRedeem: newCurrent >= REDEMPTION_THRESHOLD,
+            updatedAt: now,
         };
 
-        if (!stateSnap.exists) {
-            tx.set(stateRef, newState);
+        if (stateSnap.exists) {
+            tx.update(stateRef, updates);
         } else {
-            tx.update(stateRef, {
-                currentPoints:      newCurrent,
-                totalPointsEarned:  newLifetime,
-                altitudeLevel:      newAltitude.level,
-                altitudeLabel:      newAltitude.label,
-                altitudeEnv:        newAltitude.env,
-                multiplier:         newAltitude.multiplier,
-                highestLevel:       newHighest,
-                isEligibleToRedeem: eligible,
-                updatedAt:          now,
+            tx.set(stateRef, {
+                ...state,
+                ...updates,
             });
         }
 
-        // 5. Mark event processed
         tx.set(eventRef, {
             uid,
             sourceType,
             sourceId,
+            relationshipId: relationshipId ?? null,
             awardedPoints: awarded,
             altitudeAtEvent: newAltitude.level,
             processedAt: now,
         });
 
         return {
-            duplicate:      false,
-            awardedPoints:  awarded,
-            currentPoints:  newCurrent,
-            altitudeLevel:  newAltitude.level,
-            altitudeLabel:  newAltitude.label,
-            multiplier:     newAltitude.multiplier,
-            eligible,
+            duplicate: false,
+            awardedPoints: awarded,
+            currentPoints: newCurrent,
+            altitudeLevel: newAltitude.level,
+            altitudeLabel: newAltitude.label,
+            multiplier: newAltitude.multiplier,
+            eligible: newCurrent >= REDEMPTION_THRESHOLD,
         };
     });
 });
 
-// ─── Event verification (server reads Firestore — client cannot fake this) ────
-
+/**
+ * Returns a stable relationship identity for relationship rewards.
+ *
+ * FOLLOW: the person this user followed.
+ * NEW_FOLLOWER: the person who followed this user.
+ *
+ * Other event types return undefined and remain source-document scoped.
+ */
 async function verifyEvent(
-    tx:         FirebaseFirestore.Transaction,
-    uid:        string,
+    tx: FirebaseFirestore.Transaction,
+    uid: string,
     sourceType: string,
-    sourceId:   string,
-): Promise<void> {
+    sourceId: string,
+): Promise<string | undefined> {
     switch (sourceType) {
         case "SUCCESSFUL_SALE": {
-            // Order must exist, belong to this seller, be CONFIRMED and COMMITTED
             const snap = await tx.get(db.collection("orders").doc(sourceId));
             if (!snap.exists) throw new HttpsError("not-found", "Order not found.");
-            const o = snap.data()!;
-            if (o.sellerId !== uid)          throw new HttpsError("permission-denied", "Order does not belong to you.");
-            if (o.status !== "CONFIRMED")    throw new HttpsError("failed-precondition", "Order is not confirmed.");
-            if (o.inventoryStatus !== "COMMITTED") throw new HttpsError("failed-precondition", "Order inventory not committed.");
-            break;
+            const order = snap.data()!;
+            if (order.sellerId !== uid) {
+                throw new HttpsError("permission-denied", "Order does not belong to you.");
+            }
+            if (order.status !== "CONFIRMED") {
+                throw new HttpsError("failed-precondition", "Order is not confirmed.");
+            }
+            if (order.inventoryStatus !== "COMMITTED") {
+                throw new HttpsError("failed-precondition", "Order inventory not committed.");
+            }
+            return undefined;
         }
+
         case "CREATE_LISTING": {
-            // Listing must exist, belong to this seller, be ACTIVE
             const snap = await tx.get(db.collection("listings").doc(sourceId));
             if (!snap.exists) throw new HttpsError("not-found", "Listing not found.");
-            const l = snap.data()!;
-            if (l.sellerId !== uid) throw new HttpsError("permission-denied", "Listing does not belong to you.");
-            if (l.status !== "ACTIVE") throw new HttpsError("failed-precondition", "Listing is not active.");
-            break;
+            const listing = snap.data()!;
+            if (listing.sellerId !== uid) {
+                throw new HttpsError("permission-denied", "Listing does not belong to you.");
+            }
+            if (listing.status !== "ACTIVE") {
+                throw new HttpsError("failed-precondition", "Listing is not active.");
+            }
+            return undefined;
         }
+
         case "CREATE_POST": {
-            // Post must exist and belong to this user
             const snap = await tx.get(db.collection("posts").doc(sourceId));
             if (!snap.exists) throw new HttpsError("not-found", "Post not found.");
-            const p = snap.data()!;
-            if (p.authorId !== uid) throw new HttpsError("permission-denied", "Post does not belong to you.");
-            break;
+            const post = snap.data()!;
+            if (post.authorId !== uid) {
+                throw new HttpsError("permission-denied", "Post does not belong to you.");
+            }
+            return undefined;
         }
+
         case "FOLLOW": {
-            // Follow document must exist and this user is the follower
             const snap = await tx.get(db.collection("follows").doc(sourceId));
             if (!snap.exists) throw new HttpsError("not-found", "Follow record not found.");
-            const f = snap.data()!;
-            if (f.followerId !== uid) throw new HttpsError("permission-denied", "Follow does not belong to you.");
-            break;
+            const follow = snap.data()!;
+            if (follow.followerId !== uid) {
+                throw new HttpsError("permission-denied", "Follow does not belong to you.");
+            }
+            if (!follow.followedId || typeof follow.followedId !== "string") {
+                throw new HttpsError("failed-precondition", "Follow target is missing.");
+            }
+            return follow.followedId;
         }
+
         case "NEW_FOLLOWER": {
-            // Follow document must exist and this user is the one being followed
             const snap = await tx.get(db.collection("follows").doc(sourceId));
             if (!snap.exists) throw new HttpsError("not-found", "Follow record not found.");
-            const f = snap.data()!;
-            if (f.followingId !== uid) throw new HttpsError("permission-denied", "This follow is not for your account.");
-            break;
+            const follow = snap.data()!;
+            if (follow.followedId !== uid) {
+                throw new HttpsError("permission-denied", "This follow is not for your account.");
+            }
+            if (!follow.followerId || typeof follow.followerId !== "string") {
+                throw new HttpsError("failed-precondition", "Follower identity is missing.");
+            }
+            return follow.followerId;
         }
-        case "SMART_LINK": {
-            // Smart link share event must exist and belong to this user
-            const snap = await tx.get(db.collection("smartLinkEvents").doc(sourceId));
-            if (!snap.exists) throw new HttpsError("not-found", "Smart link event not found.");
-            const e = snap.data()!;
-            if (e.sharerId !== uid) throw new HttpsError("permission-denied", "Smart link event does not belong to you.");
-            break;
-        }
+
+        /*
+         * SMART_LINK intentionally has no reward path.
+         * There is currently no verified marketplace smart-link event authority.
+         * It must not be reintroduced until the backend records a trustworthy
+         * share/reach event.
+         */
         default:
-            throw new HttpsError("invalid-argument", `Unverifiable event type: ${sourceType}`);
+            throw new HttpsError(
+                "invalid-argument",
+                `Unverifiable event type: ${sourceType}`,
+            );
     }
 }
 
-// ─── feedBird ─────────────────────────────────────────────────────────────────
-//
-// Spend FEED_COST points to explicitly feed the bird.
-// Altitude is now derived from lifetime earnings, so feeding is a
-// cosmetic/engagement action rather than a progression gate.
-// We keep it as a deliberate player ritual.
-
 export const feedBird = onCall(async (request) => {
-    const uid      = assertRealUser(request.auth as any);
+    const uid = assertRealUser(request.auth as any);
     const stateRef = db.collection("flightState").doc(uid);
-    const now      = admin.firestore.FieldValue.serverTimestamp();
+    const now = admin.firestore.FieldValue.serverTimestamp();
 
     return db.runTransaction(async (tx) => {
         const snap = await tx.get(stateRef);
-        if (!snap.exists) throw new HttpsError("not-found", "No active flight. Call getFlightState first.");
+        if (!snap.exists) {
+            throw new HttpsError("not-found", "No active flight. Call getFlightState first.");
+        }
 
         const state = snap.data()!;
-        if ((state.currentPoints || 0) < FEED_COST) {
-            throw new HttpsError("failed-precondition", `Need at least ${FEED_COST} points to feed the bird.`);
+        if (Number(state.currentPoints || 0) < FEED_COST) {
+            throw new HttpsError(
+                "failed-precondition",
+                `Need at least ${FEED_COST} points to feed the bird.`,
+            );
         }
         if (state.isEligibleToRedeem) {
-            throw new HttpsError("failed-precondition", "You have reached 100,000 points — redeem your flight first!");
+            throw new HttpsError(
+                "failed-precondition",
+                "You have reached 100,000 points — redeem your flight first.",
+            );
         }
 
-        const newPoints = (state.currentPoints || 0) - FEED_COST;
-        tx.update(stateRef, { currentPoints: newPoints, updatedAt: now });
+        const newPoints = Number(state.currentPoints || 0) - FEED_COST;
+        tx.update(stateRef, {
+            currentPoints: newPoints,
+            updatedAt: now,
+        });
 
         return {
-            fed:           true,
+            fed: true,
             currentPoints: newPoints,
             altitudeLevel: state.altitudeLevel,
             altitudeLabel: state.altitudeLabel,
@@ -329,102 +399,88 @@ export const feedBird = onCall(async (request) => {
     });
 });
 
-// ─── claimFlightRedemption ───────────────────────────────────────────────────
-//
-// Atomic M200 redemption. Guards:
-//   - user is real
-//   - currentPoints >= REDEMPTION_THRESHOLD
-//   - wallet exists
-//   - entire operation is one transaction (no double-claim possible)
-
 export const claimFlightRedemption = onCall(async (request) => {
-    const uid       = assertRealUser(request.auth as any);
-    const stateRef  = db.collection("flightState").doc(uid);
+    const uid = assertRealUser(request.auth as any);
+    const stateRef = db.collection("flightState").doc(uid);
     const walletRef = db.collection("wallets").doc(uid);
-    const now       = admin.firestore.FieldValue.serverTimestamp();
-    const nowMs     = Date.now();
+    const now = admin.firestore.FieldValue.serverTimestamp();
 
     return db.runTransaction(async (tx) => {
-        const [stateSnap, walletSnap] = await Promise.all([
-            tx.get(stateRef),
-            tx.get(walletRef),
-        ]);
+        const stateSnap = await tx.get(stateRef);
+        const walletSnap = await tx.get(walletRef);
 
-        if (!stateSnap.exists) throw new HttpsError("not-found", "No active flight.");
+        if (!stateSnap.exists) {
+            throw new HttpsError("not-found", "No active flight.");
+        }
+
         const state = stateSnap.data()!;
-
-        // Guard: must have enough points
-        if ((state.currentPoints || 0) < REDEMPTION_THRESHOLD) {
+        if (Number(state.currentPoints || 0) < REDEMPTION_THRESHOLD) {
             throw new HttpsError(
                 "failed-precondition",
-                `Need ${REDEMPTION_THRESHOLD.toLocaleString()} points to redeem. ` +
-                `You have ${(state.currentPoints || 0).toLocaleString()}.`
+                `Need ${REDEMPTION_THRESHOLD.toLocaleString()} points to redeem. You have ${Number(state.currentPoints || 0).toLocaleString()}.`,
             );
         }
 
-        // Guard: wallet must exist
-        if (!walletSnap.exists) throw new HttpsError("not-found", "Wallet not found.");
+        if (!walletSnap.exists) {
+            throw new HttpsError("not-found", "Wallet not found.");
+        }
 
-        const flightNumber = state.flightNumber || 1;
+        const flightNumber = Number(state.flightNumber || 1);
+        const currentBalance = Number(
+            walletSnap.data()!.availableBalanceMinorUnits || 0,
+        );
 
-        // 1. Write history record
         const historyRef = db.collection("flightHistory").doc();
         tx.set(historyRef, {
-            id:               historyRef.id,
+            id: historyRef.id,
             uid,
             flightNumber,
             pointsAtRedemption: state.currentPoints,
-            totalPointsEarned:  state.totalPointsEarned || 0,
-            highestLevel:       state.highestLevel || 1,
+            flightPointsEarned: state.flightPointsEarned || 0,
+            highestLevel: state.highestLevel || 1,
             redemptionAmountMinorUnits: REDEMPTION_AMOUNT_MINOR,
-            redeemedAt:        now,
+            redeemedAt: now,
         });
 
-        // 2. Credit wallet — atomic with state reset
-        const currentBal = walletSnap.data()!.availableBalanceMinorUnits || 0;
         tx.update(walletRef, {
-            availableBalanceMinorUnits: currentBal + REDEMPTION_AMOUNT_MINOR,
+            availableBalanceMinorUnits: currentBalance + REDEMPTION_AMOUNT_MINOR,
             updatedAt: now,
         });
 
-        // 3. Ledger entry
-        const ledgerId = db.collection("ledgerEntries").doc().id;
-        tx.set(db.collection("ledgerEntries").doc(ledgerId), {
-            id:            ledgerId,
-            debitAccount:  "system_flight_rewards",
+        const ledgerRef = db.collection("ledgerEntries").doc();
+        tx.set(ledgerRef, {
+            id: ledgerRef.id,
+            debitAccount: "system_flight_rewards",
             creditAccount: `user_${uid}`,
             amountMinorUnits: REDEMPTION_AMOUNT_MINOR,
-            currency:      "LSL",
-            reference:     `FLIGHT_REDEMPTION_${uid}_FLIGHT_${flightNumber}`,
-            timestamp:     now,
+            currency: "LSL",
+            reference: `FLIGHT_REDEMPTION_${uid}_FLIGHT_${flightNumber}`,
+            timestamp: now,
         });
 
-        // 4. Reset flight state for next flight
         tx.update(stateRef, {
-            currentPoints:      0,
-            totalPointsEarned:  0,        // lifetime resets per flight
-            altitudeLevel:      1,
-            altitudeLabel:      "Ground",
-            altitudeEnv:        "Rooftops",
-            multiplier:         1.0,
-            highestLevel:       1,
-            flightNumber:       flightNumber + 1,
+            currentPoints: 0,
+            flightPointsEarned: 0,
+            altitudeLevel: 1,
+            altitudeLabel: "Ground",
+            altitudeEnv: "Rooftops",
+            multiplier: 1.0,
+            highestLevel: 1,
+            flightNumber: flightNumber + 1,
             isEligibleToRedeem: false,
-            lastRedeemedAt:     now,
-            updatedAt:          now,
+            lastRedeemedAt: now,
+            updatedAt: now,
         });
 
         return {
-            success:         true,
+            success: true,
             flightNumber,
             nextFlightNumber: flightNumber + 1,
             redeemedAmountMinorUnits: REDEMPTION_AMOUNT_MINOR,
-            newWalletBalance: currentBal + REDEMPTION_AMOUNT_MINOR,
+            newWalletBalance: currentBalance + REDEMPTION_AMOUNT_MINOR,
         };
     });
 });
-
-// ─── getFlightHistory ────────────────────────────────────────────────────────
 
 export const getFlightHistory = onCall(async (request) => {
     const uid = assertRealUser(request.auth as any);
@@ -433,5 +489,6 @@ export const getFlightHistory = onCall(async (request) => {
         .orderBy("flightNumber", "desc")
         .limit(20)
         .get();
-    return snap.docs.map(d => d.data());
+
+    return snap.docs.map((doc) => doc.data());
 });
