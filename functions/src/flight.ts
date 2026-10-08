@@ -206,12 +206,12 @@ export const processFlightEvent = onCall(async (request) => {
             return { duplicate: true, awardedPoints: 0 };
         }
 
-        await assertWithinDailyLimit(tx, uid, sourceType);
-
         const stateSnap = await tx.get(stateRef);
         const state = stateSnap.exists
             ? stateSnap.data()!
             : initialFlightState(uid, now);
+
+        await assertWithinDailyLimit(tx, uid, sourceType);
 
         const flightPoints = Number(state.flightPointsEarned || 0);
         const altitude = altitudeForFlight(flightPoints);
