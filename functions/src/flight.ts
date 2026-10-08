@@ -57,7 +57,7 @@ export const ALTITUDE_LEVELS = [
     { level: 10, minFlight: 98_000, multiplier: 5.0, label: "Summit", env: "Open sky" },
 ] as const;
 
-export function altitudeForFlight(flightPoints: number) {
+export function altitudeForFlight(flightPoints: number): (typeof ALTITUDE_LEVELS)[number] {
     let result = ALTITUDE_LEVELS[0];
     for (const level of ALTITUDE_LEVELS) {
         if (flightPoints >= level.minFlight) result = level;
