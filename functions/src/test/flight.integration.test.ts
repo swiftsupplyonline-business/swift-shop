@@ -28,22 +28,9 @@ async function seed(path: string, data: Record<string, unknown>) {
     await db.doc(path).set(data);
 }
 
-async function deleteCollection(path: string) {
-    const snap = await db.collection(path).get();
-    if (!snap.empty) {
-        const batch = db.batch();
-        snap.docs.forEach((doc) => batch.delete(doc.ref));
-        await batch.commit();
-    }
-}
+
 
 describe("Swift Flight — emulator integration", () => {
-    afterEach(async () => {
-        for (const collection of ["flightState", "flightEvents", "flightRateLimits", "flightHistory", "orders", "follows", "wallets", "ledgerEntries", "posts"]) {
-            await deleteCollection(collection);
-        }
-    });
-
     test("forged or wrong-owner sale cannot award points", async () => {
         const uid = "flight-sale-attacker";
         await seed("orders/order-wrong-owner", {
@@ -73,7 +60,7 @@ describe("Swift Flight — emulator integration", () => {
 
     test("duplicate sale event awards only once", async () => {
         const uid = "flight-duplicate-sale";
-        await seed("orders/order-1", {
+        await seed("orders/flight-order-1", {
             sellerId: uid,
             status: "CONFIRMED",
             inventoryStatus: "COMMITTED",
@@ -81,7 +68,7 @@ describe("Swift Flight — emulator integration", () => {
 
         const first = await call(processFlightEvent, uid, {
             sourceType: "SUCCESSFUL_SALE",
-            sourceId: "order-1",
+            sourceId: "flight-order-1",
         });
         const second = await call(processFlightEvent, uid, {
             sourceType: "SUCCESSFUL_SALE",
