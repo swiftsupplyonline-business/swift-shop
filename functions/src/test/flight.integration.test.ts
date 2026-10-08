@@ -98,6 +98,44 @@ describe("Swift Flight — emulator integration", () => {
         assert.strictEqual(state.currentPoints, 810);
     });
 
+    test("post rewards require canonical published-post fields and ownership", async () => {
+        const uid = "flight-post-user";
+
+        await seed("posts/draft-post", {
+            authorId: uid,
+            caption: "draft",
+        });
+        await expectCallableError(
+            () => call(processFlightEvent, uid, {
+                sourceType: "CREATE_POST",
+                sourceId: "draft-post",
+            }),
+            "failed-precondition",
+        );
+
+        await seed("posts/other-owner-post", {
+            authorId: "other-user",
+            createdAt: admin.firestore.Timestamp.now(),
+        });
+        await expectCallableError(
+            () => call(processFlightEvent, uid, {
+                sourceType: "CREATE_POST",
+                sourceId: "other-owner-post",
+            }),
+            "permission-denied",
+        );
+
+        await seed("posts/published-post", {
+            authorId: uid,
+            createdAt: admin.firestore.Timestamp.now(),
+        });
+        const result = await call(processFlightEvent, uid, {
+            sourceType: "CREATE_POST",
+            sourceId: "published-post",
+        });
+        assert.strictEqual(result.awardedPoints, 80);
+    });
+
     test("follow then unfollow/refollow remains one reward", async () => {
         const uid = "flight-follow-user";
 
