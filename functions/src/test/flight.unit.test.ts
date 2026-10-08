@@ -1,5 +1,9 @@
 import * as assert from "assert";
-import {
+import * as admin from "firebase-admin";
+
+admin.initializeApp();
+
+const {
     ANTI_FARMING,
     ALTITUDE_LEVELS,
     BASE_REWARDS,
@@ -8,7 +12,7 @@ import {
     altitudeForFlight,
     eventIdempotencyKey,
     initialFlightState,
-} from "../flight";
+} = require("../flight") as typeof import("../flight");
 
 let passed = 0;
 let failed = 0;
