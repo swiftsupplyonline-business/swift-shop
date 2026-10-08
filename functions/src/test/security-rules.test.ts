@@ -155,4 +155,32 @@ describe("Firestore Security Rules", () => {
     await assertFails(aliceDb.collection("advertisingCampaigns").doc("y").set({ ...base, budgetMinorUnits: -5000 }));
     await assertFails(aliceDb.collection("advertisingCampaigns").doc("z").set({ ...base, budgetMinorUnits: 5000, impressions: 1e6 }));
   });
+
+  test("Swift Flight collections are callable-only: clients cannot read or write game-owned records", async () => {
+    const aliceDb = testEnv.authenticatedContext("alice").firestore();
+    const adminClaimDb = testEnv.authenticatedContext("admin-user", { admin: true }).firestore();
+    const collectionDocs = [
+      ["flightState", "alice", { uid: "alice", currentPoints: 10 }],
+      ["flightEvents", "alice:FOLLOW:target", { uid: "alice", awardedPoints: 10 }],
+      ["flightRateLimits", "alice:FOLLOW", { uid: "alice", sourceType: "FOLLOW", count: 1 }],
+      ["flightHistory", "flight-history-alice", { uid: "alice", flightNumber: 1 }],
+    ] as const;
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const adminDb = context.firestore();
+      for (const [collection, id, data] of collectionDocs) {
+        await adminDb.collection(collection).doc(id).set(data);
+      }
+    });
+
+    for (const [collection, id, data] of collectionDocs) {
+      // Even the owner and an account carrying the admin custom claim must use
+      // the server callable boundary; these records are not direct-client APIs.
+      await assertFails(aliceDb.collection(collection).doc(id).get());
+      await assertFails(aliceDb.collection(collection).doc(id).set({ ...data, forged: true }));
+      await assertFails(adminClaimDb.collection(collection).doc(id).get());
+      await assertFails(adminClaimDb.collection(collection).doc(id).set({ ...data, forged: true }));
+    }
+  });
+
 });
