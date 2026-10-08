@@ -37,7 +37,7 @@ import kotlinx.coroutines.flow.first
 enum class HomeTab(val label: String) {
     SHOP("Shop"),
     POSTS("Posts"),
-    REELS("Reels")
+    FLIGHT("Flight")
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -118,10 +118,8 @@ fun HomeScreen(
                     onLikeClick = { postId, liked -> viewModel.toggleLike(postId, liked) },
                     onCreatePost = { onNavigate(Screen.CreatePost.route) }
                 )
-                HomeTab.REELS -> ReelsTabContent(
-                    state = reelState,
-                    onLoadMore = { viewModel.loadMoreReels() },
-                    onCreateReel = { onNavigate(Screen.CreateReel.route) }
+                HomeTab.FLIGHT -> FlightTabContent(
+                    onNavigateToAuth = { onNavigate("auth") }
                 )
             }
         }
@@ -312,7 +310,66 @@ fun PostsTabContent(
     }
 }
 
-// ─── Reels Tab ────────────────────────────────────────────────────────────────
+// ─── Flight Tab ───────────────────────────────────────────────────────────────
+
+@Composable
+fun FlightTabContent(
+    onNavigateToAuth: () -> Unit
+) {
+    val firebaseAuth = com.google.firebase.auth.FirebaseAuth.getInstance()
+    val currentUser = firebaseAuth.currentUser
+
+    if (currentUser == null || currentUser.isAnonymous) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text("🐦", style = MaterialTheme.typography.displayLarge)
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Swift Flight",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Sign in with a verified Swift account to start your flight, earn points, and climb altitude.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+                Spacer(Modifier.height(24.dp))
+                SwiftPrimaryButton(
+                    text = "Sign In",
+                    onClick = onNavigateToAuth
+                )
+            }
+        }
+    } else {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("🐦", style = MaterialTheme.typography.displayLarge)
+                Spacer(Modifier.height(16.dp))
+                Text("Swift Flight Active", style = MaterialTheme.typography.headlineMedium)
+                Spacer(Modifier.height(8.dp))
+                Text("UID: ${currentUser.uid}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+// ─── Reels Tab (Preserved Infrastructure) ──────────────────────────────────────
 
 @Composable
 fun ReelsTabContent(

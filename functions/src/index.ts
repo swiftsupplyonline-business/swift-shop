@@ -57,3 +57,11 @@ export {
     notifyOnDeliveryRequestResponded,
     notifyOnDeliveryStatusChange
 } from "./notifications";
+
+// Swift Flight Gamification
+export {
+    getFlightState,
+    feedBird,
+    processFlightEvent,
+    claimFlightRedemption
+} from "./flight";

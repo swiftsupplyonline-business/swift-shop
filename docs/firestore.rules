@@ -315,5 +315,27 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow write: if false; // Cloud Function only
     }
+
+    // ── Swift Flight ───────────────────────────────────────────────────────
+    match /flightState/{uid} {
+      allow read: if isSignedIn()
+        && request.auth.uid == uid
+        && request.auth.token.get('firebase', {}).get('is_anonymous', false) == false;
+      allow write: if false; // Cloud Functions only
+    }
+
+    match /flightEvents/{eventId} {
+      allow read: if isSignedIn()
+        && resource.data.uid == request.auth.uid
+        && request.auth.token.get('firebase', {}).get('is_anonymous', false) == false;
+      allow write: if false; // Cloud Functions only
+    }
+
+    match /flightHistory/{historyId} {
+      allow read: if isSignedIn()
+        && resource.data.uid == request.auth.uid
+        && request.auth.token.get('firebase', {}).get('is_anonymous', false) == false;
+      allow write: if false; // Cloud Functions only
+    }
   }
 }

@@ -147,11 +147,111 @@ function updateProfileRail(user) {
   if (user && !user.isAnonymous) {
     summary.innerHTML = `
       <div style="font-weight:800;font-size:14px;">${escapeHtml(user.displayName || user.email || "Member")}</div>
-      <div class="sub">Verified Account</div>`;
+      <div class="sub">Verified Account</div>
+      <div style="margin-top:8px;"><a href="/flight" style="font-size:12px;font-weight:800;color:#0071e3;">🐦 Swift Flight</a></div>`;
   } else {
     summary.innerHTML = `
       <div style="font-weight:700;font-size:13px;margin-bottom:4px;">Guest shopper</div>
       <div class="sub">Order online, track via App</div>`;
+  }
+}
+
+async function renderFlight(root) {
+  const currentUser = auth.currentUser;
+  if (!currentUser || currentUser.isAnonymous) {
+    root.innerHTML = `
+      <div class="flight-auth-card" style="background:#fff;border:1px solid var(--line);border-radius:24px;padding:32px;text-align:center;max-width:480px;margin:40px auto;">
+        <div style="font-size:48px;margin-bottom:12px;">🐦</div>
+        <h2 style="margin:0 0 8px;font-size:24px;">Swift Flight</h2>
+        <p style="color:var(--muted);margin:0 0 20px;">Sign in with a real Swift account to play, earn points, and climb altitude.</p>
+        <button class="btn primary" id="flightLoginBtn" style="width:100%;">Log in</button>
+      </div>`;
+    root.querySelector("#flightLoginBtn")?.addEventListener("click", () => {
+      alert("Sign in on mobile or complete web account login to unlock Swift Flight.");
+    });
+    return;
+  }
+
+  root.innerHTML = `<div class="loading">Loading Swift Flight…</div>`;
+
+  try {
+    const getFlightStateCallable = httpsCallable(functions, "getFlightState");
+    const { data } = await getFlightStateCallable();
+    const state = data.state;
+
+    const altitudeBands = [
+      { name: "Ground / Rooftops", max: 2 },
+      { name: "Above Rooftops", max: 4 },
+      { name: "Clouds", max: 6 },
+      { name: "Storm", max: 8 },
+      { name: "Open Sky", max: 10 }
+    ];
+    const currentBand = altitudeBands.find(b => state.currentAltitude <= b.max) || altitudeBands[4];
+
+    root.innerHTML = `
+      <div class="flight-container" style="max-width:540px;margin:20px auto;background:#fff;border:1px solid var(--line);border-radius:24px;padding:28px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+          <div>
+            <div class="eyebrow" style="color:#0071e3;">Swift Flight · Flight #${state.flightNumber}</div>
+            <h1 style="margin:4px 0 0;font-size:28px;">Level ${state.currentAltitude}</h1>
+            <div style="font-size:13px;color:var(--muted);">${currentBand.name}</div>
+          </div>
+          <div style="font-size:40px;">🐦</div>
+        </div>
+
+        <div style="background:#f4f7fb;border-radius:18px;padding:20px;text-align:center;margin-bottom:20px;">
+          <div style="font-size:36px;font-weight:900;color:#111;">${state.points.toLocaleString()}</div>
+          <div style="font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;">Flight Points</div>
+          <div style="margin-top:14px;">
+            <button class="btn primary" id="feedBirdBtn" ${state.points < 20 ? "disabled" : ""}>Feed Bird (−20 points)</button>
+          </div>
+        </div>
+
+        ${state.points >= 100000 ? `
+          <div style="background:#e3f2fd;border:1px solid #90caf9;border-radius:18px;padding:16px;text-align:center;margin-bottom:20px;">
+            <h3 style="margin:0 0 6px;color:#0d47a1;">🎉 Flight Complete!</h3>
+            <p style="margin:0 0 12px;font-size:13px;color:#1565c0;">You reached 100,000 points. Claim your M200 redemption now!</p>
+            <button class="btn primary" id="claimRedemptionBtn">Claim M200 & Start Next Flight</button>
+          </div>` : ""}
+
+        <div style="margin-top:24px;">
+          <h3 style="font-size:16px;margin:0 0 12px;">Earning Opportunities</h3>
+          <div style="display:grid;gap:10px;font-size:13px;">
+            <div style="padding:12px;border:1px solid var(--line);border-radius:12px;display:flex;justify-content:space-between;">
+              <span>Post a listing</span><strong>+150–750 pts</strong>
+            </div>
+            <div style="padding:12px;border:1px solid var(--line);border-radius:12px;display:flex;justify-content:space-between;">
+              <span>Share Smart Link</span><strong>+40–160 pts</strong>
+            </div>
+            <div style="padding:12px;border:1px solid var(--line);border-radius:12px;display:flex;justify-content:space-between;">
+              <span>Successful Sale</span><strong>+800–4,000 pts</strong>
+            </div>
+          </div>
+        </div>
+      </div>`;
+
+    root.querySelector("#feedBirdBtn")?.addEventListener("click", async () => {
+      try {
+        const feedBirdCallable = httpsCallable(functions, "feedBird");
+        await feedBirdCallable();
+        renderFlight(root);
+      } catch (err) {
+        alert(`Could not feed bird: ${err.message}`);
+      }
+    });
+
+    root.querySelector("#claimRedemptionBtn")?.addEventListener("click", async () => {
+      try {
+        const claimCallable = httpsCallable(functions, "claimFlightRedemption");
+        const { data: res } = await claimCallable();
+        alert(`Congratulations! Redeemed ${res.redeemedAmount}. Starting Flight #${res.nextFlightNumber}`);
+        renderFlight(root);
+      } catch (err) {
+        alert(`Redemption error: ${err.message}`);
+      }
+    });
+  } catch (err) {
+    root.innerHTML = `<div class="error">Could not load Flight state: ${escapeHtml(err.message)}</div>`;
   }
 }
 
@@ -497,6 +597,7 @@ function route() {
   if (path === "/" || path === "" || path === "/market") return renderBrowse(root);
   if (path === "/cart") return renderCart(root);
   if (path === "/checkout") return renderCheckout(root);
+  if (path === "/flight") return renderFlight(root);
 
   let m = path.match(/^\/shop\/([^/]+)\/?$/);
   if (m) return renderShop(root, m[1]);
