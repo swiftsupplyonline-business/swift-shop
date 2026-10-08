@@ -72,7 +72,7 @@ describe("Swift Flight — emulator integration", () => {
         });
         const second = await call(processFlightEvent, uid, {
             sourceType: "SUCCESSFUL_SALE",
-            sourceId: "order-1",
+            sourceId: "flight-order-1",
         });
 
         assert.strictEqual(first.duplicate, false);
