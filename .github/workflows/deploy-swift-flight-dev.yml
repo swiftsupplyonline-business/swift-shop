@@ -1,0 +1,139 @@
+name: Deploy Swift Flight Dev Backend
+
+on:
+  push:
+    branches:
+      - canonical-reconcile-d
+    paths:
+      - "functions/**"
+      - "docs/firestore.rules"
+      - "docs/firestore.indexes.json"
+      - "firebase.json"
+      - ".github/workflows/deploy-swift-flight-dev.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: firebase-hosting-development
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-flight-backend:
+    name: Deploy and verify Swift Flight backend (Dev)
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: swift-dev-3d3ae
+      REGION: us-central1
+
+    steps:
+      - name: Checkout canonical source
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: \${{ secrets.FIREBASE_SERVICE_ACCOUNT_SWIFT_DEV_3D3AE }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install Firebase CLI
+        run: npm install --global firebase-tools
+
+      - name: Install function dependencies and build
+        working-directory: functions
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy only Swift Flight callables, Firestore rules, and indexes
+        run: |
+          firebase deploy \
+            --only functions:getFlightState,functions:processFlightEvent,functions:feedBird,functions:claimFlightRedemption,functions:getFlightHistory,firestore:rules,firestore:indexes \
+            --project "$PROJECT_ID" \
+            --non-interactive
+
+      - name: Verify all five Flight callables are ACTIVE
+        shell: bash
+        run: |
+          set -euo pipefail
+          for function_name in \
+            getFlightState \
+            processFlightEvent \
+            feedBird \
+            claimFlightRedemption \
+            getFlightHistory
+          do
+            state="$(gcloud functions describe "$function_name" \
+              --region="$REGION" \
+              --project="$PROJECT_ID" \
+              --format='value(state)')"
+            echo "$function_name: $state"
+            test "$state" = "ACTIVE"
+          done
+
+      - name: Verify flightHistory composite index reaches READY
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            gcloud firestore indexes composite list \
+              --database="(default)" \
+              --project="$PROJECT_ID" \
+              --format=json > /tmp/firestore-indexes.json
+
+            if python - <<'PY'
+          import json
+          import sys
+
+          with open("/tmp/firestore-indexes.json", encoding="utf-8") as f:
+              indexes = json.load(f)
+
+          for index in indexes:
+              if index.get("collectionGroup") != "flightHistory":
+                  continue
+              fields = index.get("fields", [])
+              uid_ok = any(
+                  field.get("fieldPath") == "uid"
+                  and field.get("order") == "ASCENDING"
+                  for field in fields
+              )
+              number_ok = any(
+                  field.get("fieldPath") == "flightNumber"
+                  and field.get("order") == "DESCENDING"
+                  for field in fields
+              )
+              state = index.get("state", "")
+              print(f"flightHistory index state={state}; uid ASC={uid_ok}; flightNumber DESC={number_ok}")
+              if uid_ok and number_ok and state == "READY":
+                  sys.exit(0)
+          sys.exit(1)
+          PY
+            then
+              exit 0
+            fi
+
+            echo "Expected index not READY yet (attempt $attempt/30); waiting 20 seconds."
+            sleep 20
+          done
+
+          echo "flightHistory composite index did not reach READY within 10 minutes." >&2
+          exit 1
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "### Swift Flight backend — Dev"
+            echo ""
+            echo "- Firebase project: \`$PROJECT_ID\`"
+            echo "- Functions region: \`$REGION\`"
+            echo "- Components: five Flight callables, Firestore rules, Firestore indexes"
+            echo "- Deployment verification: see completed function-state and index-readiness steps above"
+          } >> "$GITHUB_STEP_SUMMARY"
