@@ -305,6 +305,23 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ── Swift Flight ───────────────────────────────────────────────────────
+    // Flight state, event/idempotency records, rate limits, and history are
+    // accessible only through authenticated callable functions. Do not grant
+    // direct client reads or writes here: this keeps reward state server-owned.
+    match /flightState/{uid} {
+      allow read, write: if false;
+    }
+    match /flightEvents/{eventId} {
+      allow read, write: if false;
+    }
+    match /flightRateLimits/{limitId} {
+      allow read, write: if false;
+    }
+    match /flightHistory/{historyId} {
+      allow read, write: if false;
+    }
+
     // ── Reservations ───────────────────────────────────────────────────────
     // Reservations are an internal server implementation detail.
     // Documents carry: id, orderId, listingId, quantity, status, expiresAt, createdAt.
