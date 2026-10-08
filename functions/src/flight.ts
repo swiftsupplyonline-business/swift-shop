@@ -182,7 +182,7 @@ export const processFlightEvent = onCall(async (request) => {
         throw new HttpsError("invalid-argument", "sourceType and sourceId are required.");
     }
 
-    if (!(sourceType in BASE_REWARDS)) {
+    if (!Object.prototype.hasOwnProperty.call(BASE_REWARDS, sourceType)) {
         throw new HttpsError(
             "invalid-argument",
             `Unknown or unsupported event type: ${sourceType}`,
@@ -230,7 +230,7 @@ export const processFlightEvent = onCall(async (request) => {
             altitudeEnv: newAltitude.env,
             multiplier: newAltitude.multiplier,
             highestLevel: newHighest,
-            isEligibleToRedeem: newCurrent >= REDEMPTION_THRESHOLD,
+            isEligibleToRedeem: newFlightPoints >= REDEMPTION_THRESHOLD,
             updatedAt: now,
         };
 
@@ -315,6 +315,9 @@ async function verifyEvent(
             const post = snap.data()!;
             if (post.authorId !== uid) {
                 throw new HttpsError("permission-denied", "Post does not belong to you.");
+            }
+            if (!post.createdAt) {
+                throw new HttpsError("failed-precondition", "Post is not published.");
             }
             return undefined;
         }
@@ -414,10 +417,10 @@ export const claimFlightRedemption = onCall(async (request) => {
         }
 
         const state = stateSnap.data()!;
-        if (Number(state.currentPoints || 0) < REDEMPTION_THRESHOLD) {
+        if (Number(state.flightPointsEarned || 0) < REDEMPTION_THRESHOLD) {
             throw new HttpsError(
                 "failed-precondition",
-                `Need ${REDEMPTION_THRESHOLD.toLocaleString()} points to redeem. You have ${Number(state.currentPoints || 0).toLocaleString()}.`,
+                `Need ${REDEMPTION_THRESHOLD.toLocaleString()} flight points to redeem. You have ${Number(state.flightPointsEarned || 0).toLocaleString()}.`,
             );
         }
 
