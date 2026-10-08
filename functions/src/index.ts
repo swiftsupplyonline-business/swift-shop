@@ -57,3 +57,14 @@ export {
     notifyOnDeliveryRequestResponded,
     notifyOnDeliveryStatusChange
 } from "./notifications";
+
+// Swift Flight — server-authoritative game engine
+// Security: all callables verify real (non-anonymous) auth and independently
+// verify every event claim in Firestore before awarding points.
+export {
+    getFlightState,
+    processFlightEvent,
+    feedBird,
+    claimFlightRedemption,
+    getFlightHistory,
+} from "./flight";
