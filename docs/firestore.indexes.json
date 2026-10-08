@@ -185,13 +185,6 @@
       ]
     },
     {
-      "collectionGroup": "profiles",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "displayName_lowercase", "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "listings",
       "queryScope": "COLLECTION",
       "fields": [
