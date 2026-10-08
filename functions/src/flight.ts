@@ -260,7 +260,7 @@ export const processFlightEvent = onCall(async (request) => {
             altitudeLevel: newAltitude.level,
             altitudeLabel: newAltitude.label,
             multiplier: newAltitude.multiplier,
-            eligible: newCurrent >= REDEMPTION_THRESHOLD,
+            eligible: newFlightPoints >= REDEMPTION_THRESHOLD,
         };
     });
 });
