@@ -95,9 +95,12 @@ jobs:
           with open("/tmp/firestore-indexes.json", encoding="utf-8") as f:
               indexes = json.load(f)
 
+          matched = 0
           for index in indexes:
-              if index.get("collectionGroup") != "flightHistory":
+              collection_group = index.get("collectionGroupId") or index.get("collectionGroup")
+              if collection_group != "flightHistory":
                   continue
+              matched += 1
               fields = index.get("fields", [])
               uid_ok = any(
                   field.get("fieldPath") == "uid"
@@ -110,9 +113,11 @@ jobs:
                   for field in fields
               )
               state = index.get("state", "")
-              print(f"flightHistory index state={state}; uid ASC={uid_ok}; flightNumber DESC={number_ok}")
+              print(f"flightHistory index state={state}; uid ASC={uid_ok}; flightNumber DESC={number_ok}; fields={fields}")
               if uid_ok and number_ok and state == "READY":
                   sys.exit(0)
+          if matched == 0:
+              print("No flightHistory index found. Index metadata keys seen:", sorted(indexes[0].keys()) if indexes else "no composite indexes returned")
           sys.exit(1)
           PY
             then
@@ -132,8 +137,8 @@ jobs:
           {
             echo "### Swift Flight backend — Dev"
             echo ""
-            echo "- Firebase project: `$PROJECT_ID`"
-            echo "- Functions region: `$REGION`"
+            printf '%s\n' "- Firebase project: $PROJECT_ID"
+            printf '%s\n' "- Functions region: $REGION"
             echo "- Components: five Flight callables, Firestore rules, Firestore indexes"
             echo "- Deployment verification: see completed function-state and index-readiness steps above"
           } >> "$GITHUB_STEP_SUMMARY"
