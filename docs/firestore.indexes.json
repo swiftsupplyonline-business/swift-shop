@@ -185,13 +185,6 @@
       ]
     },
     {
-      "collectionGroup": "profiles",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "displayName_lowercase", "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "listings",
       "queryScope": "COLLECTION",
       "fields": [
@@ -205,6 +198,14 @@
       "fields": [
         { "fieldPath": "isActive", "order": "ASCENDING" },
         { "fieldPath": "name_lowercase", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "flightHistory",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid", "order": "ASCENDING" },
+        { "fieldPath": "flightNumber", "order": "DESCENDING" }
       ]
     }
   ],

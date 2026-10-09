@@ -1,6 +1,7 @@
 package com.swiftshop.domain.commerce
 
 import android.net.Uri
+import com.swiftshop.core.media.MediaAsset
 import com.swiftshop.core.media.MediaUploadProgress
 import com.swiftshop.core.media.MediaUploader
 import com.swiftshop.core.model.*

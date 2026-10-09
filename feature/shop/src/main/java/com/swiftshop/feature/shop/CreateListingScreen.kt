@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.swiftshop.core.model.ListingType
+import com.swiftshop.core.ui.LocalWebHost
 import com.swiftshop.core.ui.components.SwiftPrimaryButton
 import com.swiftshop.core.ui.components.SwiftGradientButton
 
@@ -68,6 +69,7 @@ fun CreateListingScreen(
     val showFieldBuilder by viewModel.showCustomFieldBuilder.collectAsState()
     val showDelivery     by viewModel.showDeliveryEstimate.collectAsState()
     val deliveryDays     by viewModel.deliveryEstimateDays.collectAsState()
+    val driverSharePercent by viewModel.driverSharePercent.collectAsState()
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
@@ -77,6 +79,7 @@ fun CreateListingScreen(
     if (uiState is CreateListingUiState.Success) {
         val listingId = (uiState as CreateListingUiState.Success).listingId
         val context = androidx.compose.ui.platform.LocalContext.current
+        val webHost = LocalWebHost.current
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { onCreated() },
             icon = {
@@ -96,7 +99,7 @@ fun CreateListingScreen(
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
-                    val shareUrl = "https://swift-dev-3d3ae.web.app/listing/$listingId"
+                    val shareUrl = "https://$webHost/listing/$listingId"
                     val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                         type = "text/plain"
                         putExtra(android.content.Intent.EXTRA_TEXT, "Check out my hustle on Swift: $shareUrl")
@@ -245,6 +248,19 @@ fun CreateListingScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
                 }
+            }
+
+            // Delivery economics: the delivery listing author chooses the driver's share of the net fee.
+            if (listingType == ListingType.DELIVER) {
+                OutlinedTextField(
+                    value = driverSharePercent,
+                    onValueChange = viewModel::onDriverSharePercentChange,
+                    label = { Text("Driver share (%)") },
+                    supportingText = { Text("Choose the percentage of the net delivery fee paid to a separate driver. 0% means the provider keeps the full net fee.") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    suffix = { Text("%") }
+                )
             }
 
             // Delivery estimate

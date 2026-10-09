@@ -6,11 +6,7 @@ import com.google.firebase.firestore.firestoreSettings
 import com.google.firebase.firestore.persistentCacheSettings
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.storage.FirebaseStorage
-import com.swiftshop.BuildConfig
-import com.swiftshop.core.network.PaymentGateway
 import com.swiftshop.data.firebase.*
-import com.swiftshop.data.remote.di.BackendGateway
-import com.swiftshop.data.remote.di.MockGateway
 import com.swiftshop.data.repositories.OfflineFirstCommerceRepository
 import com.swiftshop.domain.auth.*
 import com.swiftshop.domain.commerce.*
@@ -58,25 +54,6 @@ object FirebaseModule {
 
 @Module
 @InstallIn(SingletonComponent::class)
-object PaymentModule {
-
-    /**
-     * The one place BuildConfig.FLAVOR is trustworthy for this decision â€”
-     * this is :app's own BuildConfig, matching whichever product flavor is
-     * actually being assembled. dev builds get the in-memory mock so
-     * wallet/checkout flows can be exercised without a live backend;
-     * staging/production route real HTTP calls through SwiftBackendApi.
-     */
-    @Provides
-    @Singleton
-    fun providePaymentGateway(
-        @MockGateway mock: PaymentGateway,
-        @BackendGateway backend: PaymentGateway
-    ): PaymentGateway = if (BuildConfig.FLAVOR == "dev") mock else backend
-}
-
-@Module
-@InstallIn(SingletonComponent::class)
 object AuthModule {
 
     @Provides
@@ -118,6 +95,12 @@ object ProfileModule {
 
     @Provides @Singleton
     fun provideIsFollowingUseCase(repo: ProfileRepository) = IsFollowingUseCase(repo)
+
+    @Provides @Singleton
+    fun provideSearchUsersUseCase(repo: ProfileRepository) = SearchUsersUseCase(repo)
+
+    @Provides @Singleton
+    fun provideUpdateFcmTokenUseCase(repo: ProfileRepository) = UpdateFcmTokenUseCase(repo)
 }
 
 @Module
@@ -207,6 +190,9 @@ object CommerceModule {
     fun provideSearchListingsUseCase(repo: CommerceRepository) = SearchListingsUseCase(repo)
 
     @Provides
+    fun provideSearchShopsUseCase(repo: CommerceRepository) = SearchShopsUseCase(repo)
+
+    @Provides
     fun provideObserveCartUseCase(repo: CommerceRepository) = ObserveCartUseCase(repo)
 
     @Provides
@@ -259,6 +245,9 @@ object SocialModule {
     fun provideGetReelFeedUseCase(repo: FeedRepository) = GetReelFeedUseCase(repo)
 
     @Provides
+    fun provideSearchPostsUseCase(repo: FeedRepository) = SearchPostsUseCase(repo)
+
+    @Provides
     fun provideGetUserPostsUseCase(repo: FeedRepository) = GetUserPostsUseCase(repo)
 
     @Provides
@@ -269,11 +258,11 @@ object SocialModule {
     fun provideLikePostUseCase(repo: FeedRepository) = LikePostUseCase(repo)
 
     @Provides
-    fun provideBookmarkListingUseCase(repo: FeedRepository) =
+    fun provideFeedBookmarkListingUseCase(repo: FeedRepository) =
         com.swiftshop.domain.feed.BookmarkListingUseCase(repo)
 
     @Provides
-    fun provideUnbookmarkListingUseCase(repo: FeedRepository) =
+    fun provideFeedUnbookmarkListingUseCase(repo: FeedRepository) =
         com.swiftshop.domain.feed.UnbookmarkListingUseCase(repo)
 
     @Provides
