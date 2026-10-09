@@ -97,8 +97,15 @@ jobs:
 
           matched = 0
           for index in indexes:
+              # gcloud's composite-index JSON exposes the collection group in
+              # the resource name, not as collectionGroupId/collectionGroup.
+              resource_name = index.get("name", "")
               collection_group = index.get("collectionGroupId") or index.get("collectionGroup")
-              if collection_group != "flightHistory":
+              is_flight_history = (
+                  collection_group == "flightHistory"
+                  or "/collectionGroups/flightHistory/indexes/" in resource_name
+              )
+              if not is_flight_history:
                   continue
               matched += 1
               fields = index.get("fields", [])
