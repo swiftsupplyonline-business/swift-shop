@@ -61,7 +61,7 @@ service cloud.firestore {
       // Allowlist (the app only edits these). A denylist missed fields such as verification flags.
       allow write: if isOwner(uid) && isActive()
         && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['displayName', 'displayName_lowercase', 'bio', 'location', 'avatarUrl', 'coverUrl']);
+            .hasOnly(['displayName', 'displayName_lowercase', 'bio', 'about', 'phone', 'location', 'avatarUrl', 'coverUrl']);
     }
 
     // ── Shops ──────────────────────────────────────────────────────────────

@@ -51,6 +51,22 @@
                 "function": "renderShopPreview"
             },
             {
+                "source": "/flight",
+                "destination": "/index.html"
+            },
+            {
+                "source": "/profile",
+                "destination": "/index.html"
+            },
+            {
+                "source": "/wallet",
+                "destination": "/index.html"
+            },
+            {
+                "source": "/shops",
+                "destination": "/index.html"
+            },
+            {
                 "source": "/market",
                 "destination": "/index.html"
             },
@@ -68,10 +84,6 @@
             },
             {
                 "source": "/orders/**",
-                "destination": "/index.html"
-            },
-            {
-                "source": "/flight",
                 "destination": "/index.html"
             },
             {
