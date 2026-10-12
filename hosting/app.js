@@ -1404,7 +1404,7 @@ async function renderFlight(root) {
     root.innerHTML = `
       <div class="flight-gate">
         <div class="flight-gate-inner">
-          <img src="/img/swift-bird.png" alt="Swift bird" width="120" height="120" style="filter:drop-shadow(0 4px 24px rgba(28,146,202,.3))">
+          <img src="/img/swift-bird.png" alt="Swift Flight bird with transparent background" width="120" height="120" style="filter:drop-shadow(0 4px 24px rgba(28,146,202,.3))">
           <h2>Swift Flight</h2>
           <p>Sign in to access Flight — earn points through real marketplace activity and redeem M200 when you reach 100,000 points.</p>
           <a class="btn primary" href="/">Sign in or create account</a>
@@ -1433,7 +1433,7 @@ async function renderFlight(root) {
       <section class="flight-screen">
         <div class="flight-header">
           <div class="flight-bird-wrap">
-            <img src="/img/swift-bird.png" alt="Swift bird" class="flight-bird-img" width="120" height="120" aria-hidden="true">
+            <img src="/img/swift-bird.png" alt="Swift Flight bird with transparent background" class="flight-bird-img" width="120" height="120" aria-hidden="true">
             <span class="flight-env-badge">${envEmoji} ${escapeHtml(state.altitudeEnv || "")}</span>
           </div>
           <div class="flight-identity">
