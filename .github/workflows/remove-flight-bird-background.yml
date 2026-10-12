@@ -1,0 +1,103 @@
+name: Remove Swift Flight bird background
+
+on:
+  push:
+    branches:
+      - canonical-reconcile-d
+    paths:
+      - .github/workflows/remove-flight-bird-background.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  remove-background:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out canonical branch
+        uses: actions/checkout@v4
+        with:
+          ref: canonical-reconcile-d
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare image processing
+        run: python -m pip install --user pillow numpy
+
+      - name: Convert bird to transparent PNG
+        run: |
+          python <<'PY'
+          from PIL import Image
+          from collections import deque
+          import numpy as np
+
+          source = Image.open("hosting/img/swift-bird.webp").convert("RGBA")
+          pixels = np.asarray(source).copy()
+          rgb = pixels[:, :, :3]
+          height, width = rgb.shape[:2]
+
+          # Identify only dark pixels connected to the outer image boundary.
+          # This avoids deleting dark details inside the bird.
+          dark = np.max(rgb, axis=2) < 62
+          seen = np.zeros((height, width), dtype=bool)
+          queue = deque()
+
+          for x in range(width):
+              if dark[0, x]: seen[0, x] = True; queue.append((0, x))
+              if dark[height - 1, x] and not seen[height - 1, x]:
+                  seen[height - 1, x] = True; queue.append((height - 1, x))
+          for y in range(height):
+              if dark[y, 0] and not seen[y, 0]: seen[y, 0] = True; queue.append((y, 0))
+              if dark[y, width - 1] and not seen[y, width - 1]:
+                  seen[y, width - 1] = True; queue.append((y, width - 1))
+
+          while queue:
+              y, x = queue.popleft()
+              for ny, nx in ((y-1,x), (y+1,x), (y,x-1), (y,x+1)):
+                  if 0 <= ny < height and 0 <= nx < width and dark[ny, nx] and not seen[ny, nx]:
+                      seen[ny, nx] = True
+                      queue.append((ny, nx))
+
+          # Make the edge-connected dark backdrop transparent and soften only
+          # its immediate dark fringe to avoid a black rectangle/halo.
+          pixels[seen, 3] = 0
+          edge = seen.copy()
+          for _ in range(2):
+              expanded = edge.copy()
+              expanded[1:, :] |= edge[:-1, :]
+              expanded[:-1, :] |= edge[1:, :]
+              expanded[:, 1:] |= edge[:, :-1]
+              expanded[:, :-1] |= edge[:, 1:]
+              edge = expanded
+          fringe = edge & ~seen & (np.max(rgb, axis=2) < 105)
+          pixels[fringe, 3] = np.minimum(pixels[fringe, 3], 110)
+
+          Image.fromarray(pixels, "RGBA").save("hosting/img/swift-bird.png", optimize=True)
+          check = Image.open("hosting/img/swift-bird.png")
+          alpha = np.asarray(check.getchannel("A"))
+          if alpha.min() != 0 or not np.any(alpha == 255):
+              raise SystemExit("PNG transparency validation failed")
+          print(f"Created transparent PNG: {check.size}, transparent pixels={(alpha == 0).sum()}")
+          PY
+
+      - name: Point Flight screens at transparent PNG
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          path = Path("hosting/app.js")
+          text = path.read_text()
+          old = '/img/swift-bird.webp'
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f"Expected exactly 2 bird image references, found {count}; refusing broad edit")
+          path.write_text(text.replace(old, '/img/swift-bird.png'))
+          print(f"Updated {count} bird image references")
+          PY
+
+      - name: Commit generated asset and reference update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hosting/img/swift-bird.png hosting/app.js
+          git commit -m "fix(flight): remove bird image background"
+          git push origin HEAD:canonical-reconcile-d
