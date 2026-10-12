@@ -1378,6 +1378,174 @@ window.addEventListener("storage", event => {
   }
 });
 
+
+/* ── Swift Flight — Web client for the server-authoritative game ───────────── */
+async function renderFlight(root) {
+  root.innerHTML = `<section class="rail-page flight-page"><div class="loading">Checking your Swift account…</div></section>`;
+
+  const user = await new Promise(resolve => {
+    let unsubscribe = () => {};
+    unsubscribe = onAuthStateChanged(auth, currentUser => {
+      unsubscribe();
+      resolve(currentUser);
+    });
+  });
+
+  if (!user || user.isAnonymous) {
+    root.innerHTML = `
+      <section class="rail-page flight-page">
+        <div class="flight-hero">
+          <span class="eyebrow">Swift Flight</span>
+          <h1>Your next level is up there.</h1>
+          <p>Build your flight through genuine activity on Swift. Your points and rewards are checked by the server, not by this page.</p>
+          <div class="flight-bird" aria-hidden="true">🐦</div>
+        </div>
+        <div class="flight-panel">
+          <h2>Sign in to start flying</h2>
+          <p>Swift Flight requires a registered account. Guest browsing stays available for the marketplace.</p>
+          <a class="btn primary" href="/">Create an account or sign in →</a>
+        </div>
+      </section>`;
+    return;
+  }
+
+  const getState = httpsCallable(functions, "getFlightState");
+  const feedBird = httpsCallable(functions, "feedBird");
+  const getHistory = httpsCallable(functions, "getFlightHistory");
+  const claimRedemption = httpsCallable(functions, "claimFlightRedemption");
+  let state = null;
+  let historyItems = [];
+  let notice = "";
+  let noticeError = false;
+  let busy = false;
+  let loadError = "";
+
+  const points = value => Math.max(0, Number(value || 0)).toLocaleString();
+  const isEligible = value => Boolean(value?.isEligibleToRedeem) || Number(value?.flightPointsEarned || 0) >= 100000;
+
+  function draw() {
+    if (loadError && !state) {
+      root.innerHTML = `
+        <section class="rail-page flight-page">
+          <div class="section-heading"><span class="eyebrow">Swift Flight</span><h1>Your flight</h1></div>
+          <div class="error">Couldn't load your flight state. ${escapeHtml(loadError)}</div>
+          <button class="btn primary" id="flightRetry" type="button">Try again</button>
+        </section>`;
+      root.querySelector("#flightRetry")?.addEventListener("click", refresh);
+      return;
+    }
+
+    const level = Math.max(1, Math.min(10, Number(state?.altitudeLevel || 1)));
+    const earned = Number(state?.flightPointsEarned || 0);
+    const current = Number(state?.currentPoints || 0);
+    const eligible = isEligible(state);
+    const progress = Math.min(100, Math.round((earned / 100000) * 100));
+    const environment = state?.altitudeEnv || "Rooftops";
+    const historyHtml = historyItems.length
+      ? historyItems.map(item => {
+          const rawDate = item.redeemedAt;
+          const dateValue = rawDate?.toDate ? rawDate.toDate() : rawDate?._seconds ? new Date(rawDate._seconds * 1000) : rawDate?.seconds ? new Date(rawDate.seconds * 1000) : rawDate ? new Date(rawDate) : null;
+          const dateLabel = dateValue && !Number.isNaN(dateValue.getTime()) ? dateValue.toLocaleDateString() : "Date unavailable";
+          return `<article class="flight-history-row"><div><strong>Flight #${escapeHtml(String(item.flightNumber || "—"))}</strong><span>${escapeHtml(dateLabel)}</span></div><strong>${escapeHtml(LSL(Number(item.redemptionAmountMinorUnits || 0)))}</strong></article>`;
+        }).join("")
+      : '<p class="flight-muted">Your completed flights will appear here after redemption.</p>';
+
+    root.innerHTML = `
+      <section class="rail-page flight-page">
+        <div class="flight-hero">
+          <div class="flight-hero-copy">
+            <span class="eyebrow">Swift engagement · Flight #${escapeHtml(String(state?.flightNumber || 1))}</span>
+            <h1>Keep rising.</h1>
+            <p>Earn points through real Swift activity. The higher you fly, the greater your progression multiplier.</p>
+          </div>
+          <div class="flight-bird" aria-hidden="true">🐦</div>
+          <div class="flight-skyline" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+        </div>
+
+        ${notice ? `<div class="${noticeError ? "error" : "flight-notice"}" role="status">${escapeHtml(notice)}</div>` : ""}
+
+        <div class="flight-stats">
+          <article class="flight-stat"><span>Available points</span><strong>${points(current)}</strong><small>Spendable points</small></article>
+          <article class="flight-stat"><span>Flight progress</span><strong>${points(earned)} <small>/ 100,000</small></strong><small>Qualifying points earned</small></article>
+          <article class="flight-stat"><span>Altitude</span><strong>Level ${level}</strong><small>${escapeHtml(environment)}</small></article>
+          <article class="flight-stat"><span>Multiplier</span><strong>×${Number(state?.multiplier || 1).toFixed(1)}</strong><small>Based on your altitude</small></article>
+        </div>
+
+        <section class="flight-panel">
+          <div class="flight-panel-heading"><div><span class="eyebrow">Your journey</span><h2>${escapeHtml(state?.altitudeLabel || "Ground")}</h2></div><span class="flight-level-chip">Highest level ${Math.max(1, Number(state?.highestLevel || 1))}</span></div>
+          <div class="flight-progress-track" role="progressbar" aria-label="Progress to redemption" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></div>
+          <div class="flight-progress-labels"><span>${progress}% to redemption</span><span>${points(Math.max(0, 100000 - earned))} points to go</span></div>
+          <div class="flight-actions">
+            <button class="btn secondary" type="button" id="feedBirdBtn" ${busy || current < 20 || eligible ? "disabled" : ""}>Feed bird · 20 points</button>
+            <button class="btn primary" type="button" id="claimFlightBtn" ${busy || !eligible ? "disabled" : ""}>Redeem M200</button>
+          </div>
+          <p class="flight-muted">${eligible ? "Your flight has reached the redemption threshold. Claim your reward to begin the next flight." : "Points are awarded only after the server verifies a qualifying Swift action. Feeding costs 20 available points; it does not create reward points."}</p>
+        </section>
+
+        <section class="flight-panel">
+          <span class="eyebrow">Next task</span>
+          <h2>Make a real move on Swift</h2>
+          <p>Publish an eligible listing, publish a post, follow a shop, or complete a qualifying sale. Once the action is recorded, return here to refresh your verified flight state.</p>
+          <div class="flight-actions"><a class="btn secondary" href="/market">Explore the market</a><a class="btn secondary" href="/shops">Find shops</a><button class="btn secondary" type="button" id="refreshFlightBtn" ${busy ? "disabled" : ""}>Refresh flight</button></div>
+        </section>
+
+        <section class="flight-panel">
+          <div class="flight-panel-heading"><div><span class="eyebrow">Your record</span><h2>Completed flights</h2></div><span class="flight-muted">Latest 20</span></div>
+          <div class="flight-history">${historyHtml}</div>
+        </section>
+      </section>`;
+
+    root.querySelector("#feedBirdBtn")?.addEventListener("click", async () => {
+      busy = true; notice = ""; noticeError = false; draw();
+      try {
+        const result = (await feedBird({})).data;
+        notice = result?.fed ? "Your bird is fed. Keep earning points through verified Swift activity to climb." : "The bird could not be fed.";
+        await refresh(false, true);
+      } catch (error) {
+        notice = error?.message || "Couldn't feed the bird.";
+        noticeError = true;
+      } finally { busy = false; draw(); }
+    });
+
+    root.querySelector("#claimFlightBtn")?.addEventListener("click", async () => {
+      if (!window.confirm("Redeem this completed flight for M200 and start your next flight?")) return;
+      busy = true; notice = ""; noticeError = false; draw();
+      try {
+        const result = (await claimRedemption({})).data;
+        notice = result?.success ? `Flight #${result.flightNumber} redeemed. M200 has been credited to your Swift wallet; flight #${result.nextFlightNumber} is ready.` : "The redemption was not confirmed.";
+        await refresh(false, true);
+      } catch (error) {
+        notice = error?.message || "Couldn't redeem this flight.";
+        noticeError = true;
+      } finally { busy = false; draw(); }
+    });
+
+    root.querySelector("#refreshFlightBtn")?.addEventListener("click", refresh);
+  }
+
+  async function refresh(showLoading = true, force = false) {
+    if (busy && !force) return;
+    if (showLoading) { notice = ""; loadError = ""; }
+    try {
+      const stateResult = await getState({});
+      state = stateResult.data || null;
+      loadError = "";
+      try {
+        const historyResult = await getHistory({});
+        historyItems = Array.isArray(historyResult.data) ? historyResult.data : [];
+      } catch (historyError) {
+        historyItems = [];
+        if (!notice) notice = "Flight loaded. Your history is temporarily unavailable.";
+      }
+    } catch (error) {
+      loadError = error?.message || "Flight service is unavailable.";
+    }
+    draw();
+  }
+
+  await refresh();
+}
+
 // ---------- Router ----------
 
 function navigate(path) {
@@ -1409,6 +1577,7 @@ function route() {
   if (path === "/market") return renderBrowse(root, true);
   if (path === "/search") return renderSearch(root, new URLSearchParams(location.search).get("q") || "");
   if (path === "/orders") return renderOrders(root);
+  if (path === "/flight") return renderFlight(root);
   if (path === "/shops") return renderShops(root);
   if (path === "/cart") return renderCart(root);
   if (path === "/checkout") return renderCheckout(root);
