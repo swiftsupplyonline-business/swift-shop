@@ -1266,8 +1266,10 @@ function bindSignupForm(root, marketPromise) {
 
       updateAccountCards(user);
       if (statusEl) { statusEl.textContent = mode === "signin" ? "Welcome back!" : "Account created! Welcome to Swift."; }
-      const [listings, shops] = await marketPromise;
-      renderMarketFeed(root, listings, shops);
+      // Let route() decide what to render — works correctly on /, /flight, or any other path.
+      // Pre-warm the market data in the background so it's ready if the user browses.
+      marketPromise.catch(() => {});
+      route();
 
     } catch (err) {
       submitEl.disabled = false;
@@ -1300,7 +1302,11 @@ async function loadUtilityRail() {
   renderRailCart();
   onAuthStateChanged(auth, user => {
     updateAccountCards(user);
-    if (location.pathname === "/" || location.pathname === "") route();
+    // Re-run route() on every auth state change so the correct screen is
+    // shown regardless of which page the user is on when they sign in/out.
+    // route() is idempotent — it reads location.pathname and renders the
+    // correct view, so calling it here is always safe.
+    route();
   });
 
   const providerTargets = [
