@@ -10,7 +10,49 @@
 <link rel="stylesheet" href="/listing-detail.css">
 <link rel="stylesheet" href="/shop-detail.css">
 <script>if(!/^\/(market)?\/?$/.test(location.pathname))document.documentElement.classList.add("no-hero")</script>
-<style>.no-hero main>.hero{display:none}.home-profile-route main>.hero{display:none}</style>
+<style>.no-hero main>.hero{display:none}.home-profile-route main>.hero{display:none}
+/* Swift Flight screen */
+.flight-page{max-width:920px;margin:0 auto;padding-bottom:30px}
+.flight-hero{position:relative;isolation:isolate;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:210px;padding:30px;border-radius:26px;background:linear-gradient(125deg,#10283a 0%,#14577c 52%,#35a7d7 100%);color:#fff;margin-bottom:18px;box-shadow:0 18px 42px rgba(16,40,58,.15)}
+.flight-hero::before{content:"";position:absolute;inset:0;z-index:-1;background:radial-gradient(circle at 75% 15%,rgba(255,255,255,.22),transparent 35%),linear-gradient(180deg,transparent 45%,rgba(6,25,39,.24))}
+.flight-hero-copy{max-width:590px;z-index:1}
+.flight-hero .eyebrow{color:#b9eaff}
+.flight-hero h1{font-size:clamp(34px,5vw,52px);letter-spacing:-.05em;line-height:1;margin:10px 0 12px;color:#fff}
+.flight-hero p{max-width:520px;color:rgba(255,255,255,.82);line-height:1.6;margin:0}
+.flight-bird{font-size:clamp(52px,8vw,82px);filter:drop-shadow(0 12px 12px rgba(0,0,0,.2));transform:rotate(-9deg);flex:none;z-index:1;animation:flight-hover 3s ease-in-out infinite}
+.flight-skyline{position:absolute;left:0;right:0;bottom:0;height:44px;display:flex;align-items:flex-end;gap:5px;opacity:.2;z-index:0}
+.flight-skyline span{display:block;flex:1;background:#eaf8ff;border-radius:5px 5px 0 0;height:35%}
+.flight-skyline span:nth-child(2){height:75%}.flight-skyline span:nth-child(3){height:48%}.flight-skyline span:nth-child(4){height:100%}.flight-skyline span:nth-child(5){height:60%}
+@keyframes flight-hover{0%,100%{transform:translateY(0) rotate(-9deg)}50%{transform:translateY(-8px) rotate(-3deg)}}
+.flight-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.flight-stat,.flight-panel{min-width:0;background:rgba(255,255,255,.94);border:1px solid #dcebf2;border-radius:20px;box-shadow:0 8px 24px rgba(16,40,58,.045)}
+.flight-stat{padding:17px}
+.flight-stat>span,.flight-stat>small{display:block;color:#667482;font-size:12px;line-height:1.45}
+.flight-stat>strong{display:block;color:#10283a;font-size:clamp(19px,2.4vw,27px);letter-spacing:-.04em;margin:7px 0 4px;overflow-wrap:anywhere}
+.flight-stat>strong small{font-size:12px;color:#667482;letter-spacing:0;font-weight:700}
+.flight-panel{padding:22px;margin-bottom:16px}
+.flight-panel h2{margin:5px 0 9px;color:#10283a;font-size:22px;letter-spacing:-.035em}
+.flight-panel p{line-height:1.6;color:#536673}
+.flight-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.flight-level-chip{background:#eaf8ff;color:#126489;padding:8px 11px;border-radius:999px;font-size:12px;font-weight:850;white-space:nowrap}
+.flight-progress-track{height:12px;border-radius:999px;background:#e7f1f6;overflow:hidden}
+.flight-progress-track span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#6fd0f6,#1689c4);transition:width .25s ease}
+.flight-progress-labels{display:flex;justify-content:space-between;gap:12px;margin-top:9px;color:#667482;font-size:12px}
+.flight-actions{display:flex;flex-wrap:wrap;gap:10px;margin:17px 0 8px}
+.flight-actions button:disabled{opacity:.48;cursor:not-allowed;transform:none}
+.flight-muted{font-size:13px;color:#71828e!important;margin:10px 0 0}
+.flight-notice{border:1px solid #b8deed;background:#eaf8ff;color:#15506d;border-radius:14px;padding:12px 15px;margin-bottom:15px;line-height:1.5}
+.flight-history{display:grid;gap:0}
+.flight-history-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid #e6f0f5}
+.flight-history-row:last-child{border-bottom:0}
+.flight-history-row div{display:grid;gap:4px}
+.flight-history-row span{font-size:12px;color:#71828e}
+.flight-history-row strong{color:#10283a}
+@media(max-width:760px){.flight-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.flight-hero{padding:24px;min-height:190px}}
+@media(max-width:500px){.flight-page{padding-bottom:22px}.flight-hero{border-radius:20px;padding:22px;min-height:185px}.flight-hero h1{font-size:36px}.flight-bird{font-size:48px}.flight-stats{gap:8px}.flight-stat{padding:13px;border-radius:16px}.flight-stat>strong{font-size:22px}.flight-panel{padding:17px;border-radius:18px}.flight-progress-labels{font-size:11px}.flight-actions>*{flex:1 1 100%;text-align:center;justify-content:center}}
+@media(max-width:500px){.rail{grid-template-columns:repeat(6,minmax(0,1fr))}.rail a .rail-label{font-size:9px}.rail a{padding-left:2px;padding-right:2px}}
+
+</style>
 <style>
 :root{--ink:#111318;--muted:#747983;--line:#e8e9ec;--paper:#f7f7f5;--card:#fff}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:inherit;text-decoration:none}button,input{font:inherit}
@@ -386,6 +428,7 @@ main{max-width:1280px}.hero{min-height:470px;border-radius:32px;box-shadow:0 24p
   <a href="/market" aria-label="Market"><span aria-hidden="true">▦</span><span class="rail-label">Market</span></a>
   <a href="/search" aria-label="Feed"><span aria-hidden="true">⌕</span><span class="rail-label">Feed</span></a>
   <a href="/orders" aria-label="Orders"><span aria-hidden="true">▤</span><span class="rail-label">Orders</span></a>
+  <a href="/flight" aria-label="Swift Flight"><span aria-hidden="true">↟</span><span class="rail-label">Flight</span></a>
   <button class="rail-more" type="button" aria-label="More Swift utilities" aria-expanded="false" data-open-utility><span aria-hidden="true">⋯</span><span class="rail-label">More</span></button>
 </nav>
 <aside class="utility-rail" aria-label="Swift utility rail">
