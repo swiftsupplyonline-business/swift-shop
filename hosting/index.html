@@ -374,45 +374,92 @@ main{max-width:1280px}.hero{min-height:470px;border-radius:32px;box-shadow:0 24p
   .hp-actions{grid-template-columns:1fr}
   .hp-market-preview .card-img{height:145px}
 }
-/* Swift Flight screen */
-.flight-page{max-width:920px;margin:0 auto;padding-bottom:30px}
-.flight-hero{position:relative;isolation:isolate;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:210px;padding:30px;border-radius:26px;background:linear-gradient(125deg,#10283a 0%,#14577c 52%,#35a7d7 100%);color:#fff;margin-bottom:18px;box-shadow:0 18px 42px rgba(16,40,58,.15)}
-.flight-hero::before{content:"";position:absolute;inset:0;z-index:-1;background:radial-gradient(circle at 75% 15%,rgba(255,255,255,.22),transparent 35%),linear-gradient(180deg,transparent 45%,rgba(6,25,39,.24))}
-.flight-hero-copy{max-width:590px;z-index:1}
-.flight-hero .eyebrow{color:#b9eaff}
-.flight-hero h1{font-size:clamp(34px,5vw,52px);letter-spacing:-.05em;line-height:1;margin:10px 0 12px;color:#fff}
-.flight-hero p{max-width:520px;color:rgba(255,255,255,.82);line-height:1.6;margin:0}
-.flight-bird{font-size:clamp(52px,8vw,82px);filter:drop-shadow(0 12px 12px rgba(0,0,0,.2));transform:rotate(-9deg);flex:none;z-index:1;animation:flight-hover 3s ease-in-out infinite}
-.flight-skyline{position:absolute;left:0;right:0;bottom:0;height:44px;display:flex;align-items:flex-end;gap:5px;opacity:.2;z-index:0}
-.flight-skyline span{display:block;flex:1;background:#eaf8ff;border-radius:5px 5px 0 0;height:35%}
-.flight-skyline span:nth-child(2){height:75%}.flight-skyline span:nth-child(3){height:48%}.flight-skyline span:nth-child(4){height:100%}.flight-skyline span:nth-child(5){height:60%}
-@keyframes flight-hover{0%,100%{transform:translateY(0) rotate(-9deg)}50%{transform:translateY(-8px) rotate(-3deg)}}
-.flight-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
-.flight-stat,.flight-panel{min-width:0;background:rgba(255,255,255,.94);border:1px solid #dcebf2;border-radius:20px;box-shadow:0 8px 24px rgba(16,40,58,.045)}
-.flight-stat{padding:17px}
-.flight-stat>span,.flight-stat>small{display:block;color:#667482;font-size:12px;line-height:1.45}
-.flight-stat>strong{display:block;color:#10283a;font-size:clamp(19px,2.4vw,27px);letter-spacing:-.04em;margin:7px 0 4px;overflow-wrap:anywhere}
-.flight-stat>strong small{font-size:12px;color:#667482;letter-spacing:0;font-weight:700}
-.flight-panel{padding:22px;margin-bottom:16px}
-.flight-panel h2{margin:5px 0 9px;color:#10283a;font-size:22px;letter-spacing:-.035em}
-.flight-panel p{line-height:1.6;color:#536673}
-.flight-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
-.flight-level-chip{background:#eaf8ff;color:#126489;padding:8px 11px;border-radius:999px;font-size:12px;font-weight:850;white-space:nowrap}
-.flight-progress-track{height:12px;border-radius:999px;background:#e7f1f6;overflow:hidden}
-.flight-progress-track span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#6fd0f6,#1689c4);transition:width .25s ease}
-.flight-progress-labels{display:flex;justify-content:space-between;gap:12px;margin-top:9px;color:#667482;font-size:12px}
-.flight-actions{display:flex;flex-wrap:wrap;gap:10px;margin:17px 0 8px}
-.flight-actions button:disabled{opacity:.48;cursor:not-allowed;transform:none}
-.flight-muted{font-size:13px;color:#71828e!important;margin:10px 0 0}
-.flight-notice{border:1px solid #b8deed;background:#eaf8ff;color:#15506d;border-radius:14px;padding:12px 15px;margin-bottom:15px;line-height:1.5}
+/* Swift Flight — responsive, bird-led experience */
+.flight-page{max-width:900px;margin:0 auto;padding:0 0 34px;color:#153247}
+.flight-stage{position:relative;overflow:hidden;isolation:isolate;border-radius:28px;margin-bottom:16px;padding:24px 26px 0;background:linear-gradient(180deg,#bdeeff 0%,#e8f8ff 62%,#f6fbff 100%);border:1px solid #d2edf8;box-shadow:0 14px 36px rgba(19,84,113,.09);transition:background .6s ease}
+.flight-stage::before{content:"";position:absolute;inset:0;z-index:-1;background:radial-gradient(circle at 82% 18%,rgba(255,255,255,.75),transparent 26%),linear-gradient(120deg,rgba(255,255,255,.25),transparent 60%)}
+.flight-stage-top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;position:relative;z-index:2}
+.flight-stage .eyebrow{color:#287594;font-size:10px;font-weight:900;letter-spacing:.13em}
+.flight-stage h1{font-size:clamp(26px,4.2vw,39px);line-height:1.05;letter-spacing:-.05em;margin:8px 0 6px;color:#12364a}
+.flight-stage-top p{font-size:13px;color:#426b7d;margin:0}
+.flight-level-badge{display:grid;place-items:center;gap:1px;min-width:58px;min-height:58px;padding:8px;border-radius:18px;background:rgba(255,255,255,.78);border:1px solid rgba(255,255,255,.9);color:#3d788f;font-size:9px;font-weight:900;letter-spacing:.08em;box-shadow:0 5px 15px rgba(32,104,136,.08)}
+.flight-level-badge strong{font-size:25px;line-height:1;color:#153f55;letter-spacing:-.06em}
+.flight-world{height:clamp(175px,28vw,250px);position:relative;margin:0 -6px;overflow:hidden}
+.flight-sun{position:absolute;top:13%;right:15%;width:54px;height:54px;border-radius:50%;background:#fff8cb;box-shadow:0 0 0 12px rgba(255,255,255,.17),0 0 40px rgba(255,249,197,.7)}
+.flight-cloud{position:absolute;width:95px;height:23px;border-radius:40px;background:rgba(255,255,255,.72);filter:drop-shadow(0 5px 7px rgba(62,139,168,.06));animation:flight-cloud-drift 18s ease-in-out infinite alternate}
+.flight-cloud::before,.flight-cloud::after{content:"";position:absolute;bottom:5px;border-radius:50%;background:inherit}
+.flight-cloud::before{width:35px;height:35px;left:15px}.flight-cloud::after{width:27px;height:27px;left:42px}
+.cloud-one{left:8%;top:27%}.cloud-two{right:5%;top:45%;transform:scale(.7);animation-duration:24s}
+.flight-hills{position:absolute;left:-10%;right:-10%;bottom:0;height:55%;background:linear-gradient(155deg,#a8dbb8 0 28%,#6ebba3 29% 60%,#419b89 61%);clip-path:polygon(0 100%,0 60%,13% 36%,24% 66%,39% 19%,53% 62%,69% 34%,82% 63%,100% 40%,100% 100%)}
+.flight-rooftops{position:absolute;left:0;right:0;bottom:0;height:40%;display:flex;align-items:flex-end;gap:5px;opacity:.65;transition:opacity .6s ease}
+.flight-rooftops i{display:block;flex:1;height:58%;background:#477b82;border-radius:5px 5px 0 0;position:relative}
+.flight-rooftops i:nth-child(2){height:90%;background:#5d9295}.flight-rooftops i:nth-child(3){height:66%;background:#3d707c}.flight-rooftops i:nth-child(4){height:100%;background:#4d8189}.flight-rooftops i:nth-child(5){height:74%;background:#376d79}
+.flight-rooftops i::before{content:"";position:absolute;top:13px;left:20%;width:10px;height:12px;background:rgba(222,247,255,.6);box-shadow:18px 0 rgba(222,247,255,.6),0 20px rgba(222,247,255,.45),18px 20px rgba(222,247,255,.45)}
+.flight-ground{position:absolute;bottom:0;left:-8%;right:-8%;height:13px;border-radius:50% 50% 0 0;background:#367c70}
+.flight-bird-button{position:absolute;z-index:3;left:50%;top:42%;width:clamp(115px,22vw,170px);height:120px;transform:translate(-50%,-50%);border:0;background:transparent;cursor:pointer;padding:0;touch-action:manipulation;filter:drop-shadow(0 12px 9px rgba(21,70,84,.16));animation:flight-bird-float 3.1s ease-in-out infinite}
+.flight-bird-button:focus-visible{outline:3px solid #167fa8;outline-offset:5px;border-radius:24px}
+.flight-bird-art{display:block;width:100%;height:100%;overflow:visible}
+.bird-body{fill:#263f50}.bird-tail{fill:#182f40}.bird-wing{fill:#31586b;transform-origin:82px 50px;animation:flight-wing-flap .42s ease-in-out infinite alternate}.bird-belly{fill:#f4f5e9}.bird-eye{fill:#fff}.bird-beak{fill:#f0a84d}.bird-wing-detail{fill:none;stroke:#80a9b8;stroke-width:2;stroke-linecap:round}
+.flight-bird-shadow{position:absolute;left:28%;right:28%;bottom:1px;height:7px;border-radius:50%;background:rgba(31,90,91,.18);filter:blur(3px);animation:flight-shadow 3.1s ease-in-out infinite}
+.flight-stage-bottom{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0 15px;font-size:11px;color:#426c7c}
+.flight-status-pill{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border-radius:99px;background:rgba(255,255,255,.7);white-space:nowrap;font-weight:800;color:#2b6c78}
+.flight-status-pill i{width:6px;height:6px;border-radius:50%;background:#38a883;box-shadow:0 0 0 3px rgba(56,168,131,.12)}
+.flight-stage.scene-trees .flight-hills{background:linear-gradient(155deg,#c1e5a5 0 28%,#73bf89 29% 60%,#3f9c78 61%)}
+.flight-stage.scene-clouds .flight-hills,.flight-stage.scene-open-sky .flight-hills{height:25%;opacity:.5;background:linear-gradient(180deg,#fff 0%,#d6f1f7 100%);clip-path:ellipse(58% 38% at 50% 100%)}
+.flight-stage.scene-clouds .flight-rooftops,.flight-stage.scene-open-sky .flight-rooftops{opacity:0}
+.flight-stage.scene-storms{background:linear-gradient(180deg,#879eb7 0%,#bdcbd9 58%,#dce6ed 100%);border-color:#b7c8d6}
+.flight-stage.scene-storms .flight-sun{opacity:.2}.flight-stage.scene-storms .flight-cloud{background:rgba(58,78,103,.35)}
+.flight-stage.scene-storms .flight-hills{background:linear-gradient(155deg,#8d9da9,#637d8d)}
+.flight-stage.scene-open-sky{background:linear-gradient(180deg,#58b8ee 0%,#bceaff 65%,#e8f9ff 100%)}
+.flight-stage.scene-open-sky .flight-sun{width:68px;height:68px;background:#fff7bf}
+.flight-bird-button.is-flapping{animation:flight-bird-hop .8s ease-out}
+.flight-bird-button.is-flapping .bird-wing{animation-duration:.12s}
+.flight-bird-button.is-boosting{animation:flight-bird-boost 1.45s cubic-bezier(.2,.8,.2,1)}
+.flight-bird-button.is-boosting .bird-wing{animation-duration:.1s}
+.flight-overview{display:grid;grid-template-columns:minmax(135px,.7fr) minmax(0,1.7fr);gap:12px;margin-bottom:16px}
+.flight-balance-card,.flight-progress-card,.flight-panel{min-width:0;background:#fff;border:1px solid #e0edf2;border-radius:20px;box-shadow:0 8px 24px rgba(16,40,58,.045)}
+.flight-balance-card{display:flex;flex-direction:column;justify-content:center;padding:18px 20px;background:linear-gradient(145deg,#12384c,#1d607a);color:white}
+.flight-label{display:block;color:#718693;font-size:10px;font-weight:900;letter-spacing:.12em}
+.flight-balance-card .flight-label{color:#b8e9fa}
+.flight-balance-card>strong{font-size:clamp(26px,4vw,37px);line-height:1.15;letter-spacing:-.06em;margin:6px 0}
+.flight-balance-card>span:last-child{font-size:11px;color:#d3eaf2}
+.flight-progress-card{padding:18px 20px}
+.flight-progress-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:13px}
+.flight-progress-head strong{display:block;margin-top:5px;font-size:clamp(18px,2.6vw,25px);color:#173b4e;letter-spacing:-.04em}
+.flight-progress-head strong small{font-size:12px;color:#718693;letter-spacing:0}
+.flight-percent{font-size:14px;font-weight:900;color:#1682a8;background:#e9f8fd;padding:8px 10px;border-radius:12px}
+.flight-progress-track{height:10px;border-radius:999px;background:#e8f1f5;overflow:hidden}
+.flight-progress-track span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#6fd0f6,#1689c4);transition:width .65s cubic-bezier(.2,.8,.2,1)}
+.flight-progress-labels{display:flex;justify-content:space-between;gap:10px;margin-top:9px;color:#71828e;font-size:11px}
+.flight-panel{padding:21px;margin-bottom:14px}
+.flight-panel h2{margin:5px 0 8px;color:#15384b;font-size:21px;letter-spacing:-.035em}
+.flight-panel p{line-height:1.6;color:#526b78;font-size:13px}
+.flight-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.flight-level-chip{background:#eaf8ff;color:#126489;padding:8px 11px;border-radius:999px;font-size:11px;font-weight:850;white-space:nowrap}
+.flight-actions{display:flex;flex-wrap:wrap;gap:10px;margin:15px 0 7px}
+.flight-actions>*{flex:1 1 180px;min-height:46px;justify-content:center;text-align:center}
+.flight-actions button:disabled{opacity:.46;cursor:not-allowed;transform:none}
+.flight-muted{font-size:12px;color:#71828e!important;margin:10px 0 0}
+.flight-notice{border:1px solid #b8deed;background:#eaf8ff;color:#15506d;border-radius:14px;padding:12px 15px;margin-bottom:14px;line-height:1.5;font-size:13px}
+.flight-task-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:13px 0}
+.flight-task-link{display:flex;align-items:center;gap:11px;padding:13px;border:1px solid #e2edf2;border-radius:15px;color:#15384b;text-decoration:none;transition:transform .16s ease,border-color .16s ease,background .16s ease}
+.flight-task-link:hover{transform:translateY(-2px);border-color:#a6d9e9;background:#f7fcfe}
+.flight-task-link>span:first-child{display:grid;place-items:center;width:38px;height:38px;flex:none;border-radius:12px;background:#e8f8fd;color:#147a9e;font-size:21px}
+.flight-task-link>span:nth-child(2){display:grid;gap:3px;min-width:0}
+.flight-task-link strong{font-size:12px}.flight-task-link small{font-size:10px;color:#748894}.flight-task-link>b{margin-left:auto;color:#1682a8;font-size:19px}
+.flight-refresh-link{border:0;background:transparent;color:#13799d;font-weight:800;font-size:12px;padding:8px 0;cursor:pointer}
 .flight-history{display:grid;gap:0}
 .flight-history-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid #e6f0f5}
-.flight-history-row:last-child{border-bottom:0}
-.flight-history-row div{display:grid;gap:4px}
-.flight-history-row span{font-size:12px;color:#71828e}
-.flight-history-row strong{color:#10283a}
-@media(max-width:760px){.flight-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.flight-hero{padding:24px;min-height:190px}}
-@media(max-width:500px){.flight-page{padding-bottom:22px}.flight-hero{border-radius:20px;padding:22px;min-height:185px}.flight-hero h1{font-size:36px}.flight-bird{font-size:48px}.flight-stats{gap:8px}.flight-stat{padding:13px;border-radius:16px}.flight-stat>strong{font-size:22px}.flight-panel{padding:17px;border-radius:18px}.flight-progress-labels{font-size:11px}.flight-actions>*{flex:1 1 100%;text-align:center;justify-content:center}}
+.flight-history-row:last-child{border-bottom:0}.flight-history-row div{display:grid;gap:4px}.flight-history-row span{font-size:12px;color:#71828e}.flight-history-row strong{color:#15384b}
+@keyframes flight-wing-flap{from{transform:rotate(-18deg)}to{transform:rotate(28deg)}}
+@keyframes flight-bird-float{0%,100%{margin-top:0;transform:translate(-50%,-50%) rotate(-2deg)}50%{margin-top:-10px;transform:translate(-50%,-50%) rotate(2deg)}}
+@keyframes flight-shadow{0%,100%{transform:scale(1);opacity:.8}50%{transform:scale(.75);opacity:.45}}
+@keyframes flight-bird-hop{0%{transform:translate(-50%,-50%) rotate(0)}35%{transform:translate(-50%,-75%) rotate(-8deg)}70%{transform:translate(-50%,-43%) rotate(5deg)}100%{transform:translate(-50%,-50%) rotate(0)}}
+@keyframes flight-bird-boost{0%{transform:translate(-50%,-50%) scale(1)}35%{transform:translate(-50%,-75%) scale(1.1) rotate(-8deg)}75%{transform:translate(-50%,-58%) scale(1.04)}100%{transform:translate(-50%,-50%) scale(1)}}
+@keyframes flight-cloud-drift{from{margin-left:-5px}to{margin-left:18px}}
+@media(max-width:760px){.flight-page{padding-bottom:24px}.flight-stage{padding:21px 20px 0;border-radius:23px}.flight-overview{grid-template-columns:minmax(110px,.72fr) minmax(0,1.5fr)}.flight-balance-card,.flight-progress-card{padding:15px}.flight-panel{padding:18px}}
+@media(max-width:520px){.flight-stage{padding:18px 16px 0;border-radius:20px}.flight-stage h1{font-size:27px}.flight-level-badge{min-width:49px;min-height:49px;border-radius:15px}.flight-world{height:190px;margin:0 -6px}.flight-bird-button{width:124px;height:100px;top:43%}.flight-sun{width:40px;height:40px}.flight-stage-bottom{align-items:flex-start;flex-direction:column;gap:7px;padding:10px 0 13px}.flight-overview{grid-template-columns:1fr;gap:9px}.flight-balance-card{min-height:100px}.flight-progress-card{padding:16px}.flight-task-actions{grid-template-columns:1fr}.flight-panel{padding:16px;border-radius:17px}.flight-panel-heading{align-items:flex-start}.flight-actions>*{flex:1 1 100%;text-align:center;justify-content:center}.flight-progress-labels{font-size:10px}}
+@media(prefers-reduced-motion:reduce){.flight-bird-button,.flight-bird-shadow,.bird-wing,.flight-cloud{animation:none!important;transition:none!important}.flight-bird-button.is-flapping,.flight-bird-button.is-boosting{transform:translate(-50%,-50%)!important}}
 @media(max-width:500px){.rail{grid-template-columns:repeat(6,minmax(0,1fr))}.rail a .rail-label{font-size:9px}.rail a{padding-left:2px;padding-right:2px}}
 </style>
 </head>
