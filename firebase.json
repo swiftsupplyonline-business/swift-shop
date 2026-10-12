@@ -71,6 +71,10 @@
                 "destination": "/index.html"
             },
             {
+                "source": "/flight",
+                "destination": "/index.html"
+            },
+            {
                 "source": "/search",
                 "destination": "/index.html"
             }
