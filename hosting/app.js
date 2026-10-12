@@ -1452,41 +1452,53 @@ async function renderFlight(root) {
 
     root.innerHTML = `
       <section class="rail-page flight-page">
-        <div class="flight-hero">
-          <div class="flight-hero-copy">
-            <span class="eyebrow">Swift engagement · Flight #${escapeHtml(String(state?.flightNumber || 1))}</span>
-            <h1>Keep rising.</h1>
-            <p>Earn points through real Swift activity. The higher you fly, the greater your progression multiplier.</p>
+        <section class="flight-stage scene-${environment.toLowerCase().replace(/[^a-z]+/g, "-")}" data-level="${level}" aria-label="Your bird's flight scene">
+          <div class="flight-stage-top">
+            <div><span class="eyebrow">SWIFT FLIGHT · FLIGHT #${escapeHtml(String(state?.flightNumber || 1))}</span><h1>${escapeHtml(state?.altitudeLabel || "Ready to fly?")}</h1><p>${escapeHtml(environment)} · Level ${level}</p></div>
+            <div class="flight-level-badge">LEVEL <strong>${level}</strong></div>
           </div>
-          <div class="flight-bird" aria-hidden="true">🐦</div>
-          <div class="flight-skyline" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
-        </div>
+          <div class="flight-world" aria-hidden="true">
+            <span class="flight-sun"></span><span class="flight-cloud cloud-one"></span><span class="flight-cloud cloud-two"></span>
+            <div class="flight-hills"></div><div class="flight-rooftops"><i></i><i></i><i></i><i></i><i></i></div>
+            <button class="flight-bird-button" id="flightBirdBtn" type="button" aria-label="Make your bird flap its wings">
+              <svg class="flight-bird-art" viewBox="0 0 160 110" role="img" aria-label="Swift bird">
+                <path class="bird-tail" d="M63 59 L15 76 L47 44 Z"></path>
+                <path class="bird-body" d="M38 59 C44 30 79 20 105 39 C119 49 119 65 105 73 C83 87 52 78 38 59 Z"></path>
+                <path class="bird-wing" d="M68 48 C54 22 70 4 91 10 C107 14 111 30 102 47 C91 40 79 41 68 48 Z"></path>
+                <path class="bird-belly" d="M61 63 C75 74 93 71 105 60 C100 78 77 81 61 63 Z"></path>
+                <circle class="bird-eye" cx="105" cy="45" r="3.5"></circle>
+                <path class="bird-beak" d="M117 49 L140 54 L117 58 Z"></path>
+                <path class="bird-wing-detail" d="M72 45 Q81 25 96 19"></path>
+              </svg>
+              <span class="flight-bird-shadow"></span>
+            </button>
+            <div class="flight-ground"></div>
+          </div>
+          <div class="flight-stage-bottom"><span>Every genuine Swift activity helps you progress.</span><span class="flight-status-pill"><i></i> ${level >= 8 ? "Open sky" : level >= 5 ? "Above the clouds" : level >= 3 ? "Climbing" : "Ready to fly"}</span></div>
+        </section>
 
         ${notice ? `<div class="${noticeError ? "error" : "flight-notice"}" role="status">${escapeHtml(notice)}</div>` : ""}
 
-        <div class="flight-stats">
-          <article class="flight-stat"><span>Available points</span><strong>${points(current)}</strong><small>Spendable points</small></article>
-          <article class="flight-stat"><span>Flight progress</span><strong>${points(earned)} <small>/ 100,000</small></strong><small>Qualifying points earned</small></article>
-          <article class="flight-stat"><span>Altitude</span><strong>Level ${level}</strong><small>${escapeHtml(environment)}</small></article>
-          <article class="flight-stat"><span>Multiplier</span><strong>×${Number(state?.multiplier || 1).toFixed(1)}</strong><small>Based on your altitude</small></article>
-        </div>
-
-        <section class="flight-panel">
-          <div class="flight-panel-heading"><div><span class="eyebrow">Your journey</span><h2>${escapeHtml(state?.altitudeLabel || "Ground")}</h2></div><span class="flight-level-chip">Highest level ${Math.max(1, Number(state?.highestLevel || 1))}</span></div>
-          <div class="flight-progress-track" role="progressbar" aria-label="Progress to redemption" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></div>
-          <div class="flight-progress-labels"><span>${progress}% to redemption</span><span>${points(Math.max(0, 100000 - earned))} points to go</span></div>
-          <div class="flight-actions">
-            <button class="btn secondary" type="button" id="feedBirdBtn" ${busy || current < 20 || eligible ? "disabled" : ""}>Feed bird · 20 points</button>
-            <button class="btn primary" type="button" id="claimFlightBtn" ${busy || !eligible ? "disabled" : ""}>Redeem M200</button>
-          </div>
-          <p class="flight-muted">${eligible ? "Your flight has reached the redemption threshold. Claim your reward to begin the next flight." : "Points are awarded only after the server verifies a qualifying Swift action. Feeding costs 20 available points; it does not create reward points."}</p>
+        <section class="flight-overview">
+          <article class="flight-balance-card"><span class="flight-label">YOUR POINTS</span><strong>${points(current)}</strong><span>Available to use</span></article>
+          <article class="flight-progress-card"><div class="flight-progress-head"><div><span class="flight-label">YOUR M200 GOAL</span><strong>${points(earned)} <small>/ 100,000</small></strong></div><span class="flight-percent">${progress}%</span></div><div class="flight-progress-track" role="progressbar" aria-label="Progress to redemption" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></div><div class="flight-progress-labels"><span>Lifetime flight progress</span><span>${points(Math.max(0, 100000 - earned))} to go</span></div></article>
         </section>
 
-        <section class="flight-panel">
-          <span class="eyebrow">Next task</span>
-          <h2>Make a real move on Swift</h2>
-          <p>Publish an eligible listing, publish a post, follow a shop, or complete a qualifying sale. Once the action is recorded, return here to refresh your verified flight state.</p>
-          <div class="flight-actions"><a class="btn secondary" href="/market">Explore the market</a><a class="btn secondary" href="/shops">Find shops</a><button class="btn secondary" type="button" id="refreshFlightBtn" ${busy ? "disabled" : ""}>Refresh flight</button></div>
+        <section class="flight-panel flight-next-panel">
+          <div class="flight-panel-heading"><div><span class="eyebrow">YOUR NEXT MOVE</span><h2>${eligible ? "You've reached your goal!" : current >= 20 ? "Ready for another climb?" : "Your bird is waiting"}</h2></div><span class="flight-level-chip">Best: Level ${Math.max(1, Number(state?.highestLevel || 1))}</span></div>
+          <p>${eligible ? "Your flight has reached the M200 milestone. Claim your reward to begin a fresh flight." : current >= 20 ? "Feed your bird to use 20 points, then keep building progress with real activity on Swift." : "Complete a genuine activity on Swift to earn points. Come back when you have 20 points to feed your bird."}</p>
+          <div class="flight-actions">
+            <button class="btn primary" type="button" id="feedBirdBtn" ${busy || current < 20 || eligible ? "disabled" : ""}>${busy ? "One moment…" : "Feed & fly · 20 points"}</button>
+            <button class="btn secondary" type="button" id="claimFlightBtn" ${busy || !eligible ? "disabled" : ""}>Claim M200</button>
+          </div>
+          <p class="flight-muted">${eligible ? "The reward is processed by Swift's server. Your next flight starts after the claim is confirmed." : "Feeding uses 20 available points; it does not award new points. Only server-verified activities count toward flight progress."}</p>
+        </section>
+
+        <section class="flight-panel flight-task-panel">
+          <span class="eyebrow">EARN YOUR NEXT POINTS</span><h2>Take one small step</h2>
+          <p>Explore Swift, follow a shop, publish an eligible listing, or complete a qualifying sale. When your activity is verified, refresh to see your updated points.</p>
+          <div class="flight-task-actions"><a class="flight-task-link" href="/market"><span aria-hidden="true">⌕</span><span><strong>Explore the market</strong><small>Discover local products</small></span><b aria-hidden="true">→</b></a><a class="flight-task-link" href="/shops"><span aria-hidden="true">⌂</span><span><strong>Find a shop</strong><small>Meet Swift sellers</small></span><b aria-hidden="true">→</b></a></div>
+          <button class="flight-refresh-link" type="button" id="refreshFlightBtn" ${busy ? "disabled" : ""}>↻ Refresh my flight</button>
         </section>
 
         <section class="flight-panel">
@@ -1495,16 +1507,29 @@ async function renderFlight(root) {
         </section>
       </section>`;
 
+    const animateBird = (className = "is-flapping") => {
+      const bird = root.querySelector(".flight-bird-button");
+      if (!bird) return;
+      bird.classList.remove("is-flapping", "is-boosting");
+      void bird.offsetWidth;
+      bird.classList.add(className);
+      window.setTimeout(() => bird.classList.remove(className), className === "is-boosting" ? 1500 : 1000);
+    };
+    root.querySelector("#flightBirdBtn")?.addEventListener("click", () => {
+      animateBird();
+      const status = root.querySelector(".flight-stage-bottom > span:first-child");
+      if (status) status.textContent = "Your swift is ready to fly — keep going!";
+    });
     root.querySelector("#feedBirdBtn")?.addEventListener("click", async () => {
-      busy = true; notice = ""; noticeError = false; draw();
+      busy = true; notice = ""; noticeError = false; animateBird("is-boosting"); draw();
       try {
         const result = (await feedBird({})).data;
-        notice = result?.fed ? "Your bird is fed. Keep earning points through verified Swift activity to climb." : "The bird could not be fed.";
+        notice = result?.fed ? "Your bird is fed! Keep earning points through verified Swift activity to climb." : "The bird could not be fed.";
         await refresh(false, true);
       } catch (error) {
         notice = error?.message || "Couldn't feed the bird.";
         noticeError = true;
-      } finally { busy = false; draw(); }
+      } finally { busy = false; draw(); if (!noticeError) { const bird = root.querySelector(".flight-bird-button"); bird?.classList.add("is-boosting"); window.setTimeout(() => bird?.classList.remove("is-boosting"), 1500); } }
     });
 
     root.querySelector("#claimFlightBtn")?.addEventListener("click", async () => {
