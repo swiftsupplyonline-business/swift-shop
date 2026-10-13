@@ -48,17 +48,18 @@ jobs:
       - name: Build Android debug APK
         run: ./gradlew --no-daemon :app:assembleDebug
 
-      - name: Verify APK exists
+      - name: Verify installable Dev APK exists
         shell: bash
         run: |
           set -euo pipefail
-          test -s app/build/outputs/apk/debug/app-debug.apk
-          sha256sum app/build/outputs/apk/debug/app-debug.apk
+          test -s app/build/outputs/apk/dev/debug/app-dev-debug.apk
+          sha256sum app/build/outputs/apk/dev/debug/app-dev-debug.apk
+          ls -lh app/build/outputs/apk/dev/debug/app-dev-debug.apk
 
-      - name: Upload installable APK
+      - name: Upload installable Dev APK
         uses: actions/upload-artifact@v4
         with:
-          name: swift-android-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: swift-android-dev-debug-apk
+          path: app/build/outputs/apk/dev/debug/app-dev-debug.apk
           if-no-files-found: error
           retention-days: 14
