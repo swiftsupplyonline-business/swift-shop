@@ -12,6 +12,7 @@
  */
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onDocumentCreated, onDocumentWritten } from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
 
 const db = admin.firestore();
@@ -181,47 +182,38 @@ export const processFlightEvent = onCall(async (request) => {
     ) {
         throw new HttpsError("invalid-argument", "sourceType and sourceId are required.");
     }
-
     if (!Object.prototype.hasOwnProperty.call(BASE_REWARDS, sourceType)) {
-        throw new HttpsError(
-            "invalid-argument",
-            `Unknown or unsupported event type: ${sourceType}`,
-        );
+        throw new HttpsError("invalid-argument", `Unknown or unsupported event type: ${sourceType}`);
     }
+    return awardVerifiedFlightEvent(uid, sourceType, sourceId);
+});
 
+/**
+ * One transaction is shared by callable and Firestore-triggered entry points.
+ * Marketplace documents remain the authority; clients never submit point amounts.
+ */
+async function awardVerifiedFlightEvent(uid: string, sourceType: string, sourceId: string) {
     const stateRef = db.collection("flightState").doc(uid);
     const now = admin.firestore.FieldValue.serverTimestamp();
 
     return db.runTransaction(async (tx) => {
-        /*
-         * Verify the marketplace event first. The returned relationshipId is
-         * used to make FOLLOW/NEW_FOLLOWER rewards relationship-scoped.
-         */
         const relationshipId = await verifyEvent(tx, uid, sourceType, sourceId);
         const eventKey = eventIdempotencyKey(uid, sourceType, sourceId, relationshipId);
         const eventRef = db.collection("flightEvents").doc(eventKey);
-
         const eventSnap = await tx.get(eventRef);
-        if (eventSnap.exists) {
-            return { duplicate: true, awardedPoints: 0 };
-        }
+        if (eventSnap.exists) return { duplicate: true, awardedPoints: 0 };
 
         const stateSnap = await tx.get(stateRef);
-        const state = stateSnap.exists
-            ? stateSnap.data()!
-            : initialFlightState(uid, now);
-
+        const state = stateSnap.exists ? stateSnap.data()! : initialFlightState(uid, now);
         await assertWithinDailyLimit(tx, uid, sourceType);
 
         const flightPoints = Number(state.flightPointsEarned || 0);
         const altitude = altitudeForFlight(flightPoints);
         const awarded = Math.round(BASE_REWARDS[sourceType] * altitude.multiplier);
-
         const newCurrent = Number(state.currentPoints || 0) + awarded;
         const newFlightPoints = flightPoints + awarded;
         const newAltitude = altitudeForFlight(newFlightPoints);
         const newHighest = Math.max(Number(state.highestLevel || 1), newAltitude.level);
-
         const updates = {
             currentPoints: newCurrent,
             flightPointsEarned: newFlightPoints,
@@ -234,34 +226,60 @@ export const processFlightEvent = onCall(async (request) => {
             updatedAt: now,
         };
 
-        if (stateSnap.exists) {
-            tx.update(stateRef, updates);
-        } else {
-            tx.set(stateRef, {
-                ...state,
-                ...updates,
-            });
-        }
+        if (stateSnap.exists) tx.update(stateRef, updates);
+        else tx.set(stateRef, { ...state, ...updates });
 
         tx.set(eventRef, {
-            uid,
-            sourceType,
-            sourceId,
-            relationshipId: relationshipId ?? null,
-            awardedPoints: awarded,
-            altitudeAtEvent: newAltitude.level,
-            processedAt: now,
+            uid, sourceType, sourceId, relationshipId: relationshipId ?? null,
+            awardedPoints: awarded, altitudeAtEvent: newAltitude.level, processedAt: now,
         });
-
         return {
-            duplicate: false,
-            awardedPoints: awarded,
-            currentPoints: newCurrent,
-            altitudeLevel: newAltitude.level,
-            altitudeLabel: newAltitude.label,
-            multiplier: newAltitude.multiplier,
-            eligible: newFlightPoints >= REDEMPTION_THRESHOLD,
+            duplicate: false, awardedPoints: awarded, currentPoints: newCurrent,
+            altitudeLevel: newAltitude.level, altitudeLabel: newAltitude.label,
+            multiplier: newAltitude.multiplier, eligible: newFlightPoints >= REDEMPTION_THRESHOLD,
         };
+    });
+}
+
+/**
+ * Automatic rewards for genuine marketplace activity.
+ * This makes Web and Android parity independent of client-side event listeners.
+ */
+export const rewardFlightForPublishedPost = onDocumentCreated("posts/{postId}", async (event) => {
+    const post = event.data?.data();
+    if (!post?.authorId || !post?.createdAt) return;
+    try {
+        await awardVerifiedFlightEvent(String(post.authorId), "CREATE_POST", event.params.postId);
+    } catch (error) {
+        console.error("Swift Flight post reward was not awarded", event.params.postId, error);
+    }
+});
+
+export const rewardFlightForActiveListing = onDocumentWritten("listings/{listingId}", async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!after || after.status !== "ACTIVE" || !after.sellerId) return;
+    // Only process creation or transition into ACTIVE; other listing edits are not reward events.
+    if (before?.status === "ACTIVE") return;
+    try {
+        await awardVerifiedFlightEvent(String(after.sellerId), "CREATE_LISTING", event.params.listingId);
+    } catch (error) {
+        console.error("Swift Flight listing reward was not awarded", event.params.listingId, error);
+    }
+});
+
+export const rewardFlightForFollow = onDocumentCreated("follows/{followId}", async (event) => {
+    const follow = event.data?.data();
+    if (!follow?.followerId || !follow?.followedId || follow.followerId === follow.followedId) return;
+    const followId = event.params.followId;
+    const results = await Promise.allSettled([
+        awardVerifiedFlightEvent(String(follow.followerId), "FOLLOW", followId),
+        awardVerifiedFlightEvent(String(follow.followedId), "NEW_FOLLOWER", followId),
+    ]);
+    results.forEach((result, index) => {
+        if (result.status === "rejected") {
+            console.error("Swift Flight follow reward was not awarded", followId, index, result.reason);
+        }
     });
 });
 
