@@ -1456,6 +1456,9 @@ async function renderFlight(root) {
             <h2>Your flight</h2>
             <p class="flight-level">A little higher with every marketplace activity.</p>
           </div>
+          <button class="btn secondary flight-refresh-btn" type="button" id="flightRefreshBtn" aria-label="Refresh flight balance">
+            <span aria-hidden="true">↻</span> Refresh points
+          </button>
         </div>
         <div class="flight-progress-wrap">
           <div class="flight-progress-bar"><div class="flight-progress-fill" style="width:${pct}%"></div></div>
@@ -1504,6 +1507,24 @@ async function renderFlight(root) {
     worldBird?.addEventListener("click", flapBird);
     worldBird?.addEventListener("keydown", e => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flapBird(); }
+    });
+
+    // Refresh from the server-authoritative callable; never infer points in the browser.
+    root.querySelector("#flightRefreshBtn")?.addEventListener("click", async e => {
+      const btn = e.currentTarget;
+      const msg = root.querySelector("#flightMsg");
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      const previous = btn.innerHTML;
+      btn.innerHTML = '<span aria-hidden="true">↻</span> Refreshing…';
+      try {
+        await renderFlight(root);
+      } catch (err) {
+        if (msg) msg.textContent = err.message || "Could not refresh your flight.";
+        btn.disabled = false;
+        btn.removeAttribute("aria-busy");
+        btn.innerHTML = previous;
+      }
     });
 
     root.querySelector("#flightFeedBtn")?.addEventListener("click", async e => {
