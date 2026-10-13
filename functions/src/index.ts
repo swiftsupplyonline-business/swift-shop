@@ -64,6 +64,9 @@ export {
 export {
     getFlightState,
     processFlightEvent,
+    rewardFlightForPublishedPost,
+    rewardFlightForActiveListing,
+    rewardFlightForFollow,
     feedBird,
     claimFlightRedemption,
     getFlightHistory,
