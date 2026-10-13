@@ -1428,10 +1428,11 @@ async function renderFlight(root) {
     const pct     = Math.min(100, Math.round((pts / 100000) * 100));
     const eligible = !!state.isEligibleToRedeem;
     const envEmoji = { "Rooftops":"🏠","Above rooftops":"🌆","Clouds":"☁️","Storm":"⛈️","Open sky":"🌤️" }[state.altitudeEnv] || "🌍";
+    const envClass = String(state.altitudeEnv || "open-sky").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
     root.innerHTML = `
       <section class="flight-screen">
-        <section class="flight-world" aria-label="Your bird flying above the city">
+        <section class="flight-world flight-env-${envClass}" aria-label="Your bird flying above the city">
           <div class="flight-world-sky" aria-hidden="true"></div>
           <div class="flight-cloud flight-cloud-one" aria-hidden="true"></div>
           <div class="flight-cloud flight-cloud-two" aria-hidden="true"></div>
@@ -1442,7 +1443,7 @@ async function renderFlight(root) {
             <span class="flight-world-pill"><span class="flight-live-dot"></span> Flight ${escapeHtml(String(state.flightNumber || 1))}</span>
             <span class="flight-world-pill">${envEmoji} ${escapeHtml(state.altitudeEnv || "Open sky")}</span>
           </div>
-          <div class="flight-world-bird" id="flightWorldBird">
+          <div class="flight-world-bird" id="flightWorldBird" role="button" tabindex="0" aria-label="Tap to flap your bird">
             <img src="/img/swift-bird.png" alt="Swift Flight bird" class="flight-bird-img" width="360" height="300">
           </div>
           <div class="flight-world-bottom">
@@ -1491,6 +1492,19 @@ async function renderFlight(root) {
         ).join("")}</div>` : ""}
         <div id="flightMsg" role="status" aria-live="polite" style="min-height:20px;font-size:13px;color:var(--muted);text-align:center;margin-top:8px"></div>
       </section>`;
+
+    const worldBird = root.querySelector("#flightWorldBird");
+    const flapBird = () => {
+      if (!worldBird) return;
+      worldBird.classList.remove("is-flapping");
+      void worldBird.offsetWidth;
+      worldBird.classList.add("is-flapping");
+      setTimeout(() => worldBird.classList.remove("is-flapping"), 600);
+    };
+    worldBird?.addEventListener("click", flapBird);
+    worldBird?.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flapBird(); }
+    });
 
     root.querySelector("#flightFeedBtn")?.addEventListener("click", async e => {
       const btn = e.currentTarget; btn.disabled = true;
