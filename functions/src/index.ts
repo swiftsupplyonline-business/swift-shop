@@ -66,6 +66,7 @@ export {
     processFlightEvent,
     rewardFlightForPublishedPost,
     rewardFlightForActiveListing,
+    rewardFlightForSuccessfulSale,
     rewardFlightForFollow,
     feedBird,
     claimFlightRedemption,
