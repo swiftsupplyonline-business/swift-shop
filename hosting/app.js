@@ -1469,9 +1469,6 @@ async function renderFlight(root) {
           <div class="flight-stat"><span class="flight-stat-val">${(state.flightPointsEarned||0).toLocaleString()}</span><span class="flight-stat-label">Earned</span></div>
           <div class="flight-stat"><span class="flight-stat-val">${escapeHtml(String(state.highestLevel||1))}</span><span class="flight-stat-label">Best level</span></div>
         </div>
-        <div class="flight-refresh-row">
-          <button class="flight-refresh-btn" type="button" id="flightRefreshBtn" aria-label="Refresh points">↻ Refresh</button>
-        </div>
         ${eligible
           ? `<div class="flight-redeem-wrap"><div class="flight-redeem-card">
                <span class="flight-redeem-icon">🎉</span>
@@ -1527,18 +1524,6 @@ async function renderFlight(root) {
         btn.disabled = false;
         btn.removeAttribute("aria-busy");
         btn.innerHTML = previous;
-      }
-    });
-
-    root.querySelector("#flightRefreshBtn")?.addEventListener("click", async () => {
-      const btn = root.querySelector("#flightRefreshBtn");
-      const msg = root.querySelector("#flightMsg");
-      if (btn) { btn.disabled = true; btn.textContent = "↻ Refreshing…"; }
-      try {
-        await renderFlight(root);
-      } catch (_) {
-        if (msg) msg.textContent = "Couldn\u2019t refresh. Try again.";
-        if (btn) { btn.disabled = false; btn.textContent = "↻ Refresh"; }
       }
     });
 
