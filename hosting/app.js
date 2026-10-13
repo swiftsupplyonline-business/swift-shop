@@ -1404,7 +1404,7 @@ async function renderFlight(root) {
     root.innerHTML = `
       <div class="flight-gate">
         <div class="flight-gate-inner">
-          <img src="/img/swift-bird.png" alt="Swift Flight bird with transparent background" width="120" height="120" style="filter:drop-shadow(0 4px 24px rgba(28,146,202,.3))">
+          <img src="/img/swift-bird.webp" alt="Swift Flight bird with transparent background" width="120" height="120" style="filter:drop-shadow(0 4px 24px rgba(28,146,202,.3))">
           <h2>Swift Flight</h2>
           <p>Sign in to access Flight — earn points through real marketplace activity and redeem M200 when you reach 100,000 points.</p>
           <a class="btn primary" href="/">Sign in or create account</a>
@@ -1444,7 +1444,7 @@ async function renderFlight(root) {
             <span class="flight-world-pill">${envEmoji} ${escapeHtml(state.altitudeEnv || "Open sky")}</span>
           </div>
           <div class="flight-world-bird" id="flightWorldBird" role="button" tabindex="0" aria-label="Tap to flap your bird">
-            <img src="/img/swift-bird.png" alt="Swift Flight bird" class="flight-bird-img" width="360" height="300">
+            <img src="/img/swift-bird.webp" alt="Swift Flight bird" class="flight-bird-img" width="360" height="300">
           </div>
           <div class="flight-world-bottom">
             <div><span class="flight-world-kicker">ALTITUDE</span><strong>Level ${escapeHtml(String(state.altitudeLevel || 1))}</strong><span>${escapeHtml(state.altitudeLabel || "Learning to fly")}</span></div>
