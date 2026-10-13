@@ -352,18 +352,127 @@ fun FlightTabContent(
             }
         }
     } else {
-        Box(
+        var points by remember { mutableStateOf(8420) }
+        var level by remember { mutableStateOf(6) }
+        var isFeeding by remember { mutableStateOf(false) }
+
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("🐦", style = MaterialTheme.typography.displayLarge)
-                Spacer(Modifier.height(16.dp))
-                Text("Swift Flight Active", style = MaterialTheme.typography.headlineMedium)
-                Spacer(Modifier.height(8.dp))
-                Text("UID: ${currentUser.uid}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                "Swift Flight · Flight #1",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                "Level $level",
+                                style = MaterialTheme.typography.headlineMedium
+                            )
+                            Text(
+                                "Clouds Band (2.0x multiplier)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text("🐦", style = MaterialTheme.typography.displayMedium)
+                    }
+
+                    Spacer(Modifier.height(20.dp))
+
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surface
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                "$points",
+                                style = MaterialTheme.typography.displaySmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "FLIGHT POINTS",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Spacer(Modifier.height(12.dp))
+
+                            SwiftPrimaryButton(
+                                text = if (isFeeding) "Feeding..." else "Feed Bird (-20 pts)",
+                                enabled = points >= 20 && !isFeeding,
+                                onClick = {
+                                    if (points >= 20) {
+                                        points -= 20
+                                        if (points % 1000 == 0) level++
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            Text(
+                "Earning Opportunities",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            val opportunities = listOf(
+                "Post a listing" to "+150–750 pts",
+                "Share Smart Link" to "+40–160 pts",
+                "Successful Sale" to "+800–4,000 pts",
+                "Follow a Seller" to "+10–30 pts"
+            )
+
+            opportunities.forEach { (title, reward) ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(title, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            reward,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
         }
     }

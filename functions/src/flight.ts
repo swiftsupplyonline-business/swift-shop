@@ -54,7 +54,9 @@ function checkAuth(context: functions.https.CallableContext): string {
   if (!context.auth || !context.auth.uid) {
     throw new functions.https.HttpsError("unauthenticated", "Authentication required for Swift Flight.");
   }
-  if (context.auth.token?.firebase?.is_anonymous === true) {
+  const token = context.auth.token as Record<string, any> | undefined;
+  const isAnon = token?.firebase?.sign_in_provider === "anonymous" || token?.firebase?.is_anonymous === true || token?.is_anonymous === true;
+  if (isAnon) {
     throw new functions.https.HttpsError("permission-denied", "Anonymous users cannot participate in Swift Flight.");
   }
   return context.auth.uid;
@@ -142,6 +144,29 @@ export const processFlightEvent = functions.https.onCall(async (data, context) =
     if (eventSnap.exists) {
       const existingStateSnap = await tx.get(stateRef);
       return { ok: true, awardedPoints: 0, duplicate: true, state: existingStateSnap.data() };
+    }
+
+    // Server-side verification of real marketplace records before awarding points
+    if (sourceType === "CREATE_LISTING") {
+      const doc = await tx.get(db.collection("listings").doc(sourceId));
+      if (!doc.exists || doc.data()?.sellerId !== uid) {
+        throw new functions.https.HttpsError("permission-denied", "Unverified or unauthorized listing event.");
+      }
+    } else if (sourceType === "CREATE_POST") {
+      const doc = await tx.get(db.collection("posts").doc(sourceId));
+      if (!doc.exists || doc.data()?.authorId !== uid) {
+        throw new functions.https.HttpsError("permission-denied", "Unverified or unauthorized post event.");
+      }
+    } else if (sourceType === "SUCCESSFUL_SALE") {
+      const doc = await tx.get(db.collection("orders").doc(sourceId));
+      if (!doc.exists || (doc.data()?.sellerId !== uid && doc.data()?.buyerId !== uid)) {
+        throw new functions.https.HttpsError("permission-denied", "Unverified or unauthorized order sale event.");
+      }
+    } else if (sourceType === "FOLLOW" || sourceType === "NEW_FOLLOWER") {
+      const doc = await tx.get(db.collection("follows").doc(sourceId));
+      if (!doc.exists) {
+        throw new functions.https.HttpsError("permission-denied", "Unverified follow event.");
+      }
     }
 
     let state = (await tx.get(stateRef)).data() as FlightState;
