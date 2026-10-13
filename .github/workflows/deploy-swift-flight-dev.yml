@@ -52,14 +52,14 @@ jobs:
           npm ci
           npm run build
 
-      - name: Deploy only Swift Flight callables, Firestore rules, and indexes
+      - name: Deploy Swift Flight callables and automatic reward triggers, Firestore rules, and indexes
         run: |
           firebase deploy \
-            --only functions:getFlightState,functions:processFlightEvent,functions:feedBird,functions:claimFlightRedemption,functions:getFlightHistory,firestore:rules,firestore:indexes \
+            --only functions:getFlightState,functions:processFlightEvent,functions:feedBird,functions:claimFlightRedemption,functions:getFlightHistory,functions:rewardFlightForPublishedPost,functions:rewardFlightForActiveListing,functions:rewardFlightForSuccessfulSale,functions:rewardFlightForFollow,firestore:rules,firestore:indexes \
             --project "$PROJECT_ID" \
             --non-interactive
 
-      - name: Verify all five Flight callables are ACTIVE
+      - name: Verify all Flight callables and reward triggers are ACTIVE
         shell: bash
         run: |
           set -euo pipefail
@@ -68,7 +68,11 @@ jobs:
             processFlightEvent \
             feedBird \
             claimFlightRedemption \
-            getFlightHistory
+            getFlightHistory \
+            rewardFlightForPublishedPost \
+            rewardFlightForActiveListing \
+            rewardFlightForSuccessfulSale \
+            rewardFlightForFollow
           do
             state="$(gcloud functions describe "$function_name" \
               --region="$REGION" \
@@ -146,6 +150,6 @@ jobs:
             echo ""
             printf '%s\n' "- Firebase project: $PROJECT_ID"
             printf '%s\n' "- Functions region: $REGION"
-            echo "- Components: five Flight callables, Firestore rules, Firestore indexes"
+            echo "- Components: five Flight callables, four automatic reward triggers, Firestore rules, Firestore indexes"
             echo "- Deployment verification: see completed function-state and index-readiness steps above"
           } >> "$GITHUB_STEP_SUMMARY"
