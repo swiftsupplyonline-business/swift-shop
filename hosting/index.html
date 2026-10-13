@@ -458,6 +458,14 @@ body:has(.flight-screen) #app{width:100%;max-width:1280px;margin:0 auto;padding:
 @keyframes flightCloudDrift{from{translate:0 0}to{translate:80px 0}}
 @media(max-width:700px){body:has(.flight-screen) #app{padding:0 12px 18px}.flight-world{min-height:clamp(300px,74vw,410px);border-radius:22px}.flight-world-bird{width:clamp(170px,48vw,250px);top:49%}.flight-cloud{scale:.7}.flight-world-top{left:12px;right:12px;top:12px}.flight-world-bottom{left:14px;right:14px;bottom:14px}.flight-world-pill{padding:8px 10px;font-size:11px}.flight-world-wind{padding:8px 10px}.flight-stats{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:380px){.flight-world{min-height:285px}.flight-world-wind{font-size:10px}.flight-world-pill{font-size:10px;gap:5px;padding:7px 8px}.flight-world-bottom strong{font-size:22px}}
+
+.flight-env-storm .flight-world-sky{background:linear-gradient(180deg,#243c67 0%,#536e91 48%,#8396a6 78%,#b4a9a0 100%)}
+.flight-env-storm .flight-world-overlay{background:linear-gradient(180deg,rgba(7,16,40,.4),rgba(11,28,52,.08) 35%,rgba(7,22,40,.58))}
+.flight-env-storm .flight-cloud{background:rgba(222,231,241,.78);box-shadow:34px -23px 0 4px rgba(215,225,238,.82),72px -8px 0 0 rgba(193,207,224,.7),-24px -9px 0 -2px rgba(230,237,245,.72)}
+.flight-env-clouds .flight-world-overlay{background:linear-gradient(180deg,rgba(3,45,92,.04),rgba(255,255,255,.02) 48%,rgba(6,45,73,.28))}
+.flight-env-open-sky .flight-world-sky{background:radial-gradient(ellipse at 78% 20%,rgba(255,255,255,.88),transparent 17%),linear-gradient(180deg,#0789ec 0%,#70d0ff 64%,#d7f2ff 100%)}
+.flight-env-rooftops .flight-world-hills{opacity:1;filter:saturate(1.15)}
+
 @media(prefers-reduced-motion:reduce){.flight-world-bird,.flight-world-bird .flight-bird-img,.flight-cloud{animation:none!important}.flight-progress-fill{transition:none!important}}
 </style>
 
