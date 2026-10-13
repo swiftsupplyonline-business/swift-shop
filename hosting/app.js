@@ -1431,15 +1431,29 @@ async function renderFlight(root) {
 
     root.innerHTML = `
       <section class="flight-screen">
-        <div class="flight-header">
-          <div class="flight-bird-wrap">
-            <img src="/img/swift-bird.png" alt="Swift Flight bird with transparent background" class="flight-bird-img" width="120" height="120" aria-hidden="true">
-            <span class="flight-env-badge">${envEmoji} ${escapeHtml(state.altitudeEnv || "")}</span>
+        <section class="flight-world" aria-label="Your bird flying above the city">
+          <div class="flight-world-sky" aria-hidden="true"></div>
+          <div class="flight-cloud flight-cloud-one" aria-hidden="true"></div>
+          <div class="flight-cloud flight-cloud-two" aria-hidden="true"></div>
+          <div class="flight-world-hills" aria-hidden="true"></div>
+          <div class="flight-city" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="flight-world-overlay" aria-hidden="true"></div>
+          <div class="flight-world-top">
+            <span class="flight-world-pill"><span class="flight-live-dot"></span> Flight ${escapeHtml(String(state.flightNumber || 1))}</span>
+            <span class="flight-world-pill">${envEmoji} ${escapeHtml(state.altitudeEnv || "Open sky")}</span>
           </div>
+          <div class="flight-world-bird" id="flightWorldBird">
+            <img src="/img/swift-bird.png" alt="Swift Flight bird" class="flight-bird-img" width="360" height="300">
+          </div>
+          <div class="flight-world-bottom">
+            <div><span class="flight-world-kicker">ALTITUDE</span><strong>Level ${escapeHtml(String(state.altitudeLevel || 1))}</strong><span>${escapeHtml(state.altitudeLabel || "Learning to fly")}</span></div>
+            <div class="flight-world-wind"><span aria-hidden="true">↗</span><span>Keep flying<br><b>${escapeHtml(String(state.multiplier || 1))}× multiplier</b></span></div>
+          </div>
+        </section>
+        <div class="flight-header">
           <div class="flight-identity">
-            <h2>Flight ${escapeHtml(String(state.flightNumber || 1))}</h2>
-            <p class="flight-level">Level ${escapeHtml(String(state.altitudeLevel || 1))} — ${escapeHtml(state.altitudeLabel || "")}</p>
-            <p class="flight-multiplier">${escapeHtml(String(state.multiplier || 1))}× multiplier</p>
+            <h2>Your flight</h2>
+            <p class="flight-level">A little higher with every marketplace activity.</p>
           </div>
         </div>
         <div class="flight-progress-wrap">
@@ -1525,7 +1539,7 @@ function route() {
   });
 
   // The marketing hero is static markup above #app: show it on Home/Market only.
-  document.documentElement.classList.toggle("no-hero", !(path === "/" || path === "" || path === "/market" || path === "/market/" || path === "/flight"));
+  document.documentElement.classList.toggle("no-hero", !(path === "/" || path === "" || path === "/market" || path === "/market/"));
   document.body.classList.toggle("home-profile-route",
     (path === "/" || path === "") && !!(auth.currentUser && !auth.currentUser.isAnonymous));
   if (path === "/" || path === "") return renderBrowse(root);
