@@ -268,6 +268,19 @@ export const rewardFlightForActiveListing = onDocumentWritten("listings/{listing
     }
 });
 
+export const rewardFlightForSuccessfulSale = onDocumentWritten("orders/{orderId}", async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!after?.sellerId || after.status !== "CONFIRMED" || after.inventoryStatus !== "COMMITTED") return;
+    // Reward only once, when the order first reaches the confirmed-and-committed state.
+    if (before?.status === "CONFIRMED" && before?.inventoryStatus === "COMMITTED") return;
+    try {
+        await awardVerifiedFlightEvent(String(after.sellerId), "SUCCESSFUL_SALE", event.params.orderId);
+    } catch (error) {
+        console.error("Swift Flight sale reward was not awarded", event.params.orderId, error);
+    }
+});
+
 export const rewardFlightForFollow = onDocumentCreated("follows/{followId}", async (event) => {
     const follow = event.data?.data();
     if (!follow?.followerId || !follow?.followedId || follow.followerId === follow.followedId) return;
