@@ -1404,7 +1404,7 @@ async function renderFlight(root) {
     root.innerHTML = `
       <div class="flight-gate">
         <div class="flight-gate-inner">
-          <img src="/img/swift-bird.webp" alt="Swift Flight bird with transparent background" width="120" height="120" style="filter:drop-shadow(0 4px 24px rgba(28,146,202,.3))">
+          <img src="/img/swift-bird.png" alt="Swift Flight bird with transparent background" width="120" height="120" style="filter:drop-shadow(0 4px 24px rgba(28,146,202,.3))">
           <h2>Swift Flight</h2>
           <p>Sign in to access Flight — earn points through real marketplace activity and redeem M200 when you reach 100,000 points.</p>
           <a class="btn primary" href="/">Sign in or create account</a>
@@ -1444,7 +1444,7 @@ async function renderFlight(root) {
             <span class="flight-world-pill">${envEmoji} ${escapeHtml(state.altitudeEnv || "Open sky")}</span>
           </div>
           <div class="flight-world-bird" id="flightWorldBird" role="button" tabindex="0" aria-label="Tap to flap your bird">
-            <img src="/img/swift-bird.webp" alt="Swift Flight bird" class="flight-bird-img" width="360" height="300">
+            <img src="/img/swift-bird.png" alt="Swift Flight bird" class="flight-bird-img" width="360" height="300">
           </div>
           <div class="flight-world-bottom">
             <div><span class="flight-world-kicker">ALTITUDE</span><strong>Level ${escapeHtml(String(state.altitudeLevel || 1))}</strong><span>${escapeHtml(state.altitudeLabel || "Learning to fly")}</span></div>
@@ -1465,9 +1465,12 @@ async function renderFlight(root) {
           <div class="flight-progress-labels"><span>${pts.toLocaleString()} pts</span><span>100,000</span></div>
         </div>
         <div class="flight-stats">
-          <div class="flight-stat"><span class="flight-stat-val">${pts.toLocaleString()}</span><span class="flight-stat-label">Current</span></div>
+          <div class="flight-stat"><span class="flight-stat-val">${pts.toLocaleString()}</span><span class="flight-stat-label">Current pts</span></div>
           <div class="flight-stat"><span class="flight-stat-val">${(state.flightPointsEarned||0).toLocaleString()}</span><span class="flight-stat-label">Earned</span></div>
           <div class="flight-stat"><span class="flight-stat-val">${escapeHtml(String(state.highestLevel||1))}</span><span class="flight-stat-label">Best level</span></div>
+        </div>
+        <div class="flight-refresh-row">
+          <button class="flight-refresh-btn" type="button" id="flightRefreshBtn" aria-label="Refresh points">↻ Refresh</button>
         </div>
         ${eligible
           ? `<div class="flight-redeem-wrap"><div class="flight-redeem-card">
@@ -1524,6 +1527,18 @@ async function renderFlight(root) {
         btn.disabled = false;
         btn.removeAttribute("aria-busy");
         btn.innerHTML = previous;
+      }
+    });
+
+    root.querySelector("#flightRefreshBtn")?.addEventListener("click", async () => {
+      const btn = root.querySelector("#flightRefreshBtn");
+      const msg = root.querySelector("#flightMsg");
+      if (btn) { btn.disabled = true; btn.textContent = "↻ Refreshing…"; }
+      try {
+        await renderFlight(root);
+      } catch (_) {
+        if (msg) msg.textContent = "Couldn\u2019t refresh. Try again.";
+        if (btn) { btn.disabled = false; btn.textContent = "↻ Refresh"; }
       }
     });
 

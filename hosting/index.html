@@ -227,7 +227,7 @@ main{max-width:1280px}.hero{min-height:470px;border-radius:32px;box-shadow:0 24p
 .flight-screen{display:flex;flex-direction:column;gap:18px;padding-bottom:32px}
 .flight-header{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .flight-bird-wrap{position:relative;flex:none}
-.flight-bird-img{width:120px;height:120px;object-fit:contain;animation:birdBob 2.4s ease-in-out infinite;filter:drop-shadow(0 6px 20px rgba(28,146,202,.35))}
+.flight-bird-img{width:130px;height:130px;object-fit:contain;animation:birdBob 2.4s ease-in-out infinite;filter:drop-shadow(0 4px 18px rgba(28,146,202,.28))}
 @keyframes birdBob{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-10px) rotate(2deg)}}
 .flight-env-badge{position:absolute;bottom:-10px;left:50%;transform:translateX(-50%);background:#fff;border:1.5px solid #d0eaf6;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700;white-space:nowrap;color:var(--swift-blue-deep)}
 .flight-identity{min-width:0;flex:1}
@@ -259,6 +259,10 @@ main{max-width:1280px}.hero{min-height:470px;border-radius:32px;box-shadow:0 24p
 .flight-earn-row{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--swift-sky);border-radius:12px;font-size:13px}
 .flight-earn-pts{font-weight:900;color:var(--swift-blue-deep)}
 .flight-earn-note{font-size:11px;color:var(--muted);margin:8px 0 0}
+.flight-refresh-row{display:flex;justify-content:center;margin:-4px 0 4px}
+.flight-refresh-btn{padding:7px 18px;background:none;border:1.5px solid #d0eaf6;border-radius:20px;font-size:13px;font-weight:700;color:var(--swift-blue-deep);cursor:pointer;transition:.15s;display:flex;align-items:center;gap:5px}
+.flight-refresh-btn:hover{background:var(--swift-sky)}
+.flight-refresh-btn:disabled{opacity:.5;cursor:not-allowed}
 .flight-history-row{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #e8f4fb;font-size:13px}
 .flight-history-reward{font-weight:700;color:#27ae60}
 /* ── Profile / account card ──────────────────────────────────────── */
