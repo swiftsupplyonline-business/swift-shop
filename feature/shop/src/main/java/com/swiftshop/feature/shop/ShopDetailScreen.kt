@@ -31,6 +31,7 @@ import com.swiftshop.core.ui.components.EmptyState
 import com.swiftshop.core.ui.components.ErrorState
 import com.swiftshop.core.ui.components.ListingCard
 import com.swiftshop.core.ui.components.LoadingState
+import com.swiftshop.core.ui.LocalWebHost
 import com.swiftshop.core.ui.navigation.Screen
 import com.swiftshop.core.ui.theme.swiftColors
 
@@ -57,6 +58,7 @@ fun ShopDetailScreen(
     val typeFilter     by viewModel.typeFilter.collectAsState()
     val filteredList   by viewModel.filteredListings.collectAsState()
     val context        = LocalContext.current
+    val webHost        = LocalWebHost.current
     val colors         = MaterialTheme.swiftColors
 
     Scaffold(
@@ -76,7 +78,7 @@ fun ShopDetailScreen(
                         val shop = (uiState as ShopDetailUiState.Success).shop
                         // Share
                         IconButton(onClick = {
-                            val shareUrl = "https://swift-dev-3d3ae.web.app/shop/${shop.id}"
+                            val shareUrl = "https://$webHost/shop/${shop.id}"
                             val sendIntent = Intent(Intent.ACTION_SEND).apply {
                                 putExtra(Intent.EXTRA_TEXT, "Check out ${shop.name} on SwiftShop: $shareUrl")
                                 type = "text/plain"

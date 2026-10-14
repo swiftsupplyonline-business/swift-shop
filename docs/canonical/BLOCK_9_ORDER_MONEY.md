@@ -1,0 +1,75 @@
+# Block 9 — Order money flows (commerce.ts)
+
+Branch `block-9-order-money`, based on `block-8-rules-money`. Not merged. Type-checks; 51 emulator-free unit tests pass.
+NOT run: Firestore emulator tests, any MoPay flow, any order transaction against a real/emulated Firestore.
+
+## Fixed
+- Negative/fractional/NaN quantity: `createOrder` and `createPurchaseOrder` multiplied price by an unvalidated
+  quantity. A negative quantity gave a negative total, passed the balance check and CREDITED the wallet.
+  Quantities are now whole numbers 1..999, max 50 lines, repeated listings merged (`parseOrderItems`).
+- Reads after writes: both order transactions, `verifyMopayPayment` (success + failure) and `cancelOrder`
+  called `transaction.get` after writing. The Firestore SDK throws on that, so multi-item carts and wallet orders
+  on stocked listings could not complete. All reads now happen first (`getAll`).
+- Wallet orders never committed stock and left reservations ACTIVE; the 5-minute expiry sweep then released a
+  paid order's hold (stock never decremented, oversell). Wallet orders now commit stock in the same transaction
+  (`purchaseAndCommitInventory`), reservation status COMMITTED.
+- `cancelOrder` could refund a settled order (seller already paid) = money created. Settled/DELIVERED/COMPLETED/FAILED
+  orders are no longer cancellable. Wallet refunds now cover every paid, unsettled state, use set+merge so a missing
+  wallet doc cannot drop a refund, and return committed stock (`returnCommittedInventory`).
+- `createOrder` idempotency keys were shared across users; now per-user (`<uid>_order_<key>`).
+- Replayed key re-opened a second payable MoPay session (and used amount 0); now returns the existing session.
+- Own-listing purchase blocked; non-LSL listings and invalid prices/delivery fees rejected; suspended accounts
+  cannot place orders; paymentMethod must be MOPAY or SWIFT_WALLET.
+- `updateOrderStatus`: buyer could set CANCELLED directly (no stock release, no refund) and admin could set any status
+  with no payment check. It now only moves a PAID order along CONFIRMED -> PROCESSING -> READY (admin also READY ->
+  DISPATCHED); CANCELLED/REFUNDED must go through `cancelOrder`; DELIVERED only via `confirmDelivery`/fulfillment route.
+  The app already cancels through `cancelOrder`, so no client change is needed (`orderTransitions.ts`).
+- Late MoPay SUCCESS on an order already CANCELLED/FAILED (e.g. reservation expired while the buyer was paying): used to
+  throw while the buyer was charged. Now records a `paymentRefunds/{orderId}` doc (status REQUIRED), a ledger entry into
+  `system_refund_pending`, sets order `paymentStatus: SUCCESS_AFTER_CANCEL` / `refundStatus: REQUIRED`, and returns
+  status `PAID_AFTER_CANCEL`. Idempotent on repeat. There is still no automatic refund: someone must pay it back manually.
+- Block 8 rules test was missing the `assertSucceeds` import (did not compile).
+
+## Behaviour changes that need your OK
+- Buyer can cancel only while PENDING/RESERVED/CONFIRMED/PROCESSING; seller/admin until completion.
+- Cancelling an order paid via MoPay is refused (previously it marked CANCELLED and kept the buyer's money).
+  Needs a MoPay refund path.
+
+## Still open
+- MoPay-paid orders still cannot be cancelled by anyone before delivery (no refund path for them except the late-payment case).
+- `confirmMopayPayment` (admin) only accepts PENDING, which new orders never are; no gateway check, no commit.
+- A delivery request is not consumed by the order that uses it (reusable).
+- `commitmentCount` is not decremented when committed stock is returned.
+- No emulator tests for order flows.
+
+## Block 9c — rejectWithdrawal
+New admin-only callable `rejectWithdrawal({ transactionId, reason? })` in `finance.ts`: PENDING withdrawal -> FAILED,
+amount moves pending -> available, reversal ledger entry `system_withdrawal_escrow` -> `user_<uid>`
+(`WITHDRAW_REJECT_<id>`). Idempotent; COMPLETED withdrawals cannot be rejected. Covered by an in-memory-Firestore
+unit test (not the emulator). There is no admin UI yet, and the client is not notified on rejection.
+
+## Block 9d — confirmDelivery
+- It wrote the escrow ledger entry BEFORE reading the seller wallet, so the SDK threw and settlement could not complete
+  at all. Reads now come first.
+- A seller with no wallet doc made `update()` throw and left the order stuck; it now uses set+merge.
+- Now requires paymentStatus SUCCESS/PAID and settlementStatus ESCROW_HOLD, checks subtotal + delivery fee + platform fee
+  == total before paying out, and the already-SETTLED repeat check stays first (idempotent).
+- Test uses an in-memory Firestore fake that, like the real SDK, throws on read-after-write.
+- Unchanged: the delivery fee is still paid to the seller, not the courier (product decision).
+
+## Block 9e — your decisions
+- **Late MoPay payment is refunded.** Paid after the order was cancelled/expired: the buyer's Swift wallet is credited the
+  full amount in the same transaction (ledger `system_mopay_clearing` -> `user_<buyer>`, `paymentRefunds/{orderId}` status
+  REFUNDED_TO_WALLET, order `refundStatus`). It goes to the wallet, not back to the mobile-money number; the buyer can
+  withdraw it. Repeat calls never refund twice.
+- `verifyMopayPayment` now THROWS for anything that is not a confirmed order (late refund, FAILED/CANCELLED, still
+  PENDING). The Android client treated any non-throwing result as "order placed", so a failed or pending payment looked
+  like a success. No client change needed: it shows the message.
+- **Delivery fee goes to the author of the delivery listing.** `createOrder` snapshots `deliveryProviderId`; `confirmDelivery`
+  pays product money to the seller and the fee to that provider (one wallet if they are the same person, wallets created if
+  missing, separate `DELIVERY_FEE_<order>` ledger entry). Orders created before this change have no snapshot and still pay
+  the seller.
+- **Seller self-delivery:** a seller may move READY -> DISPATCHED for pickup orders, or when they authored the delivery
+  listing. Orders with another person's courier are still dispatched by that courier's route. The buyer still confirms delivery.
+- **Nobody can cancel after delivery** (status DELIVERED/COMPLETED, fulfillmentStatus DELIVERED, or settled): buyer, seller
+  and admin alike.

@@ -9,6 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentActivity
 import com.swiftshop.core.security.BiometricGuard
+import androidx.compose.runtime.CompositionLocalProvider
+import com.swiftshop.core.ui.LocalWebHost
 import com.swiftshop.core.ui.theme.SwiftShopTheme
 import com.swiftshop.navigation.SwiftShopNavHost
 import dagger.hilt.android.AndroidEntryPoint
@@ -28,9 +30,11 @@ class MainActivity : FragmentActivity() {
         enableEdgeToEdge()
         deepLinkIntent.value = intent
         setContent {
-            SwiftShopTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    SwiftShopNavHost(biometricGuard = biometricGuard, deepLinkIntent = deepLinkIntent.value)
+            CompositionLocalProvider(LocalWebHost provides BuildConfig.WEB_HOST) {
+                SwiftShopTheme {
+                    Surface(modifier = Modifier.fillMaxSize()) {
+                        SwiftShopNavHost(biometricGuard = biometricGuard, deepLinkIntent = deepLinkIntent.value)
+                    }
                 }
             }
         }

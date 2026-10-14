@@ -1,39 +1,29 @@
 package com.swiftshop.domain.commerce
 
 import com.swiftshop.core.model.*
+import com.swiftshop.domain.commerce.CheckListingEligibilityUseCase.Result
 import org.junit.Assert.*
 import org.junit.Test
-import org.mockito.kotlin.*
 
 class MerchantQuotaTest {
+
+    private val check = CheckListingEligibilityUseCase()
+
+    private fun listings(n: Int, shopId: String, prefix: String = "l") =
+        (1..n).map { Listing(id = "$prefix$it", shopId = shopId) }
 
     @Test
     fun `BASIC tier quota - 10 per shop`() {
         val entitlement = TierEntitlements.BASIC
         assertEquals(10, entitlement.includedListingsPerShop)
-        
-        // Mocking the check logic (equivalent to CheckListingEligibilityUseCase)
-        fun check(listings: List<Listing>, shopId: String): CheckListingEligibilityUseCase.Result {
-            val shopListings = listings.filter { it.shopId == shopId }
-            return if (shopListings.size < entitlement.includedListingsPerShop) {
-                CheckListingEligibilityUseCase.Result.Included
-            } else {
-                CheckListingEligibilityUseCase.Result.AdditionalFeeRequired
-            }
-        }
 
-        val listings = (1..9).map { Listing(id = "l$it", shopId = "s1") }
-        assertEquals(CheckListingEligibilityUseCase.Result.Included, check(listings, "s1"))
+        assertEquals(Result.Included, check(entitlement, listings(9, "s1"), "s1"))
+        assertEquals(Result.AdditionalFeeRequired, check(entitlement, listings(10, "s1"), "s1"))
 
-        val listings10 = (1..10).map { Listing(id = "l$it", shopId = "s1") }
-        assertEquals(CheckListingEligibilityUseCase.Result.AdditionalFeeRequired, check(listings10, "s1"))
-        
-        // Verify separate shops have separate quotas
-        val mixedListings = (1..10).map { Listing(id = "a$it", shopId = "shopA") } + 
-                        (1..5).map { Listing(id = "b$it", shopId = "shopB") }
-        
-        assertEquals(CheckListingEligibilityUseCase.Result.AdditionalFeeRequired, check(mixedListings, "shopA"))
-        assertEquals(CheckListingEligibilityUseCase.Result.Included, check(mixedListings, "shopB"))
+        // Separate shops have separate quotas
+        val mixed = listings(10, "shopA", "a") + listings(5, "shopB", "b")
+        assertEquals(Result.AdditionalFeeRequired, check(entitlement, mixed, "shopA"))
+        assertEquals(Result.Included, check(entitlement, mixed, "shopB"))
     }
 
     @Test
@@ -41,19 +31,11 @@ class MerchantQuotaTest {
         val entitlement = TierEntitlements.PREMIUM
         assertEquals(50, entitlement.totalIncludedListings)
 
-        fun check(listings: List<Listing>): CheckListingEligibilityUseCase.Result {
-            return if (listings.size < entitlement.totalIncludedListings) {
-                CheckListingEligibilityUseCase.Result.Included
-            } else {
-                CheckListingEligibilityUseCase.Result.AdditionalFeeRequired
-            }
-        }
-
-        val listings49 = (1..49).map { Listing(id = "l$it", shopId = "any") }
-        assertEquals(CheckListingEligibilityUseCase.Result.Included, check(listings49))
-
-        val listings50 = (1..50).map { Listing(id = "l$it", shopId = "any") }
-        assertEquals(CheckListingEligibilityUseCase.Result.AdditionalFeeRequired, check(listings50))
+        assertEquals(Result.Included, check(entitlement, listings(49, "any"), "any"))
+        assertEquals(Result.AdditionalFeeRequired, check(entitlement, listings(50, "any"), "any"))
+        // Premium is counted across shops, not per shop
+        val spread = listings(30, "x", "x") + listings(20, "y", "y")
+        assertEquals(Result.AdditionalFeeRequired, check(entitlement, spread, "y"))
     }
 
     @Test
@@ -61,6 +43,7 @@ class MerchantQuotaTest {
         val entitlement = TierEntitlements.ELITE
         assertEquals(-1, entitlement.totalIncludedListings)
         assertEquals(-1, entitlement.maxShops)
+        assertEquals(Result.Included, check(entitlement, listings(500, "s1"), "s1"))
     }
 
     @Test

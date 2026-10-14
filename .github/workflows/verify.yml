@@ -2,9 +2,9 @@ name: Verify Swift Shop
 
 on:
   push:
-    branches: [ master, delivery-first-checkout, canonical-platform-integration-2026-09-29 ]
+    branches: [ master, delivery-first-checkout, canonical-reconcile-d, canonical-platform-integration-2026-09-29, canonical-platform-tree-2026-09-29 ]
   pull_request:
-    branches: [ master, delivery-first-checkout, canonical-platform-integration-2026-09-29 ]
+    branches: [ master, delivery-first-checkout, canonical-reconcile-d, canonical-platform-integration-2026-09-29, canonical-platform-tree-2026-09-29 ]
 
 jobs:
   android-tests:
@@ -74,3 +74,131 @@ jobs:
       - uses: actions/checkout@v4
       - name: Strict canonical architecture audit
         run: bash scripts/canonical-audit.sh
+
+  web-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install acorn (ES module parser)
+        run: npm install -g acorn
+
+      - name: P6 — JavaScript syntax check (ES2022 module)
+        run: |
+          acorn --ecma2022 --module hosting/app.js > /dev/null
+          echo "✅ hosting/app.js syntax OK"
+          acorn --ecma2022 --module hosting/listing-detail.js > /dev/null
+          echo "✅ hosting/listing-detail.js syntax OK"
+          acorn --ecma2022 --module hosting/ui-kit.js > /dev/null
+          echo "✅ hosting/ui-kit.js syntax OK"
+          acorn --ecma2022 --module hosting/shop-detail.js > /dev/null
+          echo "✅ hosting/shop-detail.js syntax OK"
+
+      - name: P6b — Listing Detail view unit tests
+        run: node scripts/web-listing-detail.test.mjs
+
+      - name: P6c — Shop Detail view + UI kit unit tests
+        run: node scripts/web-shop-detail.test.mjs
+
+      - name: P7 — Structural integrity check (no duplicate declarations)
+        run: |
+          node - << 'JS'
+          const fs = require('fs');
+          const src = fs.readFileSync('hosting/app.js', 'utf8');
+
+          const singletons = [
+            'initializeApp',
+            'firebaseConfig',
+            'renderBrowse',
+            'renderShop',
+            'renderListing',
+            'renderCart',
+            'renderCheckout',
+            'renderSearch',
+            'renderOrders',
+            'renderOrderDetail',
+            'function navigate',
+            'function route',
+          ];
+
+          let failed = false;
+          for (const symbol of singletons) {
+            // Count function/const definitions only (not calls)
+            const pattern = new RegExp(
+              symbol.startsWith('function ')
+                ? `\\b${symbol}\\b`
+                : `(^|\\n)(const|let|var|function|async function)\\s+${symbol}\\b`,
+              'g'
+            );
+            const hits = (src.match(pattern) || []).length;
+            if (hits > 1) {
+              console.error(`❌ DUPLICATE: "${symbol}" declared ${hits} times`);
+              failed = true;
+            } else {
+              console.log(`✅ ${symbol}: ${hits} declaration(s)`);
+            }
+          }
+
+          // Exactly one export
+          const exportHits = (src.match(/^export \{/gm) || []).length;
+          if (exportHits !== 1) {
+            console.error(`❌ export { } appears ${exportHits} times (expected 1)`);
+            failed = true;
+          } else {
+            console.log(`✅ export { }: 1`);
+          }
+
+          // No literal backslash-n fusing statements (e.g. `";\nimport ...`)
+          const fused = /["';}]\\n\s*(import|export|const|let|var|function|async|if|for)\b/;
+          if (fused.test(src)) {
+            console.error('❌ Literal \\n source corruption detected (fused statements)');
+            failed = true;
+          } else {
+            console.log('✅ No literal \\n corruption');
+          }
+
+          // No duplicate application boundary marker
+          if (src.includes('}/ SwiftShop')) {
+            console.error('❌ Duplicate application boundary marker found');
+            failed = true;
+          } else {
+            console.log('✅ No duplicate application boundary');
+          }
+
+          if (failed) process.exit(1);
+          console.log('\n✅ hosting/app.js structural integrity: PASS');
+          JS
+
+      - name: P8 — HTML structural integrity check (hosting/index.html)
+        run: |
+          node - << 'JS'
+          const fs = require('fs');
+          const html = fs.readFileSync('hosting/index.html', 'utf8').trim();
+
+          let failed = false;
+
+          // 1. File must end cleanly with </html>
+          if (!html.endsWith('</html>')) {
+            console.error('❌ hosting/index.html does not end with </html> (content found after closing root tag)');
+            failed = true;
+          } else {
+            console.log('✅ hosting/index.html terminates cleanly with </html>');
+          }
+
+          // 2. All CSS @media queries or CSS comments must be inside <style> tags
+          const outsideStyle = html.replace(/<style[\s\S]*?<\/style>/gi, '');
+          if (outsideStyle.includes('@media') || outsideStyle.includes('/* Mobile rail')) {
+            console.error('❌ CSS rules or comments found outside <style> element');
+            failed = true;
+          } else {
+            console.log('✅ All CSS rules are inside <style> tags');
+          }
+
+          if (failed) process.exit(1);
+          console.log('\n✅ hosting/index.html structural integrity: PASS');
+          JS

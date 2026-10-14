@@ -38,4 +38,27 @@ Each block: AUDIT, IMPLEMENT, BUILD, UNIT, INTEGRATION, ADVERSARIAL, DIFF AUDIT,
 
 
 ## Delivery financial boundary
-A delivery listing price is snapshotted as `deliveryFeeMinorUnits` on the delivery request and fulfillment route after the purchase is paid. The current purchase escrow total is created before delivery is requested and therefore does not include this later fee. The repository currently does not establish a separate authoritative collection, escrow, provider payout, driver payout, or delivery platform-fee contract for that amount. Until Finance/Product defines one, code must treat the fee as recorded/snapshotted data only and must not represent it as collected or settled. No delivery commission or platform-fee percentage is implied by this contract.
+SUPERSEDES the earlier text ("fee is snapshotted only, must not be represented as collected"). The delivery fee is now
+collected and settled by the canonical Finance infrastructure: same Swift Wallet, same `ledgerEntries`; the only new thing is
+the ledger account name `system_delivery_escrow`. Financial authority stays in Cloud Functions; Android and Web only call them.
+
+| Event | Function | Money movement |
+|---|---|---|
+| Buyer requests delivery (paid purchase required) | `createDeliveryRequest` (one transaction) | fee read from the delivery listing (never the client); buyer wallet -> `system_delivery_escrow`; request `escrowStatus=HELD`; order locked to one active request |
+| Provider declines | `declineDeliveryRequest` | full refund to buyer |
+| Request expires | `expireDeliveryRequests` (one transaction per request) | full refund |
+| Buyer cancels (before a job exists) | `cancelDeliveryRequest` | full refund |
+| Job cancelled or FAILED | `updateDeliveryStatus` | full refund |
+| Buyer confirms and job is DELIVERED | `confirmDelivery` | escrow -> platform fee, driver compensation, provider earnings (`planDeliveryPayout`) |
+| Buyer confirms but the job never reached DELIVERED | `confirmDelivery` | escrow refunded to buyer |
+
+Roles stay distinct: Product Seller != Delivery Provider != Driver (unless one account holds several roles).
+Provider = author of the delivery listing (`providerId` / `merchantId`); driver = `driverId` on the job (may equal the provider).
+When driver != provider the ledger records separate `DRIVER_COMPENSATION_*` and `PROVIDER_EARNINGS_*` lines.
+`createDeliveryJob` refuses a request whose fee was not escrowed. Product settlement pays the seller the product subtotal only.
+
+BUSINESS PARAMETERS AWAITING A FINANCE/PRODUCT DECISION (defaults chosen so no policy is invented):
+1. Platform cut of the delivery fee: `DEFAULT_DELIVERY_PLATFORM_FEE_PER_MILLE` = 0 (no cut).
+2. Driver share: optional `driverShareBps` on the delivery listing, default 0 (provider keeps the net fee).
+3. Failed delivery: full refund to the buyer.
+No percentage is implied by this contract. Changing any of these changes `deliveryEconomics.ts` constants only.

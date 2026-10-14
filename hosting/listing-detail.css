@@ -1,0 +1,178 @@
+/* SwiftShop Web – Listing Detail (Android parity). Self-contained so it works both inside
+   the SPA shell (index.html) and on the server-rendered /s/ and /d/ share pages. */
+
+.ld{--ld-ink:#13202b;--ld-muted:#667482;--ld-line:#dfeaf1;--ld-blue:#0875aa;--ld-blue2:#1c92ca;--ld-soft:#eaf8ff;--ld-navy:#10283a;--ld-ok:#17803d;--ld-bad:#b3261e;--ld-card:#fff;
+  color:var(--ld-ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  display:grid;gap:24px;max-width:1180px;width:100%;margin:0 auto;align-items:start;
+  grid-template-columns:minmax(0,1fr);
+  grid-template-areas:"top" "media" "info" "buy" "seller" "body" "rails"}
+.ld *{box-sizing:border-box}
+/* Neutralise the basic share-page template's global img/p/h1 rules inside the new view */
+.ld img{max-width:none;margin:0;border-radius:0;aspect-ratio:auto}
+.ld .ld-logo{border-radius:50%}
+.ld a{color:inherit;text-decoration:none}
+.ld a.ld-link,.ld a.ld-back{color:var(--ld-blue)}
+.ld h1,.ld h2,.ld p{margin:0}
+.ld-top{grid-area:top}
+.ld-back{display:inline-block;font-weight:800;color:var(--ld-blue);padding:6px 0}
+.ld-topbar{display:flex;justify-content:space-between;align-items:center;padding:6px 0 2px}
+.ld-brand{font-weight:900;font-size:22px;letter-spacing:-.04em;color:var(--ld-navy)}
+.ld-link{color:var(--ld-blue);font-weight:800}
+.ld-link:hover{text-decoration:underline}
+.ld-muted{color:var(--ld-muted)}
+
+/* Gallery */
+.ld-media{grid-area:media;position:relative;min-width:0}
+.ld-gallery{position:relative;border-radius:24px;overflow:hidden;background:#edf7fb;aspect-ratio:1/1;border:1px solid var(--ld-line)}
+.ld-track{display:flex;height:100%;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;outline-offset:-3px}
+.ld-track::-webkit-scrollbar{display:none}
+.ld-slide{flex:0 0 100%;width:100%;height:100%;object-fit:cover;scroll-snap-align:center;user-select:none}
+.ld-noimg{height:100%;display:grid;place-items:center;color:var(--ld-muted);font-weight:700}
+.ld-nav{position:absolute;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;border:0;background:rgba(255,255,255,.9);color:var(--ld-navy);font-size:26px;line-height:1;cursor:pointer;box-shadow:0 4px 14px rgba(16,40,58,.2);display:none}
+.ld-prev{left:12px}.ld-next{right:12px}
+@media (hover:hover) and (pointer:fine){.ld-nav{display:block}}
+.ld-dots{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);display:flex;justify-content:center;gap:6px;padding:5px 9px;border-radius:999px;background:rgba(16,40,58,.45);pointer-events:none}
+.ld-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.55);box-shadow:0 0 0 1px rgba(16,40,58,.15)}
+.ld-dot.is-on{width:8px;height:8px;background:#fff}
+.ld-thumbs{display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:2px}
+.ld-thumb{flex:0 0 64px;height:64px;padding:0;border:2px solid transparent;border-radius:12px;overflow:hidden;background:#edf7fb;cursor:pointer}
+.ld-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.ld-thumb.is-on{border-color:var(--ld-blue2)}
+
+/* Info */
+.ld-info{grid-area:info;min-width:0;display:grid;gap:12px}
+.ld-pricerow{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:2px}
+.ld-price{font-size:32px;font-weight:900;letter-spacing:-.03em;color:var(--ld-blue)}
+.ld-stock{font-size:13px;font-weight:800}
+.ld-stock.is-ok{color:var(--ld-ok)}.ld-stock.is-out{color:var(--ld-bad)}
+.ld-title{font-size:clamp(28px,3vw,40px);line-height:1.1;letter-spacing:-.035em;color:var(--ld-navy);max-width:900px}
+.ld-stats{display:flex;align-items:center;gap:14px;flex-wrap:wrap;color:var(--ld-muted);font-weight:700;font-size:14px}
+.ld-share{margin-left:auto;border:1px solid var(--ld-line);background:#fff;color:var(--ld-navy);border-radius:999px;padding:8px 16px;font:inherit;font-weight:800;cursor:pointer}
+.ld-share:hover{background:var(--ld-soft)}
+.ld-meta{display:flex;gap:8px;flex-wrap:wrap}
+.ld-pill{background:var(--ld-soft);color:#126489;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700}
+.ld-appnote{font-size:13px;line-height:1.5;color:var(--ld-muted);background:#f7fbfd;border:1px dashed var(--ld-line);border-radius:14px;padding:10px 12px}
+.ld-apppanel{background:var(--ld-soft);border:1px solid #cfe9f5;border-radius:16px;padding:14px;line-height:1.5}
+.ld-apppanel[hidden]{display:none}
+.ld-apppanel-links{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+
+/* Buy box (sticky action bar on small screens) */
+.ld-buy{grid-area:buy;display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--ld-line);border-radius:20px;padding:12px;box-shadow:0 8px 26px rgba(16,40,58,.07)}
+.ld-qty{display:inline-flex;align-items:center;border:1px solid var(--ld-line);border-radius:14px;overflow:hidden;background:#fff}
+.ld-qty-btn{width:38px;height:44px;border:0;background:#f4f9fc;font-size:20px;font-weight:800;color:var(--ld-navy);cursor:pointer}
+.ld-qty-btn:disabled{opacity:.4;cursor:not-allowed}
+.ld-qty-input{width:46px;height:44px;border:0;text-align:center;font:inherit;font-weight:800;-moz-appearance:textfield;background:#fff}
+.ld-qty-input::-webkit-outer-spin-button,.ld-qty-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.ld-iconbtn{height:44px;min-width:50px;padding:0 12px;border:1px solid #d5eaf4;background:#eaf7fc;color:#15506d;border-radius:14px;font:inherit;font-weight:800;cursor:pointer;white-space:nowrap}
+.ld-iconbtn:disabled{opacity:.45;cursor:not-allowed}
+.ld-cta{flex:1;min-width:0;height:48px;border:0;border-radius:14px;font:inherit;font-weight:850;font-size:16px;color:#fff;cursor:pointer;background:linear-gradient(135deg,#1c92ca,#0875aa);box-shadow:0 9px 24px rgba(8,117,170,.22)}
+.ld-cta:hover:not(:disabled){filter:brightness(1.05)}
+.ld-cta:disabled{background:#cfd9df;box-shadow:none;color:#fff;cursor:not-allowed}
+
+/* Seller */
+.ld-sellerbox{grid-area:seller;display:grid;gap:8px;min-width:0}
+.ld-seller{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--ld-line);border-radius:18px;padding:12px 14px;transition:.15s}
+.ld-seller:hover{border-color:#b8deed;box-shadow:0 10px 28px rgba(16,40,58,.08)}
+.ld-logo{width:42px;height:42px;border-radius:50%;object-fit:cover;flex:none;background:#edf7fb}
+.ld-logo-fallback{display:grid;place-items:center;background:var(--ld-blue2);color:#fff}
+.ld-seller-text{flex:1;min-width:0;display:grid}
+.ld-eyebrow{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--ld-muted)}
+.ld-seller-name{font-weight:850;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.ld-verified{color:var(--ld-blue2);font-size:12px}
+.ld-visit{font-weight:800;color:var(--ld-blue);white-space:nowrap}
+.ld-place{display:flex;align-items:center;gap:8px;padding:0 6px;font-size:14px;color:var(--ld-muted)}
+.ld-place-text{flex:1;min-width:0}
+
+/* Body */
+.ld-body{grid-area:body;display:grid;gap:22px;background:#fff;border:1px solid var(--ld-line);border-radius:22px;padding:26px;min-width:0}
+.ld-section h2{font-size:18px;letter-spacing:-.02em;color:var(--ld-navy);margin-bottom:8px}
+.ld-desc{line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
+.ld-options{margin:0;padding-left:18px;display:grid;gap:6px;line-height:1.5}
+.ld-req{font-size:11px;font-weight:800;color:var(--ld-bad);text-transform:uppercase}
+.ld-tags{display:flex;gap:8px;flex-wrap:wrap}
+.ld-tag{background:#f1f6f9;border:1px solid var(--ld-line);border-radius:999px;padding:5px 12px;font-size:13px;font-weight:700;color:#35566a}
+
+.listing-detail-route .ld-media{width:100%;margin:0 auto}
+@media(min-width:851px){
+  .listing-detail-route .ld-media{width:min(100%,1180px);max-width:1180px}
+  .listing-detail-route .ld-gallery{aspect-ratio:4/3}
+  .listing-detail-route .ld-info{background:#fff;border:1px solid var(--ld-line);border-radius:22px;padding:22px 24px;box-shadow:0 8px 28px rgba(16,40,58,.06)}
+  .listing-detail-route .ld-buy{position:sticky;bottom:18px;z-index:20;width:100%;box-shadow:0 14px 36px rgba(16,40,58,.14)}
+  .listing-detail-route .ld-sellerbox{width:100%;margin:0 auto}
+  .listing-detail-route .ld-body{width:100%;margin:0 auto}
+}
+
+/* Rails: see ui-kit.css */
+.ld-rails{grid-area:rails;grid-column:1 / -1;display:grid;gap:22px;min-width:0;width:100%;overflow:hidden}
+
+/* Toast */
+.ld-toast{position:fixed;left:50%;bottom:92px;transform:translate(-50%,12px);background:var(--ld-navy);color:#fff;padding:10px 16px;border-radius:999px;font-weight:700;font-size:14px;opacity:0;pointer-events:none;transition:.2s;z-index:60}
+.ld-toast.is-on{opacity:1;transform:translate(-50%,0)}
+
+/* Server-rendered share pages: lift the 480px column the basic template used */
+html.ld-enhancement-pending body{max-width:none;margin:0;padding:12px 20px 40px;background:linear-gradient(180deg,#f8fdff 0%,#f4f9fc 100%)}
+body.ld-enhanced{max-width:none;margin:0;padding:12px 20px 40px;background:linear-gradient(180deg,#f8fdff 0%,#f4f9fc 100%)}
+.ld-hydrating{min-height:clamp(520px,72vh,860px);width:100%;max-width:1080px;margin:0 auto}
+.ld-fallback[hidden],.ld-loading-shell[hidden]{display:none!important}
+/* Safety net: the mounted view always spans the loading shell's full width */
+.ld-loading-shell>.ld{grid-column:1 / -1;width:100%}
+.ld-loading-shell{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:18px 36px;width:100%;max-width:1080px;margin:0 auto;align-items:start}
+.ld-loading-media{aspect-ratio:1/1;border-radius:24px;overflow:hidden;background:#edf7fb;border:1px solid var(--ld-line)}
+.ld-loading-media img{width:100%;height:100%;object-fit:cover;display:block}
+.ld-loading-info{display:grid;gap:14px;padding-top:8px}
+.ld-loading-line,.ld-loading-actions{border-radius:12px;background:linear-gradient(90deg,#edf3f6 25%,#f7fafb 50%,#edf3f6 75%);background-size:200% 100%;animation:ld-loading 1.2s linear infinite}
+.ld-loading-price{width:34%;height:28px}.ld-loading-title{width:82%;height:38px}.ld-loading-copy{width:100%;height:18px}.ld-loading-copy.short{width:68%}.ld-loading-actions{height:74px;width:100%;margin-top:8px}
+@keyframes ld-loading{to{background-position:-200% 0}}
+body.ld-enhanced .btn{display:inline-block;width:auto;padding:12px 18px}
+body.ld-enhanced .ld .btn.primary{background:linear-gradient(135deg,#1c92ca,#0875aa);color:#fff;border-radius:14px;font-weight:800;text-align:center;text-decoration:none}
+body.ld-enhanced .ld .btn.secondary{background:#eaf7fc;color:#15506d;border:1px solid #d5eaf4;border-radius:14px;font-weight:800;text-align:center;text-decoration:none}
+.ld-standalone .ld-toast{bottom:24px}
+
+/* Tablet / phone: single column, buy bar sticks to the bottom */
+@media (max-width:850px){
+  .ld{grid-template-columns:minmax(0,1fr);gap:16px;grid-template-areas:"top" "media" "info" "seller" "body" "rails" "buy"}
+  .ld-media{position:static}
+  .ld-title{font-size:24px}
+  .ld-price{font-size:28px}
+  .ld-buy{position:sticky;bottom:12px;z-index:25;box-shadow:0 12px 34px rgba(16,40,58,.2)}
+  .ld-thumbs{display:none}
+  .ld-hydrating,.ld-loading-shell{width:100%;max-width:100%}
+  .ld-loading-shell{grid-template-columns:minmax(0,1fr);gap:16px}
+  .ld-loading-info{padding-top:0}
+}
+/* The SPA's mobile nav rail is fixed to the bottom at <=500px; sit above it */
+@media (max-width:500px){
+  .ld:not(.ld-standalone) .ld-buy{bottom:86px}
+  .ld:not(.ld-standalone) .ld-toast{bottom:150px}
+      .ld-body{padding:16px}
+}
+@media (prefers-reduced-motion:reduce){.ld-track{scroll-behavior:auto}.ld-toast,.ld-seller{transition:none}}
+
+
+/* Desktop UX pass: keep the single-column listing calm, readable and action-first. */
+@media(min-width:851px){
+  .listing-detail-route .ld{gap:26px}
+  .listing-detail-route .ld-top{padding-bottom:2px}
+  .listing-detail-route .ld-back{font-size:14px}
+  .listing-detail-route .ld-thumbs{max-width:1180px;margin-left:auto;margin-right:auto}
+  .listing-detail-route .ld-appnote{max-width:760px}
+  .listing-detail-route .ld-rails{width:100%;margin:0 auto}
+}
+
+
+/* Authoritative desktop shell: left rail | full central canvas | right utility rail */
+@media(min-width:1201px){
+  main{margin-left:218px;margin-right:300px;width:auto;max-width:none}
+}
+@media(min-width:1201px){
+  .listing-detail-route .ld{width:100%;max-width:none;margin:0}
+}
+
+/* Server-rendered share pages (no app shell): match the SPA's central-canvas proportions on desktop,
+   otherwise the gallery stretches to the full viewport width and pushes Buy far below the fold. */
+@media(min-width:851px){
+  .ld-standalone{max-width:880px}
+  .ld-standalone .ld-gallery{aspect-ratio:4/3}
+  .ld-standalone .ld-thumbs{max-width:880px}
+  .ld-standalone .ld-buy{position:sticky;bottom:18px;z-index:20;box-shadow:0 14px 36px rgba(16,40,58,.14)}
+}

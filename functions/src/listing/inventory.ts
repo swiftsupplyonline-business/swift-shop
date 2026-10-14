@@ -259,3 +259,87 @@ export function availableStock(listing: FirebaseFirestore.DocumentData): number 
     if (mode !== InventoryMode.STOCKED) return Infinity;
     return Math.max(0, (listing.stockQuantity || 0) - (listing.reservedQuantity || 0));
 }
+
+// ─── Purchase + commit in one step (wallet-paid orders) ───────────────────────
+
+/**
+ * Reserve AND commit `quantity` units in a single write. Used when payment is
+ * already settled inside the same transaction (wallet-paid orders), so there is
+ * no ACTIVE reservation left for the expiry sweep to release.
+ *
+ *  stockQuantity -= quantity; reservedQuantity unchanged (other buyers' holds stay intact).
+ *
+ * Throws if the quantity is not a positive integer, the mode does not support
+ * inventory, or STOCKED availability is insufficient.
+ */
+export function purchaseAndCommitInventory(
+    transaction:  FirebaseFirestore.Transaction,
+    listingRef:   FirebaseFirestore.DocumentReference,
+    listing:      FirebaseFirestore.DocumentData,
+    quantity:     number,
+    now:          FirebaseFirestore.FieldValue,
+): void {
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+        throw new Error("Quantity must be a positive whole number");
+    }
+    const mode = listing.inventoryMode as InventoryMode;
+    const type = listing.listingType as ListingType;
+    if (mode === InventoryMode.NOT_APPLICABLE) {
+        throw new Error(`Listing "${listing.title}" does not support inventory reservation`);
+    }
+
+    const update: Record<string, unknown> = { updatedAt: now };
+
+    if (mode === InventoryMode.STOCKED) {
+        const totalStock      = listing.stockQuantity    || 0;
+        const currentReserved = listing.reservedQuantity || 0;
+        const available       = totalStock - currentReserved;
+        if (available < quantity) {
+            throw new Error(
+                `Insufficient stock for "${listing.title}". ` +
+                `Requested: ${quantity}, Available: ${available}`
+            );
+        }
+        const newStock = totalStock - quantity;
+        const currentStatus = listing.status as ListingStatus;
+        const newStatus = deriveStatusFromStock(currentStatus, newStock - currentReserved);
+        update.stockQuantity = newStock;
+        if (newStatus !== currentStatus) {
+            update.status      = newStatus;
+            update.isAvailable = isAvailableFromStatus(newStatus);
+        }
+    }
+
+    if (LISTING_TYPE_WORKFLOWS[type]?.tracksCommitment ?? false) {
+        update.commitmentCount = admin.firestore.FieldValue.increment(quantity);
+    }
+
+    transaction.update(listingRef, update);
+}
+
+// ─── Return committed stock (cancelled paid order) ────────────────────────────
+
+/**
+ * Give `quantity` previously COMMITTED units back to stock when a paid order is
+ * cancelled and refunded. Counterpart of commitInventory / purchaseAndCommitInventory.
+ * Re-derives status (OUT_OF_STOCK → ACTIVE when stock returns). STOCKED mode only.
+ */
+export function returnCommittedInventory(
+    transaction:  FirebaseFirestore.Transaction,
+    listingRef:   FirebaseFirestore.DocumentReference,
+    listing:      FirebaseFirestore.DocumentData,
+    quantity:     number,
+    now:          FirebaseFirestore.FieldValue,
+): void {
+    if (listing.inventoryMode !== InventoryMode.STOCKED) return;
+    const newStock = (listing.stockQuantity || 0) + quantity;
+    const newAvailable = newStock - (listing.reservedQuantity || 0);
+    const currentStatus = listing.status as ListingStatus;
+    const newStatus = deriveStatusFromStock(currentStatus, newAvailable);
+    const update: Record<string, unknown> = { stockQuantity: newStock, updatedAt: now };
+    if (newStatus !== currentStatus) {
+        update.status      = newStatus;
+        update.isAvailable = isAvailableFromStatus(newStatus);
+    }
+    transaction.update(listingRef, update);
+}

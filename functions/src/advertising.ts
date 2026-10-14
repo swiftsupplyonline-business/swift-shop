@@ -49,6 +49,11 @@ export const activateCampaign = onCall(async (request) => {
 
             if (campaign.status === "DRAFT") {
                 const budgetMinorUnits = campaign.budgetMinorUnits || 0;
+                // The draft is client-created, so its budget is untrusted. A negative or fractional budget
+                // would pass the balance check and then CREDIT the wallet when "debited".
+                if (!Number.isSafeInteger(budgetMinorUnits) || budgetMinorUnits < 0) {
+                    throw new Error("Invalid campaign budget");
+                }
                 const currency = campaign.budgetCurrency || "LSL";
                 const usageRef = db.collection("merchantUsage").doc(auth.uid);
                 const usageDoc = await transaction.get(usageRef);

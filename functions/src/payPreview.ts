@@ -298,7 +298,7 @@ async function completeDirectPayment(db: FirebaseFirestore.Firestore, userSlug: 
     res.status(200).send(renderResult("Payment pending", "MoPay has not reported a completed payment yet. No wallet credit was made."));
 }
 
-export const payPreview = onRequest({ secrets: [MOPAY_API_KEY] }, async (req, res) => {
+export const payPreview = onRequest({ invoker: "public", secrets: [MOPAY_API_KEY] }, async (req, res) => {
     const match = req.path.match(/^\/pay\/([^/]+)(\/complete)?\/?$/);
     if (!match) {
         res.status(404).send("Swift Wallet link not found");

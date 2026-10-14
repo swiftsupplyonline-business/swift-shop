@@ -74,6 +74,28 @@ approval gates.
 - Firestore/Storage security rules
 - posts/bookmarks likes migration
 - `swift_store/swift_store` donor tree (harvest source only, never build)
+- **Added 2026-10-14 (Batch 10 audit — these meet the RED definition above
+  but were missing from this list; `logistics.ts` is removed below because
+  the reconciliation rewrite deleted the file entirely):**
+  - `functions/src/fulfillment.ts` (delivery route status machine +
+    escrow-refund-on-failure logic; successor to `logistics.ts`)
+  - `functions/src/fulfillmentStates.ts` (the transition table itself)
+  - `functions/src/deliveryEconomics.ts` (platform fee / driver-share split,
+    escrow account constants, wallet-refund math)
+  - `functions/src/moneyValidation.ts` (amount parsing, idempotency keys,
+    order-line limits — shared by commerce and flight)
+  - `functions/src/flight.ts` (Swift Flight gamification backend —
+    `claimFlightRedemption` credits real LSL to the user's wallet and
+    writes a `ledgerEntries` row; this is a real money path, not just a
+    points counter)
+  - `functions/src/accountGuard.ts`, `functions/src/entitlements.ts`
+    (not yet individually audited this pass — flagged for inclusion
+    pending review, not confirmed clean)
+- ~~`functions/src/logistics.ts`~~ — **does not exist on `canonical-reconcile-d`**
+  as of 2026-10-14. Fully replaced by `fulfillment.ts` +
+  `fulfillmentStates.ts` + `orderTransitions.ts` in the reconciliation
+  rewrite. Remove this name from any agent's mental model of the file
+  tree; do not recreate it.
 
 ### Definition of done
 A feature is done when a real user can complete the whole journey, not when
@@ -98,12 +120,16 @@ a batch to continue.
 
 | File | Last reviewed commit/state | Status as of this writing | Notes |
 |---|---|---|---|
-| `functions/src/commerce.ts` | Reviewed 2026-09-16 | **DIRTY, this session — see Batch 6** | Three layers reconciled 2026-09-16 (Bug 1 fix, shop-mismatch check — Batch 3). **Batch 6 addition:** `createOrder` now snapshots the merchandise shop's pickup lat/lng/name onto the order at creation time (`pickupSnapshot`) as part of closing RED-1 — additive only, no change to money/inventory/status logic. `tsc --noEmit` PASS. NOT Gradle/live-verified. Still open: fallback-path arbitrary pick when 2+ DELIVER listings exist and none selected (Section 5); `SELLER_TRANSITIONS` matrix not yet adversarially tested (RED-8, not started). |
+| `functions/src/commerce.ts` | `05d123e` (HEAD, 2026-10-14) | **Reviewed clean, this audit** | **Batch 10 verification:** re-read `cancelOrder` directly against the live code (not a report). The hard payment boundary from Batch 7 is intact and, notably, now *stronger* than what Batch 7 shipped: `refundWallet` is hardcoded `false` (the Swift Wallet over-permissive-cancellation bug flagged mid-session is gone — someone closed it on this branch independently), and cancellation unconditionally throws for `paymentStatus === "PAID" \|\| "SUCCESS"` regardless of `order.status`. `pickupSnapshot` (Batch 6/RED-1) still present. Still open: fallback-path arbitrary pick when 2+ DELIVER listings exist and none selected (Section 5); `SELLER_TRANSITIONS` matrix not yet adversarially tested (RED-8, not started). |
 | `functions/src/finance.ts` | `ebfae2c` | Clean | No known pending work |
 | `functions/src/mopay.ts` | `ebfae2c` | Clean | No known pending work |
 | `core/model/Models.kt` | `ebfae2c` | **DIRTY, UNREVIEWED** — adds `requiresDelivery: Boolean` and `selectedDeliveryListingId: String` to `Order` | Same unauthorized change set as commerce.ts above |
 | Firestore rules (`docs/firestore.rules`) | `ebfae2c` | Clean | `deliveryRequests`, `wallets`, `ledgerEntries`, `walletTransactions` all correctly server-only as of last read. `listings.likeCount`/`commentCount` still weak (any signed-in user can write) — known, unfixed, tracked as open item |
-| `functions/src/logistics.ts` | `ebfae2c` | **DIRTY, this session** — see Batch 6 | `respondToDeliveryRequest` (Batch 1) plus new changes (Batch 6): `createDeliveryRequest` pickup now resolves from the merchandise shop, not the delivery listing's shop; `requestDelivery` (legacy callable) prefers `order.deliveryProviderSellerId` over shop owner; `onOrderConfirmed` switched from `onDocumentUpdated` to `onDocumentWritten` to also fire for Swift Wallet orders (created already CONFIRMED, so never triggered an update-based listener). `tsc --noEmit` PASS. NOT build-verified on a real Android/Gradle build (sandbox has no network access to Google's Maven repos) — needs `gradlew assembleDevDebug` on a real machine before merge. |
+| ~~`functions/src/logistics.ts`~~ | n/a | **FILE DELETED** | Removed entirely by the `canonical-reconcile-d` reconciliation rewrite (commit `cd6532d` and follow-ups). Its responsibilities now live in `fulfillment.ts`/`fulfillmentStates.ts`/`orderTransitions.ts` (see new rows below). This row is kept only so no agent goes looking for a file that's gone. |
+| `functions/src/fulfillment.ts` | `05d123e` (HEAD, 2026-10-14) | **Reviewed clean, this audit** | Verified the RED-4 pickup-handoff authorization survived the reconciliation rewrite intact: `PICKUP_CONFIRMED` requires `isDriver \|\| isSeller` (line ~425) — matches the explicit "Both" decision. Full adversarial pass (RED-8) still not done. |
+| `functions/src/deliveryEconomics.ts` | `05d123e` | **New this audit, not yet line-by-line reviewed** | Holds `planDeliveryPayout`, `walletAfterRefund`, platform/escrow account constants. Flagged RED per Section 1 addition above; needs a dedicated review pass, not assumed clean. |
+| `functions/src/moneyValidation.ts` | `05d123e` | **New this audit, not yet line-by-line reviewed** | Shared amount-parsing/idempotency helpers used by both `commerce.ts` and `flight.ts`. |
+| `functions/src/flight.ts` | `05d123e` | **New this audit, NOT reviewed** | `claimFlightRedemption` writes directly to `wallets.availableBalanceMinorUnits` and `ledgerEntries` (real LSL, `REDEMPTION_AMOUNT_MINOR = 20_000` = M200 per redemption) gated by `REDEMPTION_THRESHOLD = 100_000` points. This is a genuine RED-tier money path that was never put through the RED review cycle — it shipped as part of the ~25-commit Flight feature build-out between sessions. Needs a proper RED audit (idempotency/double-redemption protection, anti-farming caps on `BASE_REWARDS`, whether `rewardFlightForSuccessfulSale`'s `onDocumentWritten` listener can double-fire the way the old `onOrderConfirmed` bug did). |
 
 **If you are an agent and you find a RED file dirty with no row here
 explaining why: STOP. Add a row documenting exactly what you found, flag it
@@ -236,18 +262,86 @@ next batch starts.
 - RED-2: **Already implemented pre-existing** (`functions/src/reservations.ts`,
   `cleanupExpiredReservations`) — verified correct on inspection, no new
   work needed.
-- RED-3: **DONE this session (Batch 7).** Design simplified by human
-  operator: payment success is a hard, unconditional cancellation
-  boundary; post-payment issues go through a separate, not-yet-built
-  complaint mechanism (COM-1) instead of refund-via-cancel. Found and
-  fixed a real live bug in the process (see Batch 7) rather than just
-  implementing the new policy on clean ground.
-- COM-1 (post-payment complaints), RED-4 through RED-8: **not started.**
-  RED-4 (pickup handoff) is next per the updated priority order.
+- RED-3: **DONE (Batch 7), re-verified clean on `canonical-reconcile-d`
+  (Batch 10, 2026-10-14).** Design: payment success is a hard,
+  unconditional cancellation boundary; post-payment issues go through a
+  separate, not-yet-built complaint mechanism (COM-1) instead of
+  refund-via-cancel. The live Swift Wallet bug found in Batch 7 is closed
+  on this branch.
+- RED-4: **DONE (Batch 8 on `delivery-first-checkout`), confirmed carried
+  forward correctly into the reconciliation rewrite (Batch 10,
+  2026-10-14).** The `AT_PICKUP → PICKUP_CONFIRMED` split and the
+  driver-OR-merchandise-seller authorization (the explicit "Both"
+  decision) both survived the `logistics.ts → fulfillment.ts` rewrite
+  intact — verified directly in `functions/src/fulfillment.ts`.
+- COM-1 (post-payment complaints), RED-5 through RED-8: **not started.**
+  RED-5 (delivery failure/disputes) is next per the original priority
+  order — note `fulfillment.ts` already has `refundsOnRouteStatus`/escrow-
+  refund-on-FAILED plumbing that looks like partial RED-5 groundwork;
+  not yet confirmed whether it's complete or just scaffolding.
+- **New, not in the original 8-batch plan:** `functions/src/flight.ts`
+  (Swift Flight gamification, see Section 2) needs its own RED review —
+  it's a real wallet-credit path that shipped without going through this
+  process at all.
 
 ---
 
 ## 6. BATCH LOG (append a new entry every time a batch closes — never delete history)
+
+### Batch 10 — state reconciliation audit after a multi-week environment gap (2026-10-14)
+- **Classification:** Documentation/audit only. No code changed.
+- **Context:** this session's environment was fully reset between Batch 9
+  and now; re-cloned `canonical-reconcile-d` fresh and found it had moved
+  far beyond this document's record of it — 70+ branches now exist in the
+  repo, a ~25-commit Swift Flight (gamification) feature has been built
+  and deployed, Android CI/APK packaging work has landed, and there is a
+  new integration branch `canonical-platform-integration-2026-09-29` with
+  an **open PR #10** (`canonical-reconcile-d` → that branch, "Set
+  canonical delivery fee economics": 155 commits, 90 files changed,
+  +7542/-822, `mergeable_state: clean`, CI green on HEAD `05d123e`). None
+  of this was reflected anywhere in this file. Rather than resume stale
+  work blind, audited current `canonical-reconcile-d` HEAD directly
+  against this document's open items.
+- **Verified RESOLVED (code read directly, not taken on report):**
+  - RED-3 hard payment boundary on `cancelOrder` — intact, and the Swift
+    Wallet over-permissive-cancellation bug is now closed (`refundWallet`
+    hardcoded `false`).
+  - RED-4 pickup handoff (`AT_PICKUP`/`PICKUP_CONFIRMED`,
+    driver-OR-seller authorization) — survived the `logistics.ts` →
+    `fulfillment.ts` rewrite intact.
+  - `data/firebase/.../ArchitectureMapperTest.kt` — the orphaned-debris
+    test file (referencing a rolled-back, nonexistent `Mappers.kt`
+    architecture) this document never got to record as safe-to-delete —
+    it's gone from the tree. Resolved by someone else before this audit;
+    conclusion from the prior session was correct.
+  - `CommerceUseCases.kt`/`FirebaseCommerceRepository.kt`
+    `getListingByShareSlugs` — present and implemented using the current
+    server-owned `shareSlug` field, as proposed in the prior session.
+  - `ListingDetailViewModel.kt` nullable-`listingId` compile errors
+    (`deleteListing`/`loadComments`/`postComment`) — all three now
+    null-check `resolvedListingId` before use. Resolved.
+  - The web hero-image work from the prior session was superseded (not
+    lost) — `hosting/index.html`'s `.hero` is now a different,
+    `<img>`-based implementation, and three dedicated branches
+    (`web-hero-image`, `hero-artwork-canonical`, `web-swift-hero-banner`)
+    exist for that work independently.
+- **New governance gap found, not yet fixed:** `functions/src/flight.ts`,
+  `functions/src/fulfillment.ts`, `functions/src/deliveryEconomics.ts`,
+  and `functions/src/moneyValidation.ts` all meet this document's own RED
+  definition (money/escrow/wallet authority) but were never added to
+  Section 1's locked-files list or Section 2's ledger — added this batch
+  (see Section 1/2). `flight.ts` in particular ships a real LSL
+  wallet-credit path (`claimFlightRedemption`) that was never put through
+  the RED propose→review→implement cycle at all.
+- **Explicitly not done:** no line-by-line RED audit of `flight.ts`,
+  `deliveryEconomics.ts`, `moneyValidation.ts`, `accountGuard.ts`, or
+  `entitlements.ts` yet — flagged as needing one, not confirmed clean.
+  PR #10 not reviewed. The Swift Flight feature's correctness (reward
+  amounts, anti-farming, idempotency) not independently verified beyond
+  the wallet-write path noted above. RED-5 through RED-8 still not
+  started.
+- **Status:** audit complete, this document brought current. No
+  implementation work performed this batch.
 
 ### Batch 9 -- two corrections to Batch 8/external commits (2026-09-28)
 - **Context:** after Batch 8 was pushed, two follow-up commits landed on

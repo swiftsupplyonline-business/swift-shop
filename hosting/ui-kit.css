@@ -1,0 +1,45 @@
+/* SwiftShop Web – shared UI primitives (rails, scoped product cards). Self-contained: works inside the
+   SPA shell and on the server-rendered share pages, which do not load index.html's CSS. */
+
+:root{--uk-ink:#13202b;--uk-muted:#667482;--uk-line:#dfeaf1;--uk-blue:#0875aa;--uk-blue2:#1c92ca;--uk-soft:#eaf8ff;--uk-navy:#10283a}
+.ui-sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- Rail ---------- */
+.rl{min-width:0;width:100%}
+.rl-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:10px}
+.rl-titles{min-width:0}
+.rl-title{margin:0;font-size:19px;line-height:1.2;letter-spacing:-.025em;color:var(--uk-navy)}
+.rl-sub{margin:3px 0 0;font-size:13px;color:var(--uk-muted)}
+.rl-ctrl{display:flex;align-items:center;gap:8px;flex:none}
+.rl-all{font-weight:800;font-size:14px;color:var(--uk-blue);text-decoration:none;white-space:nowrap;margin-right:4px}
+.rl-all:hover{text-decoration:underline}
+.rl-btn{display:none;width:34px;height:34px;border-radius:50%;border:1px solid var(--uk-line);background:#fff;color:var(--uk-navy);font-size:20px;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(16,40,58,.08);transition:.15s}
+.rl-btn:hover:not(:disabled){background:var(--uk-soft);border-color:#b8deed}
+.rl-btn:disabled{opacity:.35;cursor:default;box-shadow:none}
+@media (hover:hover) and (pointer:fine){.rl[data-scrollable="true"] .rl-btn{display:inline-grid;place-items:center}}
+
+.rl-viewport{position:relative;margin:0 -2px}
+.rl-viewport::before,.rl-viewport::after{content:"";position:absolute;top:0;bottom:10px;width:34px;z-index:2;pointer-events:none;opacity:0;transition:opacity .18s}
+.rl-viewport::before{left:0;background:linear-gradient(90deg,rgba(244,250,253,.95),rgba(244,250,253,0))}
+.rl-viewport::after{right:0;background:linear-gradient(270deg,rgba(244,250,253,.95),rgba(244,250,253,0))}
+.rl[data-scrollable="true"][data-at-start="false"] .rl-viewport::before{opacity:1}
+.rl[data-scrollable="true"][data-at-end="false"] .rl-viewport::after{opacity:1}
+.rl-track{display:flex;flex-wrap:nowrap;gap:14px;overflow-x:auto;overflow-y:hidden;padding:2px 2px 12px;scroll-snap-type:x proximity;scroll-padding:2px;scrollbar-width:none;-webkit-overflow-scrolling:touch;outline-offset:2px}
+.rl-track::-webkit-scrollbar{display:none}
+.rl-item{flex:0 0 clamp(150px,21%,200px);min-width:0;scroll-snap-align:start}
+.rl-item>.card,.rl-item>a{height:100%}
+
+/* ---------- Product cards inside new views (mirrors index.html's .card) ---------- */
+.rl .card,.sd-grid .card{display:block;background:#fff;border:1px solid var(--uk-line);border-radius:18px;overflow:hidden;color:inherit;text-decoration:none;transition:transform .18s,box-shadow .18s,border-color .18s}
+.rl .card:hover,.sd-grid .card:hover{transform:translateY(-3px);box-shadow:0 16px 40px rgba(16,40,58,.12);border-color:#b8deed}
+.rl .card-img,.sd-grid .card-img{height:170px;background:#edf7fb center/cover no-repeat}
+.rl .card-body,.sd-grid .card-body{padding:12px 14px}
+.rl .card-title,.sd-grid .card-title{font-weight:850;font-size:14px;margin-bottom:4px;color:#203643;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rl .card-price,.sd-grid .card-price{font-weight:900;color:var(--uk-blue)}
+
+@media (max-width:500px){
+  .rl-item{flex-basis:150px}
+  .rl .card-img,.sd-grid .card-img{height:140px}
+  .rl-title{font-size:17px}
+}
+@media (prefers-reduced-motion:reduce){.rl-track{scroll-behavior:auto}.rl-btn,.rl .card,.sd-grid .card{transition:none}.rl-viewport::before,.rl-viewport::after{transition:none}}

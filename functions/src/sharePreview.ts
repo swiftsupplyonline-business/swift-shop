@@ -51,10 +51,11 @@ function renderPage(opts: {
     inStock: boolean;
     shopName: string | null;
     whatsappUrl: string | null;
+    shopId?: string | null;
 }): string {
     const {
         title, description, imageUrl, pageUrl, deepLink, listingId, listingType,
-        priceDisplay, priceAmount, priceCurrency, inStock, shopName, whatsappUrl
+        priceDisplay, priceAmount, priceCurrency, inStock, shopName, whatsappUrl, shopId = null
     } = opts;
 
     const safeTitle = escapeHtml(title);
@@ -76,15 +77,58 @@ function renderPage(opts: {
     ${!inStock ? '<p class="oos">Currently unavailable</p>' : ""}
     ` : "";
 
-    const commerceScript = listingId && !isDeliveryListing ? `
+    // Progressive enhancement: the markup below is a complete, crawler-friendly fallback.
+    // The browser module replaces it with the full Android-parity listing view (hosting/listing-detail.js);
+    // if anything fails, the original markup is restored and the basic Buy button keeps working.
+    const jsonForScript = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
+    const mountKind = listingId ? "listing" : shopId ? "shop" : null;
+    const commerceScript = mountKind ? `
     <script type="module">
-      import { addToCart } from "/app.js";
-      const id = ${JSON.stringify(listingId)};
-      const title = ${JSON.stringify(title)};
-      document.getElementById("buyNowBtn")?.addEventListener("click", () => {
-        addToCart(id, title, 1);
-        window.location.href = "/checkout";
-      });
+      const kind = ${jsonForScript(mountKind)};
+      const id = ${jsonForScript(listingId || shopId)};
+      const title = ${jsonForScript(title)};
+      const isDelivery = ${isDeliveryListing ? "true" : "false"};
+      const root = document.getElementById("swift-listing-root");
+      const fallback = root?.querySelector("[data-listing-fallback]");
+      const enhancedRoot = root?.querySelector("[data-listing-enhanced]");
+      const useFallback = () => {
+        if (root) {
+          root.classList.remove("ld-hydrating");
+          enhancedRoot?.setAttribute("hidden", "");
+          if (fallback) fallback.removeAttribute("hidden");
+        }
+        document.body.classList.remove("ld-enhanced");
+        document.documentElement.classList.remove("ld-enhancement-pending");
+        if (isDelivery || kind !== "listing") return;
+        document.getElementById("buyNowBtn")?.addEventListener("click", async () => {
+          const { addToCart } = await import("/app.js");
+          addToCart(id, title, 1);
+          window.location.href = "/checkout";
+        });
+      };
+      if (!root || !enhancedRoot || !fallback) {
+        useFallback();
+      } else {
+        try {
+          const mod = await import("/app.js");
+          document.body.classList.add("ld-enhanced");
+          const ok = kind === "shop"
+            ? await mod.mountShopDetail(enhancedRoot, { shopId: id, standalone: true })
+            : await mod.mountListingDetail(enhancedRoot, { listingId: id, standalone: true });
+          if (!ok) useFallback();
+          else {
+            enhancedRoot.classList.remove("ld-loading-shell");
+            enhancedRoot.removeAttribute("aria-busy");
+            enhancedRoot.removeAttribute("hidden");
+            fallback.setAttribute("hidden", "");
+            root.classList.remove("ld-hydrating");
+            document.documentElement.classList.remove("ld-enhancement-pending");
+          }
+        } catch (err) {
+          console.error("Swift page view failed to load; showing basic page", err);
+          useFallback();
+        }
+      }
     </script>` : "";
 
     return `<!DOCTYPE html>
@@ -106,6 +150,12 @@ function renderPage(opts: {
   <meta name="twitter:title" content="${safeTitle}">
   <meta name="twitter:description" content="${safeDescription}">
   <meta name="twitter:image" content="${safeImage}">
+  <link rel="stylesheet" href="/ui-kit.css">
+  <link rel="stylesheet" href="/listing-detail.css">
+  <link rel="stylesheet" href="/shop-detail.css">
+  ${mountKind ? `<script>
+    document.documentElement.classList.add("ld-enhancement-pending");
+  </script>` : ""}
   <style>
     body { font-family: -apple-system, Roboto, sans-serif; max-width: 480px; margin: 24px auto; padding: 0 20px; color: #1a1a1a; }
     img { width: 100%; max-width: 420px; aspect-ratio: 1; object-fit: cover; border-radius: 12px; margin-bottom: 18px; background: #eee; }
@@ -122,12 +172,26 @@ function renderPage(opts: {
   </style>
 </head>
 <body data-share-page="true">
-  ${safeImage ? `<img src="${safeImage}" alt="${safeTitle}" loading="eager">` : ""}
-  <h1>${safeTitle}</h1>
-  <p>${safeDescription}</p>
-  ${commerceButtons}
-  ${deepLink ? `<a class="btn" href="${escapeHtml(deepLink)}">Open in SwiftShop app</a>` : ""}
-  <a class="btn" href="${PLAY_STORE_URL}">Get the SwiftShop app</a>
+  <div id="swift-listing-root"${mountKind ? ' class="ld-hydrating"' : ""}>
+    ${mountKind ? `<div data-listing-enhanced class="ld-loading-shell${mountKind === "shop" ? " is-shop" : ""}" aria-busy="true" aria-live="polite">
+      <div class="ld-loading-media">${safeImage ? `<img src="${safeImage}" alt="" aria-hidden="true">` : ""}</div>
+      <div class="ld-loading-info">
+        <div class="ld-loading-line ld-loading-price"></div>
+        <div class="ld-loading-line ld-loading-title"></div>
+        <div class="ld-loading-line ld-loading-copy"></div>
+        <div class="ld-loading-line ld-loading-copy short"></div>
+        <div class="ld-loading-actions"></div>
+      </div>
+    </div>` : ""}
+    <div data-listing-fallback class="ld-fallback"${mountKind ? " hidden" : ""}>
+      ${safeImage ? `<img src="${safeImage}" alt="${safeTitle}" loading="eager">` : ""}
+      <h1>${safeTitle}</h1>
+      <p>${safeDescription}</p>
+      ${commerceButtons}
+      ${deepLink ? `<a class="btn" href="${escapeHtml(deepLink)}">Open in SwiftShop app</a>` : ""}
+      <a class="btn" href="${PLAY_STORE_URL}">Get the SwiftShop app</a>
+    </div>
+  </div>
   ${commerceScript}
 </body>
 </html>`;
@@ -211,7 +275,7 @@ function listingResponse(
     }));
 }
 
-export const renderListingPreview = functions.onRequest(async (req, res) => {
+export const renderListingPreview = functions.onRequest({ invoker: "public" }, async (req, res) => {
     const listingId = req.path.match(/\/listing\/([^/]+)/)?.[1];
     if (!listingId) {
         res.status(404).send("Listing not found");
@@ -250,7 +314,7 @@ export const renderListingPreview = functions.onRequest(async (req, res) => {
     }
 });
 
-export const renderSharedListing = functions.onRequest(async (req, res) => {
+export const renderSharedListing = functions.onRequest({ invoker: "public" }, async (req, res) => {
     const parsed = parseSharePath("s", req.path);
     if (!parsed) {
         res.status(404).send("Listing not found");
@@ -283,7 +347,7 @@ export const renderSharedListing = functions.onRequest(async (req, res) => {
     }
 });
 
-export const renderSharedDelivery = functions.onRequest(async (req, res) => {
+export const renderSharedDelivery = functions.onRequest({ invoker: "public" }, async (req, res) => {
     const parsed = parseSharePath("d", req.path);
     if (!parsed) {
         res.status(404).send("Delivery listing not found");
@@ -312,7 +376,7 @@ export const renderSharedDelivery = functions.onRequest(async (req, res) => {
     }
 });
 
-export const renderShopPreview = functions.onRequest(async (req, res) => {
+export const renderShopPreview = functions.onRequest({ invoker: "public" }, async (req, res) => {
     const shopId = req.path.match(/\/shop\/([^/]+)/)?.[1];
     if (!shopId) {
         res.status(404).send("Shop not found");
@@ -337,6 +401,7 @@ export const renderShopPreview = functions.onRequest(async (req, res) => {
             pageUrl: `${SITE_ORIGIN}/shop/${shopId}`,
             deepLink: `swiftshop://shop/${shopId}`,
             listingId: null,
+            shopId,
             listingType: null,
             priceDisplay: null,
             priceAmount: null,

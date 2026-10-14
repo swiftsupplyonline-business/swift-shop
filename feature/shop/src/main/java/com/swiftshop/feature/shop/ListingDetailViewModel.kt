@@ -64,6 +64,7 @@ class ListingDetailViewModel @Inject constructor(
     private val listingId: String? = savedStateHandle["listingId"]
     private val shopSlug: String? = savedStateHandle["shopSlug"]
     private val productSlug: String? = savedStateHandle["productSlug"]
+    private var resolvedListingId: String? = listingId
 
     private val _uiState = MutableStateFlow<ListingDetailState>(ListingDetailState.Loading)
     val uiState: StateFlow<ListingDetailState> = _uiState.asStateFlow()
@@ -131,6 +132,7 @@ class ListingDetailViewModel @Inject constructor(
             }
             result.fold(
                 onSuccess = { listing ->
+                    resolvedListingId = listing.id
                     _uiState.value = ListingDetailState.Loaded(listing)
                     loadShop(listing.shopId)
                     loadSuggestions(listing)
@@ -274,7 +276,13 @@ class ListingDetailViewModel @Inject constructor(
     fun deleteListing(onDeleted: () -> Unit) {
         viewModelScope.launch {
             _isDeleting.value = true
-            commerceRepository.deleteListing(listingId).fold(
+            val id = resolvedListingId
+            if (id.isNullOrBlank()) {
+                _actionState.value = ActionState.Error("Listing ID unavailable")
+                _isDeleting.value = false
+                return@launch
+            }
+            commerceRepository.deleteListing(id).fold(
                 onSuccess = { onDeleted() },
                 onFailure = { _actionState.value = ActionState.Error(it.message ?: "Failed to delete") }
             )
@@ -285,7 +293,8 @@ class ListingDetailViewModel @Inject constructor(
     fun loadComments() {
         if (commentsJob != null) return
         commentsJob = viewModelScope.launch {
-            observeListingCommentsUseCase(listingId).collect { _comments.value = it }
+            val id = resolvedListingId ?: return@launch
+            observeListingCommentsUseCase(id).collect { _comments.value = it }
         }
     }
 
@@ -296,7 +305,7 @@ class ListingDetailViewModel @Inject constructor(
                 return@launch
             }
             val comment = Comment(
-                listingId = listingId,
+                listingId = resolvedListingId ?: return@launch,
                 authorId = user.uid,
                 authorName = user.displayName,
                 authorAvatarUrl = user.photoUrl,

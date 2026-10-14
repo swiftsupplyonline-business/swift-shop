@@ -13,8 +13,10 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
+    testImplementation(libs.bundles.testing)
     implementation(project(":core:model"))
     implementation(project(":core:media"))
     implementation(libs.kotlinx.coroutines.android)
+
 }
 
