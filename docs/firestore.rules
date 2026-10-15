@@ -285,8 +285,14 @@ service cloud.firestore {
     // ── Follows ────────────────────────────────────────────────────────────
     match /follows/{followId} {
       allow read: if isSignedIn();
+      // One document per follower->followed pair, id "{followerId}_{followedId}" (the format the
+      // Android app already writes). Stops duplicate follow documents for one pair, which would
+      // inflate follower counts and let one follow be claimed for Flight rewards repeatedly.
       allow create: if isSignedIn() && isActive()
-        && request.resource.data.followerId == request.auth.uid;
+        && request.resource.data.followerId == request.auth.uid
+        && request.resource.data.followedId is string
+        && request.resource.data.followedId != request.auth.uid
+        && followId == request.auth.uid + '_' + request.resource.data.followedId;
       allow delete: if isSignedIn()
         && resource.data.followerId == request.auth.uid;
     }
